@@ -1,0 +1,205 @@
+<title>Connect Arena Opportunity Brief</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F6F7F9; --surface:#FFFFFF; --ink:#171A21; --ink-2:#4B5566; --muted:#7A8496;
+  --line:#D9DEE6; --accent:#245F8F; --accent-soft:#E3EEF7; --accent-ink:#1A4468;
+  --good:#2E7D4F; --warn:#9A6A12; --bad:#A83A3A; --good-bg:#E6F3EB; --warn-bg:#FBF1DC; --bad-bg:#F8E5E5;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101319; --surface:#171B23; --ink:#E7EAF0; --ink-2:#B4BCC9; --muted:#7F8998;
+    --line:#2A303B; --accent:#6FAEE0; --accent-soft:#1B2C3D; --accent-ink:#A9D0F0;
+    --good:#7BC998; --warn:#E0B45C; --bad:#E38B8B; --good-bg:#16291E; --warn-bg:#2E2412; --bad-bg:#331A1A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101319; --surface:#171B23; --ink:#E7EAF0; --ink-2:#B4BCC9; --muted:#7F8998;
+  --line:#2A303B; --accent:#6FAEE0; --accent-soft:#1B2C3D; --accent-ink:#A9D0F0;
+  --good:#7BC998; --warn:#E0B45C; --bad:#E38B8B; --good-bg:#16291E; --warn-bg:#2E2412; --bad-bg:#331A1A;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:"Source Sans 3",system-ui,Segoe UI,sans-serif;font-size:17px;line-height:1.55;margin:0}
+.page{max-width:76ch;margin:0 auto;padding:56px 24px 96px}
+.eyebrow{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:clamp(30px,5vw,42px);line-height:1.1;letter-spacing:-.02em;margin:10px 0 14px;text-wrap:balance}
+h2{font-family:Manrope,system-ui,sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em;margin:52px 0 12px;text-wrap:balance}
+h3{font-family:Manrope,system-ui,sans-serif;font-weight:700;font-size:16px;margin:24px 0 6px}
+p{margin:0 0 14px}
+.lede{font-size:19px;color:var(--ink-2);max-width:64ch}
+.verdict{border-left:3px solid var(--accent);background:var(--accent-soft);padding:16px 20px;margin:24px 0 8px;border-radius:0 6px 6px 0}
+.verdict p{margin:0;color:var(--accent-ink)}
+.verdict p+p{margin-top:8px}
+ul{padding-left:22px;margin:0 0 14px}
+li{margin-bottom:6px}
+li b{font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:15.5px;margin:12px 0 20px}
+.tw{overflow-x:auto}
+th{text-align:left;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;padding:2px 8px;border-radius:3px;white-space:nowrap}
+.pill.good{background:var(--good-bg);color:var(--good)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0 20px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+.stat .v{font-family:Manrope,system-ui,sans-serif;font-weight:800;font-size:26px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .l{font-size:13.5px;color:var(--muted);margin-top:2px}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px 18px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px;line-height:1.7;overflow-x:auto;white-space:pre;color:var(--ink-2);margin:12px 0 20px}
+.flow b{color:var(--ink);font-weight:500}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.9em;background:var(--accent-soft);color:var(--accent-ink);padding:1px 5px;border-radius:3px}
+.src{font-size:14px;color:var(--muted);margin-top:56px;padding-top:16px;border-top:1px solid var(--line)}
+.src ol{padding-left:20px}
+.src li{margin-bottom:3px}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="page">
+<div class="eyebrow">Opportunity brief · September 2026</div>
+<h1>A gamification module for Amazon Connect customers</h1>
+<p class="lede">What the platform gives us to build on, who is already selling into the gap, how a module would be priced and distributed, and what has to be true for it to work.</p>
+
+<div class="verdict">
+<p><b>Verdict: buildable, sellable, and the window is real but not empty.</b> Amazon Connect has no native gamification. It does expose every data feed a gamification engine needs, and since March 2024 it lets a third-party app live inside the agent's own workspace. One incumbent, Centrical, already sells a Connect connector on AWS Marketplace, but it is an enterprise-priced full performance suite.</p>
+<p>The open position is a lightweight, per-agent-priced, Marketplace-billed module that installs in an afternoon and is aimed at the mid-market Connect shops the delivery partners are onboarding every week.</p>
+</div>
+
+<h2>The market we would sell into</h2>
+<div class="grid">
+<div class="stat"><div class="v">$1B+</div><div class="l">Amazon Connect annualized run rate, reached in 2025</div></div>
+<div class="stat"><div class="v">~3,800</div><div class="l">companies tracked using Connect, 69% in the US</div></div>
+<div class="stat"><div class="v">~5%</div><div class="l">share of contact-center software, behind Genesys and Five9</div></div>
+</div>
+<p>Two things shape the buyer. First, Connect customers are self-assembling their stack: AWS sells the core and expects partners to fill quality management, workforce management, and engagement. Second, most Connect deployments are done by delivery partners, so the partner is the channel as much as the customer is.</p>
+<p>AWS rebranded the product to <b>Connect Customer</b> in 2026 and launched an Amazon Connect Customer Competency on 16 June 2026, the first competency tied to a single service. That is where AWS is putting its co-sell attention.</p>
+
+<h2>Why now</h2>
+<ul>
+<li><b>Third-party apps in the agent workspace went GA in March 2024.</b> An HTTPS page loads in an iframe next to the contact panel, and the workspace SDK hands it the agent identity and contact events. The agent never leaves Connect to see their streak or leaderboard.</li>
+<li><b>Points-based scoring in performance evaluations shipped August 2026.</b> Contact Lens evaluations now emit earned points, max points, and a percentage per contact. That is a quality signal ready to be turned into game points without inventing our own rubric.</li>
+<li><b>AI-agent metrics shipped April 2026.</b> Human agents are now measured beside AI agents. Engagement and retention of the humans who remain is the pitch that lands with supervisors.</li>
+<li><b>The Service Delivery designation is deprecated on 1 June 2027.</b> Partners are re-qualifying for the new competency now, and are looking for differentiated add-ons to bundle.</li>
+</ul>
+
+<h2>What Connect gives us to build on</h2>
+<div class="tw">
+<table>
+<tr><th>Signal</th><th>Source</th><th>Latency</th><th>Game use</th></tr>
+<tr><td>Agent state changes, login, contact connect</td><td>Agent event stream to Kinesis</td><td class="num">seconds</td><td>Streaks, adherence, live presence on leaderboard</td></tr>
+<tr><td>Handle time, after-call work, contacts handled</td><td>Contact trace records to Kinesis or Firehose</td><td class="num">minutes</td><td>Productivity points per contact</td></tr>
+<tr><td>Queue and agent aggregates</td><td>GetCurrentMetricData, GetMetricDataV2</td><td class="num">near real time</td><td>Team contests, service-level targets</td></tr>
+<tr><td>Quality scores, auto-fails, category</td><td>Contact Lens evaluations to S3, ListContactEvaluations</td><td class="num">on submit</td><td>Quality-weighted points, badges</td></tr>
+<tr><td>Sentiment, talk ratio, categories</td><td>Contact Lens output to S3</td><td class="num">minutes</td><td>Soft-skill challenges</td></tr>
+<tr><td>Agent identity, current contact</td><td>Agent workspace SDK inside the iframe</td><td class="num">instant</td><td>Personalized view, no separate login</td></tr>
+</table>
+</div>
+<p>Real-time queue metrics are not on the Kinesis stream, so the engine needs both a stream consumer and a polling job. That is a known pattern, not a blocker.</p>
+
+<h2>Who is already selling here</h2>
+<div class="tw">
+<table>
+<tr><th>Vendor</th><th>Connect fit</th><th>Positioning</th><th>Pricing</th><th>Threat</th></tr>
+<tr><td>Centrical</td><td>Native connector on AWS Marketplace since 2021, Contact Lens aware</td><td>Full performance and micro-learning suite, enterprise</td><td>Custom quote</td><td><span class="pill bad">Direct</span></td></tr>
+<tr><td>AmplifAI</td><td>Generic integrations</td><td>AI coaching plus gamification, enterprise</td><td>Custom quote by seat count</td><td><span class="pill warn">Adjacent</span></td></tr>
+<tr><td>Spinify</td><td>CRM-first, no Connect connector</td><td>Sales leaderboards, SMB friendly</td><td>Per user, published</td><td><span class="pill good">Low</span></td></tr>
+<tr><td>Playvox (NICE)</td><td>Has a Connect WFM integration</td><td>QM and WFM suite with a gamification tab</td><td>Custom quote</td><td><span class="pill warn">Adjacent</span></td></tr>
+<tr><td>AWS itself</td><td>Owns the data</td><td>Dashboards and evaluations, no game mechanics</td><td>Bundled</td><td><span class="pill warn">Could build</span></td></tr>
+</table>
+</div>
+<p>Every vendor with a real Connect story sells a quote-priced suite that needs a sales cycle and a services engagement. Nobody sells a transparent, self-serve, Marketplace-billed module. That is the gap.</p>
+
+<h2>The product</h2>
+<h3>Version one, about one quarter of work</h3>
+<ul>
+<li><b>Agent panel inside the workspace.</b> Today's points, streak, rank on the team, active challenges, kudos received. Loads through the third-party app mechanism, so no new login.</li>
+<li><b>Supervisor console.</b> Create challenges from templates, set the scoring mix, run team contests, approve rewards, see who has gone quiet.</li>
+<li><b>Scoring engine.</b> Weighted blend of productivity, quality, and adherence. Quality carries the highest default weight so that agents cannot win by rushing calls.</li>
+<li><b>Mechanics.</b> Points, levels, streaks, badges, individual and team leaderboards, time-boxed challenges, peer kudos. No virtual currency in version one.</li>
+<li><b>Wallboard mode.</b> A display URL for the floor TV, which is the feature supervisors ask for first.</li>
+</ul>
+<h3>Version two, once there are paying customers</h3>
+<ul>
+<li>Challenges generated from Contact Lens categories, such as "reduce escalations on the billing queue this week."</li>
+<li>Reward catalog and gift-card fulfilment through a partner.</li>
+<li>Manager coaching prompts driven by evaluation trends.</li>
+</ul>
+
+<h2>Architecture and deployment model</h2>
+<div class="flow"><b>Connect instance</b>
+  ├─ Agent event stream ──▶ Kinesis ──▶ Lambda ──▶ <b>Scoring engine</b> ──▶ DynamoDB
+  ├─ Contact records ─────▶ Firehose ─▶ Lambda ──┘
+  ├─ Evaluations ─────────▶ S3 ───────▶ EventBridge ─▶ Lambda ──┘
+  └─ GetMetricDataV2 ◀──── scheduled poll (1 min) ──────────────┘
+                                                                  │
+<b>Agent workspace</b> ◀── iframe (workspace SDK: agent ARN, contact) ── <b>Web app</b> (CloudFront + API Gateway)
+<b>Supervisor console</b> / <b>Wallboard</b> ◀──────────────────────────────────┘</div>
+<p><b>Recommendation: ship as a CloudFormation or CDK stack that deploys into the customer's own AWS account</b>, billed through AWS Marketplace. Agent data never leaves their account, security review takes days instead of months, and it matches how Connect customers already buy. Add a hosted multi-tenant option later for teams under 50 agents who do not want to own infrastructure.</p>
+
+<h2>Pricing and unit economics</h2>
+<p>Competitors hide their pricing. Publishing ours is itself a differentiator. Marketplace takes a listing fee of roughly 3% on private offers and the buyer can draw it down from their committed AWS spend, which removes a procurement step.</p>
+<div class="tw">
+<table>
+<tr><th>Tier</th><th>Per agent per month</th><th>Includes</th><th>500-agent customer, annual</th></tr>
+<tr><td>Core</td><td class="num">$8</td><td>Agent panel, leaderboards, streaks, badges, wallboard</td><td class="num">$48,000</td></tr>
+<tr><td>Quality</td><td class="num">$12</td><td>Core plus Contact Lens scoring and challenge templates</td><td class="num">$72,000</td></tr>
+<tr><td>Rewards</td><td class="num">$15</td><td>Quality plus reward catalog and coaching prompts</td><td class="num">$90,000</td></tr>
+</table>
+</div>
+<p>The ROI story for the buyer is attrition. Public case studies claim 25% to 50% reductions in attrition from gamification programs, and replacing one agent costs 50% to 200% of salary, or $20,000 to $80,000 for a fully loaded $40,000 agent. Keeping two agents a year pays for the Quality tier on a 500-seat floor. Treat the vendor statistics as marketing claims, not evidence, and plan to produce our own numbers from the first three customers.</p>
+
+<h2>Go to market</h2>
+<ul>
+<li><b>AWS Marketplace listing first.</b> Register as a seller, pass the Foundational Technical Review with an AWS solutions architect, list as a SaaS contract product. Expect four to eight weeks end to end.</li>
+<li><b>Delivery partners as the channel.</b> The Connect delivery partners install and configure Connect for customers and are actively looking for add-ons to bundle. Offer a partner margin and a co-branded install. Five partner conversations will validate the whole plan faster than fifty cold calls.</li>
+<li><b>Apply for the Connect Customer Competency</b> after the first two or three references, to get onto the AWS co-sell list.</li>
+<li><b>Content wedge.</b> A free wallboard for Connect, hosted, no login, is a plausible lead magnet that costs almost nothing to run.</li>
+</ul>
+
+<h2>Risks and what to do about them</h2>
+<div class="tw">
+<table>
+<tr><th>Risk</th><th>Likelihood</th><th>Mitigation</th></tr>
+<tr><td>AWS adds native leaderboards or badges. The August 2026 points-based scoring is a step in that direction.</td><td><span class="pill warn">Medium</span></td><td>Compete on depth of mechanics, supervisor tooling, and rewards, which AWS historically leaves to partners. Move fast enough to be the acquisition or the partner.</td></tr>
+<tr><td>Centrical undercuts on Connect deals.</td><td><span class="pill warn">Medium</span></td><td>Stay below their floor and sell to accounts too small for their sales team. Do not chase their enterprise logos.</td></tr>
+<tr><td>Agents game the metrics and quality drops.</td><td><span class="pill bad">High if ignored</span></td><td>Quality-weighted scoring by default, auto-fail on evaluation removes points, anomaly flags on the supervisor console.</td></tr>
+<tr><td>Connect API throttling at scale.</td><td><span class="pill good">Low</span></td><td>Stream-first design, metrics poll once a minute per instance, DynamoDB aggregates.</td></tr>
+<tr><td>Buyers see gamification as gimmicky.</td><td><span class="pill warn">Medium</span></td><td>Lead with retention and quality, call it agent engagement, keep the mechanics optional per team.</td></tr>
+</table>
+</div>
+
+<h2>Recommended next four weeks</h2>
+<ul>
+<li><b>Week 1.</b> Talk to five Connect delivery partners and three Connect customers. Ask what they use today for engagement, what they pay, and what they would bundle.</li>
+<li><b>Week 2 to 3.</b> Build the agent panel as a third-party workspace app against a sandbox Connect instance, fed by the agent event stream only. Aim for a working live leaderboard, nothing more.</li>
+<li><b>Week 4.</b> Demo to the partners from week 1. Decide go or no-go on the Marketplace registration based on whether two of them commit to a pilot.</li>
+</ul>
+
+<div class="src">
+<b>Sources</b>
+<ol>
+<li><a href="https://aws.amazon.com/about-aws/whats-new/2024/03/amazon-connect-agent-workspace-third-party-apps">Amazon Connect agent workspace third-party apps, GA March 2024</a></li>
+<li><a href="https://docs.aws.amazon.com/agentworkspace/latest/devguide/getting-started-create-application.html">Agent Workspace developer guide, creating an application</a></li>
+<li><a href="https://docs.aws.amazon.com/connect/latest/adminguide/agent-event-streams.html">Agent event streams</a></li>
+<li><a href="https://docs.aws.amazon.com/connect/latest/APIReference/API_GetMetricDataV2.html">GetMetricDataV2 API</a></li>
+<li><a href="https://www.repost.aws/knowledge-center/connect-real-time-metric-issues">Real-time metrics are API-only, not on Kinesis</a></li>
+<li><a href="https://docs.aws.amazon.com/connect/latest/APIReference/API_ListContactEvaluations.html">ListContactEvaluations API</a></li>
+<li><a href="https://aws.amazon.com/about-aws/whats-new/2026/08/amazon-connect-customer-points-based-scoring-evaluations/">Points-based scoring in evaluations, August 2026</a></li>
+<li><a href="https://aws.amazon.com/about-aws/whats-new/2026/04/amazon-connect-ai-agent-metrics/">AI agent metrics, April 2026</a></li>
+<li><a href="https://www.nojitter.com/contact-centers/amazon-connect-becomes-connect-customer-">Amazon Connect becomes Connect Customer</a></li>
+<li><a href="https://www.forbes.com/sites/victordey/2025/12/01/amazon-connect-gets-agentic-ai-boost-as-aws-pushes-to-regain-market-share/">Connect passes $1B run rate</a></li>
+<li><a href="https://6sense.com/tech/cloud-contact-center-software/amazon-connect-market-share">Customer counts and share, 6sense</a></li>
+<li><a href="https://enlyft.com/tech/products/amazon-connect">Market share, Enlyft</a></li>
+<li><a href="https://aws.amazon.com/blogs/apn/from-legacy-to-ai-powered-transform-your-customer-experience-with-amazon-connect-customer-competency-partners/">Amazon Connect Customer Competency launch</a></li>
+<li><a href="https://aws.amazon.com/partners/programs/specializations/">AWS Specializations and Service Delivery deprecation</a></li>
+<li><a href="https://www.automatum.io/blog-posts/how-to-list-on-aws-marketplace-2026">Marketplace listing process and timeline</a></li>
+<li><a href="https://aws.amazon.com/marketplace/reviews/reviews-list/prodview-r2rpehyukrkom">Centrical Connector for Amazon Connect, Marketplace</a></li>
+<li><a href="https://www.prnewswire.com/news-releases/centrical-for-amazon-connect-now-available-301331299.html">Centrical for Amazon Connect announcement</a></li>
+<li><a href="https://www.amplifai.com/blog/best-call-center-gamification-software-tools">AmplifAI, gamification tools comparison</a></li>
+<li><a href="https://www.alpharun.com/blog/contact-center-gamification-software">Alpharun, gamification software ranking</a></li>
+<li><a href="https://yukaichou.com/gamification-examples/gamification-stats-figures/">Gamification ROI case studies</a></li>
+<li><a href="https://gitnux.org/call-center-attrition-statistics/">Call center attrition and replacement cost</a></li>
+</ol>
+</div>
+</div>

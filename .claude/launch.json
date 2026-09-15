@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "arena-prototype",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["prototype/serve.js"],
+      "port": 8765,
+      "autoPort": true
+    }
+  ]
+}

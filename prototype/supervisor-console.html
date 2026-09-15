@@ -1,0 +1,322 @@
+<title>Connect Arena Supervisor Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EEF0F3; --panel:#FFFFFF; --sub:#F5F6F8; --ink:#15181E; --ink-2:#4A5362; --muted:#7C8697; --line:#DCE0E6;
+  --accent:#0F766E; --accent-soft:#DDF1EE; --gold:#B7791F; --gold-soft:#FBF0D9;
+  --good:#2E7D4F; --good-bg:#E6F3EB; --warn:#9A6A12; --warn-bg:#FBF1DC; --bad:#A83A3A; --bad-bg:#F8E5E5; --flash:#FFF6D6;
+  --chrome:#232F3E; --chrome-ink:#E9EDF2; --chrome-muted:#9AA6B6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1216; --panel:#171B21; --sub:#1E232B; --ink:#E8EBF0; --ink-2:#B3BBC7; --muted:#7F8998; --line:#2A303A;
+    --accent:#3FB8AD; --accent-soft:#143432; --gold:#E0B25C; --gold-soft:#332912;
+    --good:#7BC998; --good-bg:#16291E; --warn:#E0B45C; --warn-bg:#2E2412; --bad:#E38B8B; --bad-bg:#331A1A; --flash:#3A3418;
+    --chrome:#0B0E12; --chrome-ink:#E9EDF2; --chrome-muted:#8791A0;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1216; --panel:#171B21; --sub:#1E232B; --ink:#E8EBF0; --ink-2:#B3BBC7; --muted:#7F8998; --line:#2A303A;
+  --accent:#3FB8AD; --accent-soft:#143432; --gold:#E0B25C; --gold-soft:#332912;
+  --good:#7BC998; --good-bg:#16291E; --warn:#E0B45C; --warn-bg:#2E2412; --bad:#E38B8B; --bad-bg:#331A1A; --flash:#3A3418;
+  --chrome:#0B0E12; --chrome-ink:#E9EDF2; --chrome-muted:#8791A0;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45}
+button,select,input{font:inherit}
+button{cursor:pointer}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.num{font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0}
+
+.chrome{background:var(--chrome);color:var(--chrome-ink);height:44px;display:flex;align-items:center;gap:18px;padding:0 20px;font-size:13px}
+.chrome .brand{font-family:Manrope,sans-serif;font-weight:800;letter-spacing:-.01em;font-size:15px}
+.chrome .crumb{color:var(--chrome-muted)}
+.chrome .spacer{flex:1}
+.chrome select{background:transparent;color:var(--chrome-ink);border:1px solid #3B4757;border-radius:4px;padding:3px 8px}
+.chrome .link{color:var(--chrome-muted);text-decoration:none}
+.chrome .link:hover{color:var(--chrome-ink)}
+
+.wrap{padding:20px;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+@media (max-width:980px){.stats{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.stat .v{font-family:Manrope,sans-serif;font-weight:800;font-size:24px;line-height:1.1;letter-spacing:-.02em}
+.stat .l{font-size:12px;color:var(--muted);margin-top:3px}
+.stat.warn .v{color:var(--warn)} .stat.bad .v{color:var(--bad)} .stat.good .v{color:var(--good)}
+
+.cols{display:grid;grid-template-columns:minmax(0,7fr) minmax(320px,4fr);gap:16px;align-items:start}
+@media (max-width:980px){.cols{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.card-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.card-h h2{font-size:14px;font-weight:700}
+.card-h .sub{font-size:12px;color:var(--muted)}
+.card-h .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+.card-b{padding:12px 14px}
+
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:5px 10px;border-radius:4px;font-size:12.5px;font-weight:600}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.sm{padding:3px 8px;font-size:12px}
+.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+th.sorted{color:var(--ink)}
+th.r,td.r{text-align:right}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle;transition:background .6s}
+tr:last-child td{border-bottom:0}
+tr.flash td{background:var(--flash)}
+.who{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+.rk{font-family:"IBM Plex Mono",monospace;color:var(--muted);font-size:12px}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;padding:2px 7px;border-radius:3px;white-space:nowrap}
+.pill.good{background:var(--good-bg);color:var(--good)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.mute{background:var(--sub);color:var(--muted)}
+.bar{height:5px;background:var(--sub);border-radius:3px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .5s}
+.bar.gold i{background:var(--gold)}
+
+.chal{display:grid;grid-template-columns:1fr auto;gap:4px 14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.chal:last-child{border-bottom:0}
+.chal .t{font-weight:600}
+.chal .d{font-size:12.5px;color:var(--ink-2)}
+.chal .m{grid-column:1/-1;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;font-size:12px;color:var(--muted);margin-top:4px}
+.chal .st{text-align:right}
+
+.form{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 14px;border-top:1px solid var(--line);background:var(--sub)}
+.form label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.form select,.form input{border:1px solid var(--line);border-radius:4px;padding:6px 8px;background:var(--panel);color:var(--ink);font-size:13.5px}
+.form .full{grid-column:1/-1}
+.form .act{grid-column:1/-1;display:flex;gap:8px;align-items:center}
+.form .hint{font-size:12px;color:var(--muted);margin-left:auto}
+
+.mix{display:flex;flex-direction:column;gap:10px}
+.mix label{display:grid;grid-template-columns:110px 1fr 44px;gap:10px;align-items:center;font-size:13px}
+.mix input[type=range]{width:100%;accent-color:var(--accent)}
+.mix .pct{font-family:"IBM Plex Mono",monospace;font-size:12.5px;text-align:right}
+.mix .pv{background:var(--sub);border-radius:5px;padding:8px 10px;font-size:12.5px;color:var(--ink-2);display:grid;grid-template-columns:1fr auto;gap:2px 10px}
+.mix .pv b{font-family:Manrope,sans-serif;color:var(--ink);text-align:right}
+.mix .warnline{font-size:12px;color:var(--warn);min-height:16px}
+
+.att{display:flex;flex-direction:column}
+.ai{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.ai:last-child{border-bottom:0}
+.ai .w{font-size:13px}
+.ai .w b{font-weight:600}
+.ai .w small{display:block;color:var(--muted);font-size:12px}
+.stripe{width:4px;height:34px;border-radius:2px}
+.stripe.bad{background:var(--bad)}.stripe.warn{background:var(--warn)}.stripe.mute{background:var(--muted)}
+
+.rw{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.rw:last-child{border-bottom:0}
+.rw small{display:block;color:var(--muted);font-size:12px}
+.rw .acts{display:flex;gap:4px}
+.empty{color:var(--muted);font-size:13px;padding:6px 0}
+
+.demo{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted);padding:0 2px}
+.demo .l{font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.bar i,td,.toast{transition:none}}
+</style>
+
+<div class="chrome">
+  <span class="brand">Arena</span>
+  <span class="crumb">Supervisor console</span>
+  <select aria-label="Team"><option>Billing team · 12 agents</option><option>Support team · 18 agents</option><option>Retention · 9 agents</option></select>
+  <span class="spacer"></span>
+  <a class="link" href="#" onclick="return false">Open wallboard</a>
+  <span class="crumb" id="clock">09:41</span>
+</div>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><div class="v num" id="sAgents">12</div><div class="l">agents online</div></div>
+    <div class="stat"><div class="v num" id="sPts">0</div><div class="l">team points today</div></div>
+    <div class="stat"><div class="v num" id="sQa">—</div><div class="l">avg evaluation today</div></div>
+    <div class="stat" id="sEscStat"><div class="v num" id="sEsc">3.8%</div><div class="l">escalation rate, challenge target 5%</div></div>
+    <div class="stat warn"><div class="v num" id="sAtt">0</div><div class="l">need attention</div></div>
+    <div class="stat"><div class="v num" id="sRew">0</div><div class="l">rewards awaiting approval</div></div>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <div class="card">
+        <div class="card-h"><h2>Team leaderboard</h2><span class="sub">today · click a column to sort</span>
+          <div class="r"><button class="btn sm" id="pause">Pause stream</button></div></div>
+        <div class="tw"><table id="tbl">
+          <thead><tr>
+            <th data-k="rank" class="sorted">#</th><th data-k="name">Agent</th><th data-k="today" class="r">Points</th>
+            <th data-k="handled" class="r">Contacts</th><th data-k="aht" class="r">AHT</th><th data-k="qa" class="r">QA avg</th>
+            <th data-k="quiet" class="r">Last event</th><th>Flag</th>
+          </tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>Challenges</h2><span class="sub">2 active · 1 scheduled</span>
+          <div class="r"><button class="btn sm pri" id="newChal">New challenge</button></div></div>
+        <div class="card-b" id="chals"></div>
+        <form class="form" id="chalForm" hidden>
+          <label>Template<select id="fTemplate">
+            <option value="esc">Keep escalations under target (Contact Lens category)</option>
+            <option value="qa">Every evaluation above a score</option>
+            <option value="fcr">First-contact resolution on a queue</option>
+            <option value="contest">Head-to-head: team vs team, most points</option>
+            <option value="kudos">Give three kudos this week</option></select></label>
+          <label>Scope<select id="fScope"><option>Billing team</option><option>Billing queue only</option><option>Individual, opt-in</option></select></label>
+          <label>Target<input id="fTarget" value="5%"></label>
+          <label>Reward per agent<input id="fReward" value="150 pts"></label>
+          <label>Starts<input id="fStart" type="date"></label>
+          <label>Ends<input id="fEnd" type="date"></label>
+          <div class="act"><button type="submit" class="btn pri">Schedule challenge</button><button type="button" class="btn" id="cancelChal">Cancel</button>
+            <span class="hint">Progress is measured from Connect data, never self-reported.</span></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <div class="card-h"><h2>Scoring mix</h2><span class="sub">applies to Billing team</span>
+          <div class="r"><button class="btn sm" id="saveMix">Save</button></div></div>
+        <div class="card-b mix">
+          <label>Quality<input type="range" id="mQ" min="0" max="100" value="50"><span class="pct" id="mQv">50%</span></label>
+          <label>Productivity<input type="range" id="mP" min="0" max="100" value="35"><span class="pct" id="mPv">35%</span></label>
+          <label>Adherence<input type="range" id="mA" min="0" max="100" value="15"><span class="pct" id="mAv">15%</span></label>
+          <div class="warnline" id="mixWarn"></div>
+          <div class="pv" id="mixPv"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>Needs attention</h2><span class="sub">auto-detected</span></div>
+        <div class="card-b att" id="att"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>Reward approvals</h2></div>
+        <div class="card-b" id="rewards"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>Kudos activity</h2><span class="sub">last hour</span></div>
+        <div class="card-b" id="kudos"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="demo"><span class="l">Demo</span> Simulated event stream · <span id="evCount">0</span> events since load · <label>speed <input type="range" id="speed" min="1" max="10" value="4" style="vertical-align:middle;width:100px"></label></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="arena-engine.js"></script>
+<script>
+(function(){
+  const conn = Arena.connect();
+  const engine = conn.engine;
+  const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4, exclude: ['agent-7'], fullNames: true }); // Liam stays quiet so the console has something to show
+  const chals = [
+    {t:'Billing queue: keep escalations under 5%', d:'Team · Contact Lens category "escalation" · ends Fri', prog:.62, st:'3.8% now', reward:'150 pts each', state:'active'},
+    {t:'Every evaluation 85 or better', d:'Individual, opt-in · 9 of 12 joined · ends Fri', prog:.8, st:'4 days clean', reward:'100 pts', state:'active'},
+    {t:'Billing vs Support: most points', d:'Head-to-head · starts Mon · 5 days', prog:0, st:'scheduled', reward:'Team lunch', state:'scheduled'},
+  ];
+  let rewards = [
+    {who:'Aisha Rahman', what:'$25 gift card', why:'Redeemed 2,500 pts'},
+    {who:'Diego Fuentes', what:'Half-day Friday', why:'Level 6 reward'},
+  ];
+  let kudos = [
+    {from:'Marcus Bell', to:'Grace Achieng', note:'took my overflow call', t:'09:22'},
+    {from:'Supervisor Dana', to:'Priya Natarajan', note:'calm under pressure', t:'09:04'},
+  ];
+  let sortKey = 'rank', sortDir = 1, evCount = 0;
+  const $ = s => document.querySelector(s);
+  const pad = n => String(n).padStart(2,'0');
+  const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+  const mins = ms => Math.round(ms/60000);
+  function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),1800); }
+
+  engine.on(r => {
+    evCount++;
+    if (r.event.EventType === 'KUDOS') { kudos.unshift({from:r.event.From, to:r.agent.name, note:r.event.Note, t:now()}); kudos = kudos.slice(0,5); }
+    render(r.agent);
+  });
+
+  function render(changed){
+    const rows = engine.leaderboard('today');
+    const val = r => ({rank:r.rank, name:r.agent.name, today:r.points, handled:r.agent.handled, aht:r.aht, qa:r.qa ?? -1, quiet:r.agent.lastEvent})[sortKey];
+    const view = [...rows].sort((a,b) => { const x=val(a), y=val(b); return (x>y?1:x<y?-1:0)*sortDir; });
+    $('#tbl tbody').innerHTML = view.map(r => {
+      const a = r.agent, f = engine.flags(a), q = r.qa;
+      const qpill = q===null ? '<span class="pill mute">no evals</span>' : `<span class="pill ${q>=85?'good':q>=75?'warn':'bad'}">${q}%</span>`;
+      return `<tr class="${changed===a?'flash':''}" data-id="${a.id}">
+        <td class="rk num">${r.rank}</td>
+        <td><span class="who"><span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>${a.name}</span></td>
+        <td class="r num" style="font-family:Manrope;font-weight:800">${r.points.toLocaleString()}</td>
+        <td class="r num">${a.handled}</td>
+        <td class="r num mono">${Math.floor(r.aht/60)}:${pad(r.aht%60)}</td>
+        <td class="r">${qpill}</td>
+        <td class="r num" style="color:var(--muted)">${mins(Date.now()-a.lastEvent)} min ago</td>
+        <td>${f.map(x => `<span class="pill ${x.level==='quiet'?'mute':x.level}">${x.label}</span>`).join(' ')}</td></tr>`;
+    }).join('');
+    if (changed) setTimeout(() => { const el = $('#tbl tbody').querySelector(`[data-id="${changed.id}"]`); el && el.classList.remove('flash'); }, 700);
+    document.querySelectorAll('th[data-k]').forEach(th => th.classList.toggle('sorted', th.dataset.k === sortKey));
+
+    const order = {bad:0, warn:1, quiet:2};
+    const att = engine.agents.flatMap(a => engine.flags(a).map(f => ({a,f}))).sort((x,y) => order[x.f.level]-order[y.f.level]);
+    $('#att').innerHTML = att.length ? att.map(({a,f}) => `<div class="ai"><span class="stripe ${f.level==='quiet'?'mute':f.level}"></span><div class="w"><b>${a.name}</b> · ${f.label}<small>${f.why}</small></div><button class="btn sm" data-review="${a.id}">Review</button></div>`).join('') : '<div class="empty">Nothing flagged.</div>';
+
+    const s = engine.stats();
+    $('#sAgents').textContent = s.online; $('#sPts').textContent = s.points.toLocaleString();
+    $('#sQa').textContent = s.qa !== null ? s.qa + '%' : '—';
+    $('#sAtt').textContent = att.length; $('#sRew').textContent = rewards.length; $('#evCount').textContent = evCount;
+
+    $('#chals').innerHTML = chals.map(c => `<div class="chal"><div><div class="t">${c.t}</div><div class="d">${c.d}</div></div>
+      <div class="st"><span class="pill ${c.state==='active'?'good':'mute'}">${c.state}</span></div>
+      <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round(c.prog*100)}%"></i></div><span>${c.st} · ${c.reward}</span></div></div>`).join('');
+    $('#rewards').innerHTML = rewards.length ? rewards.map((r,i) => `<div class="rw"><div><b>${r.who}</b> · ${r.what}<small>${r.why}</small></div><div class="acts"><button class="btn sm pri" data-approve="${i}">Approve</button><button class="btn sm" data-decline="${i}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
+    $('#kudos').innerHTML = kudos.map(k => `<div class="rw"><div><b>${k.from}</b> → ${k.to}<small>“${k.note}” · ${k.t}</small></div></div>`).join('');
+  }
+
+  function readMix(){ return { quality:+$('#mQ').value, productivity:+$('#mP').value, adherence:+$('#mA').value }; }
+  function renderMix(){
+    const m = readMix();
+    $('#mQv').textContent = m.quality+'%'; $('#mPv').textContent = m.productivity+'%'; $('#mAv').textContent = m.adherence+'%';
+    const v = Arena.validateMix(m); $('#mixWarn').textContent = v.message;
+    const p = engine.preview(m);
+    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Hour in adherence</span><b>+${p.adherenceHour} pts</b>`;
+    return v.ok;
+  }
+
+  document.querySelectorAll('th[data-k]').forEach(th => th.addEventListener('click', () => { const k=th.dataset.k; if (sortKey===k) sortDir*=-1; else { sortKey=k; sortDir = (k==='rank'||k==='name'||k==='aht') ? 1 : -1; } render(); }));
+  if (sim) {
+    $('#pause').addEventListener('click', e => { if (sim.running) { sim.stop(); e.target.textContent='Resume stream'; } else { sim.start(); e.target.textContent='Pause stream'; } });
+    $('#speed').addEventListener('input', e => sim.setRate(+e.target.value));
+  } else { $('#pause').hidden = true; document.querySelector('.demo').hidden = true; }
+  ['mQ','mP','mA'].forEach(id => $('#'+id).addEventListener('input', renderMix));
+  $('#saveMix').addEventListener('click', async () => { if (!renderMix()) return;
+    if (engine.remote) { const r = await engine.saveMix(readMix()); toast(r.ok ? 'Scoring mix saved' : 'Not saved: ' + r.message); }
+    else { engine.setMix(readMix()); toast('Scoring mix saved for Billing team'); } });
+  $('#newChal').addEventListener('click', () => { $('#chalForm').hidden = !$('#chalForm').hidden; });
+  $('#cancelChal').addEventListener('click', () => { $('#chalForm').hidden = true; });
+  $('#fTemplate').addEventListener('change', e => { $('#fTarget').value = {esc:'5%', qa:'85', fcr:'80%', contest:'—', kudos:'3'}[e.target.value]; });
+  $('#chalForm').addEventListener('submit', e => { e.preventDefault();
+    const t = $('#fTemplate'); const label = t.options[t.selectedIndex].text.replace(/ \(.*\)/, '');
+    chals.push({t:`${label} · ${$('#fTarget').value}`, d:`${$('#fScope').value} · ${$('#fStart').value||'today'} to ${$('#fEnd').value||'Fri'}`, prog:0, st:'scheduled', reward:$('#fReward').value, state:'scheduled'});
+    $('#chalForm').hidden = true; toast('Challenge scheduled'); render(); });
+  document.addEventListener('click', e => {
+    const ap = e.target.closest('[data-approve]'), dc = e.target.closest('[data-decline]'), rv = e.target.closest('[data-review]');
+    if (ap) { const r = rewards.splice(+ap.dataset.approve,1)[0]; toast(`Approved ${r.what} for ${r.who}`); render(); }
+    if (dc) { const r = rewards.splice(+dc.dataset.decline,1)[0]; toast(`Declined ${r.what} for ${r.who}`); render(); }
+    if (rv) { toast(`Opening contact sample for ${engine.byId(rv.dataset.review).name} in Contact Lens`); }
+  });
+  $('#clock').textContent = now(); setInterval(() => { $('#clock').textContent = now(); render(); }, 30000);
+  setInterval(() => { const r = 3.2 + Math.random()*1.4; $('#sEsc').textContent = r.toFixed(1)+'%'; chals[0].st = r.toFixed(1)+'% now'; chals[0].prog = Math.max(.1, 1 - r/5*.6); $('#sEscStat').className = 'stat ' + (r<5?'good':'bad'); }, 6000);
+  const d = new Date(); $('#fStart').value = d.toISOString().slice(0,10); d.setDate(d.getDate()+5); $('#fEnd').value = d.toISOString().slice(0,10);
+  renderMix(); render();
+  if (sim) sim.start();
+  else engine.loadMix().then(m => { $('#mQ').value = m.quality; $('#mP').value = m.productivity; $('#mA').value = m.adherence; renderMix(); })
+    .then(() => engine.start(5)).then(render).catch(err => toast('API error: ' + err.message));
+})();
+</script>

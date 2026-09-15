@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Arena for Amazon Connect. Ingest from the agent event stream, single DynamoDB table, HTTP API for the agent panel, supervisor console and wallboard. Deploys into the customer's own account.
+
+Parameters:
+  ShardCount:
+    Type: Number
+    Default: 1
+    Description: One provisioned shard handles 1 MB/s in, enough for thousands of agents' state changes.
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: Origin of the hosted pages, for CORS. Lock this down in production.
+  JwtIssuer:
+    Type: String
+    Default: ''
+    Description: OIDC issuer URL (Cognito user pool or the customer's IdP). Leave empty to deploy the API without auth for a pilot.
+  JwtAudience:
+    Type: String
+    Default: ''
+    Description: Client id expected in the token audience.
+
+Conditions:
+  UseJwt: !Not [!Equals [!Ref JwtIssuer, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]               # Graviton: roughly 20% cheaper per ms
+    MemorySize: 256
+    Timeout: 15
+    CodeUri: src/
+    Environment:
+      Variables:
+        TABLE: !Ref Table
+        TTL_DAYS: '90'
+
+Resources:
+  AgentEventStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub arena-agent-events-${AWS::StackName}
+      ShardCount: !Ref ShardCount        # provisioned, not on-demand: about a third of the price at this volume
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub arena-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-ingest-${AWS::StackName}
+      Handler: ingest.handler
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - KinesisStreamReadPolicy: { StreamName: !Ref AgentEventStream }
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt AgentEventStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 100
+            MaximumBatchingWindowInSeconds: 5   # a few seconds of latency buys far fewer invocations
+            BisectBatchOnFunctionError: true
+            MaximumRetryAttempts: 3
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            # No enhanced fan-out: shared throughput is free and plenty for one reader.
+
+  Api:
+    Type: AWS::Serverless::HttpApi         # HTTP API, not REST: $1.00 per million requests instead of $3.50
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowMethods: [GET, PUT, POST, OPTIONS]
+        AllowHeaders: [content-type, authorization]
+      Auth: !If
+        - UseJwt
+        - DefaultAuthorizer: Jwt
+          Authorizers:
+            Jwt:
+              IdentitySource: $request.header.Authorization
+              JwtConfiguration:
+                issuer: !Ref JwtIssuer
+                audience: [!Ref JwtAudience]
+        - !Ref AWS::NoValue
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-api-${AWS::StackName}
+      Handler: api.handler
+      Environment:
+        Variables:
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          AUTH_MODE: !If [UseJwt, jwt, none]
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+      Events:
+        Any:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  StreamArn:
+    Description: Set this as the agent event stream target in the Connect console (Data streaming).
+    Value: !GetAtt AgentEventStream.Arn
+  ApiUrl:
+    Description: Base URL for the pages. Open a page with ?api=<this url>&team=<routing profile name>.
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com
+  TableName:
+    Value: !Ref Table

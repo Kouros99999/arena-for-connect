@@ -1,0 +1,154 @@
+<title>Connect Arena Wallboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Floor display: one deliberate dark world regardless of viewer theme. Every color is explicit. */
+:root{
+  --bg:#0B0E13; --panel:#12161D; --panel-2:#181D26; --ink:#F1F3F7; --ink-2:#AEB7C6; --muted:#6F7A8C; --line:#232A36;
+  --accent:#3FD0C2; --accent-dim:#1E5F59; --gold:#F2C14E; --silver:#C9D1DD; --bronze:#D29A6B;
+  --good:#5FD38D; --bad:#F07A7A; --flash:#2A2F1C;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",system-ui,sans-serif;overflow:hidden}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.wall{height:100vh;display:grid;grid-template-rows:auto 1fr auto;gap:1.6vh;padding:2.2vh 2.4vw}
+
+.top{display:flex;align-items:baseline;gap:2vw}
+.top .team{font-family:Manrope,sans-serif;font-weight:800;font-size:4.2vh;letter-spacing:-.02em}
+.top .sub{color:var(--muted);font-size:2.2vh;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.top .clock{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:3.6vh;color:var(--ink-2)}
+
+.main{display:grid;grid-template-columns:5fr 4fr;gap:1.6vw;min-height:0}
+.board{background:var(--panel);border-radius:1.2vh;padding:2.2vh 2.4vw;display:grid;grid-template-rows:auto 1fr;min-height:0}
+.hd{display:flex;align-items:baseline;gap:1vw;margin-bottom:1.4vh}
+.hd h2{margin:0;font-family:Manrope,sans-serif;font-weight:700;font-size:2.6vh;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.hd span{color:var(--muted);font-size:2vh}
+.rows{display:grid;grid-template-rows:repeat(8,1fr);gap:.6vh;min-height:0}
+.row{display:grid;grid-template-columns:5vh 6.2vh 1fr auto;gap:1.6vw;align-items:center;padding:0 1.2vw;border-radius:.8vh;background:var(--panel-2);transition:background .8s}
+.row.flash{background:var(--flash)}
+.row .rk{font-family:"IBM Plex Mono",monospace;font-size:3vh;color:var(--muted)}
+.row:nth-child(1) .rk{color:var(--gold)} .row:nth-child(2) .rk{color:var(--silver)} .row:nth-child(3) .rk{color:var(--bronze)}
+.row:nth-child(1){background:linear-gradient(90deg,#2A2410 0%,var(--panel-2) 60%)}
+.av{width:6.2vh;height:6.2vh;border-radius:50%;display:grid;place-items:center;font-family:Manrope,sans-serif;font-weight:800;font-size:2.4vh;color:#fff}
+.row .nm{font-family:Manrope,sans-serif;font-weight:700;font-size:3.4vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.01em}
+.row .nm small{display:block;font-family:"Source Sans 3",sans-serif;font-weight:400;font-size:1.9vh;color:var(--muted);letter-spacing:0}
+.row .pt{font-family:Manrope,sans-serif;font-weight:800;font-size:4.4vh;letter-spacing:-.03em;text-align:right}
+.row .pt .d{display:block;font-family:"IBM Plex Mono",monospace;font-size:1.8vh;font-weight:400;letter-spacing:0;color:var(--good);height:2vh}
+
+.side{display:grid;grid-template-rows:auto 1fr auto;gap:1.6vh;min-height:0}
+.goal{background:var(--panel);border-radius:1.2vh;padding:2.2vh 2.4vw}
+.goal .t{font-family:Manrope,sans-serif;font-weight:700;font-size:2.8vh;letter-spacing:-.01em;margin-bottom:.4vh}
+.goal .big{display:flex;align-items:baseline;gap:1vw}
+.goal .v{font-family:Manrope,sans-serif;font-weight:800;font-size:9vh;letter-spacing:-.04em;line-height:1;color:var(--accent)}
+.goal .v.over{color:var(--bad)}
+.goal .tg{color:var(--muted);font-size:2.4vh}
+.goal .bar{height:1.6vh;background:var(--line);border-radius:.8vh;overflow:hidden;margin-top:1.2vh}
+.goal .bar i{display:block;height:100%;background:var(--accent);border-radius:.8vh;transition:width 1s}
+.goal .m{display:flex;justify-content:space-between;color:var(--ink-2);font-size:2vh;margin-top:.8vh}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:1.2vh;min-height:0}
+.stat{background:var(--panel);border-radius:1.2vh;padding:1.8vh 1.6vw;display:flex;flex-direction:column;justify-content:center}
+.stat .v{font-family:Manrope,sans-serif;font-weight:800;font-size:6.2vh;letter-spacing:-.03em;line-height:1}
+.stat .l{color:var(--muted);font-size:2vh;margin-top:.6vh;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+.stat.gold .v{color:var(--gold)}
+
+.moment{background:var(--accent-dim);border-radius:1.2vh;padding:2vh 2.4vw;display:grid;grid-template-columns:auto 1fr;gap:1.4vw;align-items:center;min-height:11vh}
+.moment .ico{width:6.6vh;height:6.6vh;border-radius:50%;background:var(--accent);display:grid;place-items:center;font-family:Manrope,sans-serif;font-weight:800;font-size:3vh;color:#0B0E13}
+.moment .w{font-size:2.9vh;line-height:1.3}
+.moment .w b{font-family:Manrope,sans-serif;font-weight:800}
+.moment .w small{display:block;color:var(--ink-2);font-size:2vh;margin-top:.3vh}
+
+.ticker{background:var(--panel);border-radius:1.2vh;height:5.4vh;overflow:hidden;position:relative;display:flex;align-items:center}
+.ticker .lab{font-family:"IBM Plex Mono",monospace;font-size:1.8vh;letter-spacing:.12em;color:var(--muted);padding:0 1.4vw;border-right:1px solid var(--line);height:100%;display:flex;align-items:center;flex:none;background:var(--panel);z-index:1}
+.ticker .track{white-space:nowrap;font-size:2.3vh;color:var(--ink-2);animation:scroll 40s linear infinite;padding-left:1vw}
+.ticker .track b{color:var(--ink);font-weight:600}
+.ticker .track span{margin-right:3.5vw}
+@keyframes scroll{from{transform:translateX(100vw)}to{transform:translateX(-100%)}}
+@media (prefers-reduced-motion:reduce){.ticker .track{animation:none}.goal .bar i,.row{transition:none}}
+</style>
+
+<div class="wall">
+  <div class="top">
+    <span class="team">Billing team</span>
+    <span class="sub">Arena · today</span>
+    <span class="clock num" id="clock">09:41</span>
+  </div>
+
+  <div class="main">
+    <div class="board">
+      <div class="hd"><h2>Leaderboard</h2><span id="updated">live</span></div>
+      <div class="rows" id="rows"></div>
+    </div>
+
+    <div class="side">
+      <div class="goal">
+        <div class="t">Keep escalations under 5% this week</div>
+        <div class="big"><span class="v num" id="esc">3.8%</span><span class="tg">target 5.0% · ends Fri</span></div>
+        <div class="bar"><i id="escBar" style="width:60%"></i></div>
+        <div class="m"><span>Team is <b id="escState">on track</b></span><span>+150 pts each if held</span></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="v num" id="pts">0</div><div class="l">team points</div></div>
+        <div class="stat"><div class="v num" id="qa">—</div><div class="l">avg evaluation</div></div>
+        <div class="stat"><div class="v num" id="handled">0</div><div class="l">contacts handled</div></div>
+        <div class="stat gold"><div class="v num" id="streak">7</div><div class="l">day team streak</div></div>
+      </div>
+
+      <div class="moment" id="moment">
+        <div class="ico">★</div>
+        <div class="w"><b>Aisha Rahman</b> unlocked First 95<small>Evaluation scored 96% · 09:31</small></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ticker"><span class="lab">KUDOS</span><div class="track" id="track"></div></div>
+</div>
+
+<script src="arena-engine.js"></script>
+<script>
+(function(){
+  const conn = Arena.connect();
+  const engine = conn.engine;
+  const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
+  const kudos = [{f:'Marcus',t:'Grace Achieng',n:'took my overflow call'},{f:'Supervisor Dana',t:'Priya Natarajan',n:'calm under pressure'},{f:'Sofia',t:'Ethan Cole',n:'thanks for the handoff'}];
+  const delta = {};
+  let leader = null;
+  const $ = s => document.querySelector(s); const pad = n => String(n).padStart(2,'0');
+  const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+  function moment(ico, html, sub){ $('#moment').innerHTML = `<div class="ico">${ico}</div><div class="w">${html}<small>${sub} · ${now()}</small></div>`; }
+
+  engine.on(r => {
+    const ev = r.event, a = r.agent;
+    if (ev.EventType === 'EVALUATION_SUBMITTED' && ev.Score >= 95) moment('★', `<b>${a.name}</b> scored ${ev.Score}% on an evaluation`, 'First 95 badge');
+    if (ev.EventType === 'KUDOS') { kudos.unshift({f:ev.From, t:a.name, n:ev.Note}); kudos.length = Math.min(kudos.length, 8); renderTicker(); moment('♥', `<b>${ev.From}</b> sent kudos to <b>${a.name}</b>`, `“${ev.Note}”`); }
+    delta[a.id] = r.points; setTimeout(() => { delta[a.id] = 0; }, 4000);
+    render(a);
+  });
+
+  function render(changed){
+    const rows = engine.leaderboard('today').slice(0, 8);
+    if (leader !== null && rows[0].agent.id !== leader) moment('▲', `<b>${rows[0].agent.name}</b> takes the lead`, `${rows[0].points.toLocaleString()} points`);
+    leader = rows[0].agent.id;
+    $('#rows').innerHTML = rows.map(r => { const a = r.agent, d = delta[a.id] || 0; return `<div class="row ${changed===a?'flash':''}" data-id="${a.id}">
+      <span class="rk num">${r.rank}</span>
+      <span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>
+      <span class="nm">${a.name}<small>${a.handled} contacts · ${r.qa!==null?r.qa+'% QA':'no evals yet'}</small></span>
+      <span class="pt num">${r.points.toLocaleString()}<span class="d">${d>0?'+'+d:d<0?d:''}</span></span></div>`; }).join('');
+    if (changed) setTimeout(() => { const el = $('#rows').querySelector(`[data-id="${changed.id}"]`); el && el.classList.remove('flash'); }, 900);
+    const s = engine.stats();
+    $('#pts').textContent = s.points.toLocaleString();
+    $('#qa').textContent = s.qa !== null ? s.qa + '%' : '—';
+    $('#handled').textContent = s.handled;
+    $('#updated').textContent = 'updated ' + now();
+  }
+  function renderTicker(){ $('#track').innerHTML = kudos.map(k => `<span><b>${k.f}</b> → <b>${k.t}</b>: “${k.n}”</span>`).join(''); }
+
+  setInterval(() => { const r = 3.2 + Math.random()*1.6, over = r >= 5; $('#esc').textContent = r.toFixed(1)+'%'; $('#esc').classList.toggle('over', over); $('#escBar').style.width = Math.max(8, 100 - r/5*60)+'%'; $('#escState').textContent = over ? 'over target' : 'on track'; }, 6000);
+  $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
+  renderTicker();
+  if (sim) { render(); sim.start(); }
+  else engine.start(5).then(render).catch(err => { $('#updated').textContent = 'API error: ' + err.message; });
+})();
+</script>
