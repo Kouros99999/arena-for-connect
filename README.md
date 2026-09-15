@@ -2,7 +2,7 @@
 
 Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the agent workspace, a supervisor console, and a floor wallboard. Deploys into the customer's own AWS account. Agent data never leaves it.
 
-**Live demo (simulated data):** https://kouros99999.github.io/connect-arena/
+**Live demo (simulated data):** https://kouros99999.github.io/arena-for-connect/
 
 ## What is here
 
