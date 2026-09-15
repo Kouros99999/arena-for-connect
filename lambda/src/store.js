@@ -46,6 +46,9 @@ function planWrites(ev, points, now) {
   const isContact = ev.EventType === 'CONTACT_HANDLED', isEval = ev.EventType === 'EVALUATION_SUBMITTED';
   const writes = [];
 
+  // Optional idempotency marker. A conditional put that fails aborts the rest of the plan.
+  if (ev.DedupKey) writes.push({ op: 'put', item: { pk, sk: `SEEN#${ev.DedupKey}`, at: ts, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 }, condition: 'attribute_not_exists(pk)' });
+
   writes.push({ op: 'put', item: { pk, sk: `EV#${ts}#${ev.EventType}`, ...ev, points, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
 
   const liveSet = ['lastEvent = :ts', 'team = :team', 'username = if_not_exists(username, :user)'];
@@ -69,12 +72,22 @@ function planWrites(ev, points, now) {
   return writes;
 }
 
+/** Applies a plan in order. Returns false (and stops) if a conditional write finds the item already there. */
 async function apply(writes) {
   const d = db();
   for (const w of writes) {
-    if (w.op === 'put') await d.send(new cmds.PutCommand({ TableName: TABLE, Item: w.item }));
-    else await d.send(new cmds.UpdateCommand({ TableName: TABLE, Key: w.key, UpdateExpression: w.expr, ExpressionAttributeValues: w.values }));
+    if (w.op === 'put') {
+      try { await d.send(new cmds.PutCommand({ TableName: TABLE, Item: w.item, ConditionExpression: w.condition })); }
+      catch (e) { if (e.name === 'ConditionalCheckFailedException') return false; throw e; }
+    } else await d.send(new cmds.UpdateCommand({ TableName: TABLE, Key: w.key, UpdateExpression: w.expr, ExpressionAttributeValues: w.values }));
   }
+  return true;
+}
+
+/** LIVE row for one agent, or null. Used to attach team and username to events that do not carry them. */
+async function getLive(arn) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: 'LIVE' } }));
+  return r.Item || null;
 }
 
 async function queryGsi(gsi1pk) {
@@ -118,4 +131,4 @@ async function putMix(mix) {
   await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'MIX', mix, updatedAt: new Date().toISOString() } }));
 }
 
-module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getTeam, mergeTeam, listEvents, getMix, putMix };
+module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix };

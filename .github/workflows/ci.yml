@@ -13,4 +13,4 @@ jobs:
         with:
           node-version: 22
       - run: node lambda/build.js
-      - run: node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js
+      - run: node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js

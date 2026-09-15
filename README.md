@@ -14,6 +14,7 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `prototype/arena-engine.js` | Shared scoring engine: rules, mix, levels, badges, anomaly flags, simulator, remote client |
 | `prototype/serve.js` | Local dev server with a mock of the API under `/api` |
 | `lambda/src/ingest.js` | Lambda on the Connect agent event stream (Kinesis) |
+| `lambda/src/evaluations.js` | Lambda on Contact Lens evaluation output (S3 via EventBridge), deduped per evaluation |
 | `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
@@ -33,7 +34,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js
 ```
 
 ## Deploy into an AWS account
@@ -43,6 +44,8 @@ cd lambda && node build.js && sam build && sam deploy --guided
 ```
 
 Then in the Connect console: enable agent event streaming to the stream ARN the stack outputs, and add the hosted panel URL as a third-party application in the agent workspace. Open any page with `?api=<ApiUrl>&team=<routing profile name>`.
+
+For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
 
 ## Scoring in one paragraph
 

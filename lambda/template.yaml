@@ -19,9 +19,18 @@ Parameters:
     Type: String
     Default: ''
     Description: Client id expected in the token audience.
+  EvaluationsBucket:
+    Type: String
+    Default: ''
+    Description: Name of the existing S3 bucket Connect writes Contact Lens evaluations to. Enable "Send notifications to Amazon EventBridge" on that bucket. Leave empty to skip evaluation ingest.
+  EvaluationsPrefix:
+    Type: String
+    Default: Evaluations/
+    Description: Key prefix Connect uses for evaluation output in that bucket.
 
 Conditions:
   UseJwt: !Not [!Equals [!Ref JwtIssuer, '']]
+  UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
 
 Globals:
   Function:
@@ -88,6 +97,30 @@ Resources:
             MaximumRetryAttempts: 3
             FunctionResponseTypes: [ReportBatchItemFailures]
             # No enhanced fan-out: shared throughput is free and plenty for one reader.
+
+  EvaluationsFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseEvaluations
+    Properties:
+      FunctionName: !Sub arena-evaluations-${AWS::StackName}
+      Handler: evaluations.handler
+      Environment:
+        Variables:
+          ACCOUNT_ID: !Ref AWS::AccountId
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - S3ReadPolicy: { BucketName: !Ref EvaluationsBucket }
+      Events:
+        ObjectCreated:
+          Type: EventBridgeRule            # works on an existing bucket; no bucket notification config to fight over
+          Properties:
+            Pattern:
+              source: [aws.s3]
+              detail-type: [Object Created]
+              detail:
+                bucket: { name: [!Ref EvaluationsBucket] }
+                object: { key: [{ prefix: !Ref EvaluationsPrefix }] }
+            RetryPolicy: { MaximumRetryAttempts: 3, MaximumEventAgeInSeconds: 3600 }
 
   Api:
     Type: AWS::Serverless::HttpApi         # HTTP API, not REST: $1.00 per million requests instead of $3.50
