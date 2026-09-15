@@ -11,14 +11,19 @@ Parameters:
     Type: String
     Default: '*'
     Description: Origin of the hosted pages, for CORS. Lock this down in production.
+  AuthMode:
+    Type: String
+    Default: cognito
+    AllowedValues: [cognito, external, none]
+    Description: cognito creates a user pool in this stack (default). external uses JwtIssuer/JwtAudience from the customer's IdP. none leaves the API open, for a pilot only.
   JwtIssuer:
     Type: String
     Default: ''
-    Description: OIDC issuer URL (Cognito user pool or the customer's IdP). Leave empty to deploy the API without auth for a pilot.
+    Description: AuthMode=external only. OIDC issuer URL of the customer's IdP.
   JwtAudience:
     Type: String
     Default: ''
-    Description: Client id expected in the token audience.
+    Description: AuthMode=external only. Client id expected in the token audience.
   EvaluationsBucket:
     Type: String
     Default: ''
@@ -33,7 +38,8 @@ Parameters:
     Description: Access URL of the Connect instance, e.g. https://myinstance.my.connect.aws, so the agent workspace may frame the pages. Leave empty to allow any *.my.connect.aws and *.awsapps.com instance.
 
 Conditions:
-  UseJwt: !Not [!Equals [!Ref JwtIssuer, '']]
+  UseCognito: !Equals [!Ref AuthMode, cognito]
+  UseJwt: !Not [!Equals [!Ref AuthMode, none]]
   UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
 
@@ -141,9 +147,70 @@ Resources:
             Jwt:
               IdentitySource: $request.header.Authorization
               JwtConfiguration:
-                issuer: !Ref JwtIssuer
-                audience: [!Ref JwtAudience]
+                issuer: !If [UseCognito, !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}', !Ref JwtIssuer]
+                audience: [!If [UseCognito, !Ref UserPoolClient, !Ref JwtAudience]]
         - !Ref AWS::NoValue
+
+  # ---------- Identity: Cognito user pool, one user per Connect agent ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Condition: UseCognito
+    Properties:
+      UserPoolName: !Sub arena-${AWS::StackName}
+      UsernameConfiguration: { CaseSensitive: false }
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true }   # no self sign-up; users are synced from Connect
+      Policies:
+        PasswordPolicy: { MinimumLength: 12, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: false }
+      Schema:
+        - { Name: email, AttributeDataType: String, Mutable: true, Required: false }
+        - { Name: name, AttributeDataType: String, Mutable: true, Required: false }
+        - { Name: agentArn, AttributeDataType: String, Mutable: true }   # the Connect agent this user is; read by the pages as custom:agentArn
+        - { Name: team, AttributeDataType: String, Mutable: true }       # routing profile name, so the panel opens on the right team
+      UserPoolTags: { app: arena }
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Condition: UseCognito
+    Properties:
+      ClientName: arena-pages
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false                                  # public client: browser uses authorization code + PKCE
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]                  # add a SAML/OIDC provider here to federate with the customer's IdP
+      CallbackURLs:
+        - !Sub https://${Distribution.DomainName}/agent-panel.html
+        - !Sub https://${Distribution.DomainName}/supervisor-console.html
+        - !Sub https://${Distribution.DomainName}/wallboard.html
+        - http://localhost:8765/agent-panel.html
+        - http://localhost:8765/supervisor-console.html
+        - http://localhost:8765/wallboard.html
+      LogoutURLs: [!Sub 'https://${Distribution.DomainName}/']
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 12
+      TokenValidityUnits: { AccessToken: minutes, IdToken: minutes, RefreshToken: hours }   # a shift, then sign in again
+      ReadAttributes: [email, name, 'custom:agentArn', 'custom:team']
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: UseCognito
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub arena-${AWS::StackName}-${AWS::AccountId}
+
+  SupervisorsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: UseCognito
+    Properties: { UserPoolId: !Ref UserPool, GroupName: supervisors, Description: May change the scoring mix and approve rewards }
+
+  AgentsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Condition: UseCognito
+    Properties: { UserPoolId: !Ref UserPool, GroupName: agents, Description: Sees the panel and may send kudos }
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -207,8 +274,8 @@ Resources:
             Override: true
             ContentSecurityPolicy: !If
               - PinInstance
-              - !Sub "frame-ancestors 'self' ${ConnectInstanceUrl}; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
-              - "frame-ancestors 'self' https://*.my.connect.aws https://*.awsapps.com; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+              - !Sub "frame-ancestors 'self' ${ConnectInstanceUrl}; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.amazoncognito.com"
+              - "frame-ancestors 'self' https://*.my.connect.aws https://*.awsapps.com; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.amazoncognito.com"
           ContentTypeOptions: { Override: true }
           ReferrerPolicy: { Override: true, ReferrerPolicy: strict-origin-when-cross-origin }
           StrictTransportSecurity: { Override: true, AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true }
@@ -279,3 +346,13 @@ Outputs:
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com
   TableName:
     Value: !Ref Table
+  UserPoolId:
+    Condition: UseCognito
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Condition: UseCognito
+    Value: !Ref UserPoolClient
+  AuthDomain:
+    Condition: UseCognito
+    Description: Hosted sign-in domain. deploy-pages.js writes it into config.js.
+    Value: !Sub https://arena-${AWS::StackName}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com

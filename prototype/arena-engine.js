@@ -232,14 +232,16 @@
   // depending on ?api=<base url>&team=<routing profile>[&agent=<arn>][&token=<jwt>] in the page URL.
   function createRemoteEngine(opts) {
     const base = opts.api.replace(/\/$/, ''), team = opts.team || 'unassigned';
-    const headers = Object.assign({ 'content-type': 'application/json' }, opts.token ? { authorization: 'Bearer ' + opts.token } : {});
+    // Token comes from a static value or, when sign-in is configured, from a provider that can refresh it.
+    const tokenProvider = opts.tokenProvider || (async () => opts.token || null);
+    const headersFor = async () => { const t = await tokenProvider(); return Object.assign({ 'content-type': 'application/json' }, t ? { authorization: 'Bearer ' + t } : {}); };
     const engine = createEngine({ agents: [] });
     const listeners = [];
     let mix = Object.assign({}, DEFAULT_MIX), lastSeen = {}, timer = null;
     const hueFor = (id) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 
     async function refresh() {
-      const r = await fetch(`${base}/teams/${encodeURIComponent(team)}/agents`, { headers });
+      const r = await fetch(`${base}/teams/${encodeURIComponent(team)}/agents`, { headers: await headersFor() });
       if (!r.ok) throw new Error('arena api ' + r.status);
       const body = await r.json();
       engine.agents.length = 0;
@@ -252,18 +254,18 @@
       return engine.agents;
     }
     async function events(agentId, limit) {
-      const r = await fetch(`${base}/agents/${encodeURIComponent(agentId)}/events?limit=${limit || 10}`, { headers });
+      const r = await fetch(`${base}/agents/${encodeURIComponent(agentId)}/events?limit=${limit || 10}`, { headers: await headersFor() });
       return r.ok ? (await r.json()).events : [];
     }
-    async function loadMix() { const r = await fetch(`${base}/config/mix`, { headers }); if (r.ok) mix = (await r.json()).mix; return mix; }
+    async function loadMix() { const r = await fetch(`${base}/config/mix`, { headers: await headersFor() }); if (r.ok) mix = (await r.json()).mix; return mix; }
     async function saveMix(m) {
-      const r = await fetch(`${base}/config/mix`, { method: 'PUT', headers, body: JSON.stringify(m) });
+      const r = await fetch(`${base}/config/mix`, { method: 'PUT', headers: await headersFor(), body: JSON.stringify(m) });
       const body = await r.json();
       if (r.ok) mix = body.mix;
       return { ok: r.ok, message: body.error || body.warning || '' };
     }
-    async function kudos(to, note) { const r = await fetch(`${base}/kudos`, { method: 'POST', headers, body: JSON.stringify({ to, note, team }) }); return r.ok; }
-    function start(seconds) { stop(); timer = setInterval(() => refresh().catch(console.error), (seconds || 5) * 1000); return refresh(); }
+    async function kudos(to, note) { const r = await fetch(`${base}/kudos`, { method: 'POST', headers: await headersFor(), body: JSON.stringify({ to, note, team }) }); return r.ok; }
+    async function start(seconds) { stop(); if (opts.ready) await opts.ready(); timer = setInterval(() => refresh().catch(console.error), (seconds || 5) * 1000); return refresh(); }
     function stop() { if (timer) clearInterval(timer); timer = null; }
 
     return Object.assign({}, engine, {
@@ -276,11 +278,20 @@
   }
 
   // Query string wins, then window.ARENA_CONFIG (written by config.js at deploy time), then the simulator.
-  function connect(search, config) {
+  function connect(search, config, auth) {
     const p = new URLSearchParams(search !== undefined ? search : (typeof location !== 'undefined' ? location.search : ''));
     const c = config || (typeof window !== 'undefined' && window.ARENA_CONFIG) || {};
-    const api = p.get('api') || c.api, team = p.get('team') || c.team, token = p.get('token') || c.token, agent = p.get('agent') || c.agent;
-    if (api) return { engine: createRemoteEngine({ api, team, token }), agentId: agent, remote: true };
+    const a = auth || (typeof ArenaAuth !== 'undefined' ? ArenaAuth : null);
+    const signedIn = !!(a && c.auth && a.enabled());
+    const api = p.get('api') || c.api, token = p.get('token') || c.token;
+    if (api) {
+      // With sign-in, identity and team come from the token's custom claims unless the URL overrides them.
+      const claims = () => (signedIn && a.claims()) || {};
+      const engine = createRemoteEngine({ api, token, tokenProvider: signedIn ? () => a.token() : undefined, ready: signedIn ? () => a.ready() : undefined,
+        get team() { return p.get('team') || c.team || claims()['custom:team'] || 'unassigned'; } });
+      return { engine, remote: true, signedIn, get agentId() { return p.get('agent') || c.agent || claims()['custom:agentArn'] || null; },
+        get isSupervisor() { return signedIn ? a.isSupervisor(claims()) : true; } };
+    }
     const engine = seedTeam(createEngine());
     return { engine, agentId: engine.agents[0].id, remote: false };
   }

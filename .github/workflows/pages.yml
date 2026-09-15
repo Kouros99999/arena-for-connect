@@ -25,7 +25,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p site
-          cp prototype/*.html prototype/arena-engine.js site/
+          cp prototype/*.html prototype/arena-engine.js prototype/arena-auth.js site/
           echo 'window.ARENA_CONFIG = {};' > site/config.js
           cat > site/index.html <<'EOF'
           <!doctype html><meta charset="utf-8"><title>Arena for Amazon Connect</title>

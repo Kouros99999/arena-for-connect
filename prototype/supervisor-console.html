@@ -212,6 +212,7 @@ tr.flash td{background:var(--flash)}
 <div class="toast" id="toast"></div>
 
 <script src="config.js"></script>
+<script src="arena-auth.js"></script>
 <script src="arena-engine.js"></script>
 <script>
 (function(){
@@ -294,7 +295,10 @@ tr.flash td{background:var(--flash)}
   if (sim) {
     $('#pause').addEventListener('click', e => { if (sim.running) { sim.stop(); e.target.textContent='Resume stream'; } else { sim.start(); e.target.textContent='Pause stream'; } });
     $('#speed').addEventListener('input', e => sim.setRate(+e.target.value));
-  } else { $('#pause').hidden = true; document.querySelector('.demo').hidden = true; }
+  } else {
+    $('#pause').hidden = true; document.querySelector('.demo').hidden = true;
+    if (!conn.isSupervisor) { $('#saveMix').disabled = true; $('#saveMix').title = 'Supervisors only'; $('#mixWarn').textContent = 'Read only: your account is not in the supervisors group.'; }
+  }
   ['mQ','mP','mA'].forEach(id => $('#'+id).addEventListener('input', renderMix));
   $('#saveMix').addEventListener('click', async () => { if (!renderMix()) return;
     if (engine.remote) { const r = await engine.saveMix(readMix()); toast(r.ok ? 'Scoring mix saved' : 'Not saved: ' + r.message); }

@@ -19,8 +19,11 @@ if (!bucket || !dist) { console.error('stack has no SiteBucket/DistributionId ou
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'arena-site-'));
 const src = path.join(__dirname, '..', 'prototype');
-for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'arena-engine.js']) fs.copyFileSync(path.join(src, f), path.join(tmp, f));
-fs.writeFileSync(path.join(tmp, 'config.js'), `window.ARENA_CONFIG = ${JSON.stringify({ api: '/api', team })};\n`);
+for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'arena-engine.js', 'arena-auth.js']) fs.copyFileSync(path.join(src, f), path.join(tmp, f));
+const config = { api: '/api', team };
+if (out('AuthDomain') && out('UserPoolClientId')) config.auth = { domain: out('AuthDomain'), clientId: out('UserPoolClientId') };
+fs.writeFileSync(path.join(tmp, 'config.js'), `window.ARENA_CONFIG = ${JSON.stringify(config)};\n`);
+console.log('config:', JSON.stringify(config));
 fs.writeFileSync(path.join(tmp, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Arena for Amazon Connect</title>
 <style>body{font-family:system-ui;max-width:40rem;margin:4rem auto;padding:0 1rem;line-height:1.5}a{display:block;margin:.4rem 0}</style>
 <h1>Arena for Amazon Connect</h1>

@@ -34,7 +34,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js prototype/arena-auth.test.js
 ```
 
 ## Deploy into an AWS account
@@ -47,6 +47,17 @@ node lambda/deploy-pages.js <stack name> --team "Billing team"
 The stack creates the stream, the table, the Lambdas, the HTTP API, and a private S3 bucket behind CloudFront. The second command uploads the three pages plus a `config.js` that points them at `/api` on the same origin, so there is no CORS and one URL to register.
 
 Then in the Connect console: enable agent event streaming to the stream ARN the stack outputs, and add `<SiteUrl>/agent-panel.html` as a third-party application in the agent workspace. The CloudFront response headers allow framing only from `*.my.connect.aws` and `*.awsapps.com`, or from the single instance you pass as `ConnectInstanceUrl`.
+
+### Sign-in
+
+By default the stack creates a Cognito user pool with two groups, `supervisors` and `agents`, and the HTTP API accepts only its tokens. The pages sign in through the Cognito hosted UI with authorization code and PKCE; each user carries the Connect agent ARN and routing profile as custom attributes, so the panel opens on the right agent and team with no query string. Create the users from the Connect directory:
+
+```bash
+node lambda/sync-users.js <stack name> --instance <connect instance id> --dry-run
+node lambda/sync-users.js <stack name> --instance <connect instance id>
+```
+
+Users whose Connect security profile name contains "supervisor" or "admin" land in the supervisors group. To use the customer's own identity provider instead, either add it as a federated provider on the pool, or deploy with `AuthMode=external` and their OIDC issuer and audience. `AuthMode=none` leaves the API open and is for a pilot only.
 
 For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
 
