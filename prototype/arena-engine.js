@@ -275,9 +275,12 @@
     });
   }
 
-  function connect(search) {
+  // Query string wins, then window.ARENA_CONFIG (written by config.js at deploy time), then the simulator.
+  function connect(search, config) {
     const p = new URLSearchParams(search !== undefined ? search : (typeof location !== 'undefined' ? location.search : ''));
-    if (p.get('api')) return { engine: createRemoteEngine({ api: p.get('api'), team: p.get('team'), token: p.get('token') }), agentId: p.get('agent'), remote: true };
+    const c = config || (typeof window !== 'undefined' && window.ARENA_CONFIG) || {};
+    const api = p.get('api') || c.api, team = p.get('team') || c.team, token = p.get('token') || c.token, agent = p.get('agent') || c.agent;
+    if (api) return { engine: createRemoteEngine({ api, team, token }), agentId: agent, remote: true };
     const engine = seedTeam(createEngine());
     return { engine, agentId: engine.agents[0].id, remote: false };
   }

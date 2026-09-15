@@ -66,6 +66,14 @@ test('badges', () => {
   assert.equal(b.streak7, true); assert.equal(b.team, true); assert.equal(b.first95, false); assert.equal(b.fifty, false);
 });
 
+test('connect: query string beats config, config beats simulator', () => {
+  assert.equal(Arena.connect('', {}).remote, false);
+  const viaConfig = Arena.connect('', { api: '/api', team: 'Billing team' });
+  assert.equal(viaConfig.remote, true); assert.equal(viaConfig.engine.remote, true);
+  const viaQuery = Arena.connect('?api=http://x/api&team=Support&agent=a9', { api: '/api', team: 'Billing team' });
+  assert.equal(viaQuery.agentId, 'a9');
+});
+
 test('simulator fires typed events through the engine', () => {
   const e = Arena.createEngine();
   const s = Arena.createSimulator(e);

@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir -p site
           cp prototype/*.html prototype/arena-engine.js site/
+          echo 'window.ARENA_CONFIG = {};' > site/config.js
           cat > site/index.html <<'EOF'
           <!doctype html><meta charset="utf-8"><title>Arena for Amazon Connect</title>
           <style>body{font-family:system-ui;max-width:40rem;margin:4rem auto;padding:0 1rem;line-height:1.5}a{display:block;margin:.4rem 0}</style>

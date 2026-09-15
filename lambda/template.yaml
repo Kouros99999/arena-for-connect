@@ -27,10 +27,15 @@ Parameters:
     Type: String
     Default: Evaluations/
     Description: Key prefix Connect uses for evaluation output in that bucket.
+  ConnectInstanceUrl:
+    Type: String
+    Default: ''
+    Description: Access URL of the Connect instance, e.g. https://myinstance.my.connect.aws, so the agent workspace may frame the pages. Leave empty to allow any *.my.connect.aws and *.awsapps.com instance.
 
 Conditions:
   UseJwt: !Not [!Equals [!Ref JwtIssuer, '']]
   UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
+  PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
 
 Globals:
   Function:
@@ -159,12 +164,118 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
+  # ---------- Hosting: private S3 bucket behind CloudFront, API on the same origin under /api ----------
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub arena-site-${AWS::StackName}-${AWS::AccountId}
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
+  SiteAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub arena-oac-${AWS::StackName}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SiteHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub arena-headers-${AWS::StackName}
+        SecurityHeadersConfig:
+          # No X-Frame-Options: the agent workspace loads the panel in an iframe. frame-ancestors does the gating.
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !If
+              - PinInstance
+              - !Sub "frame-ancestors 'self' ${ConnectInstanceUrl}; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+              - "frame-ancestors 'self' https://*.my.connect.aws https://*.awsapps.com; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+          ContentTypeOptions: { Override: true }
+          ReferrerPolicy: { Override: true, ReferrerPolicy: strict-origin-when-cross-origin }
+          StrictTransportSecurity: { Override: true, AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub Arena for Amazon Connect (${AWS::StackName})
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100          # North America and Europe edges; raise if agents sit elsewhere
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteAccessControl.Id
+            S3OriginConfig: { OriginAccessIdentity: '' }
+          - Id: api
+            DomainName: !Sub ${Api}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6          # managed CachingOptimized
+          ResponseHeadersPolicyId: !Ref SiteHeaders
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad        # managed CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader: forwards Authorization, query strings
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ApiPathRewrite.FunctionMetadata.FunctionARN
+        ViewerCertificate: { CloudFrontDefaultCertificate: true }
+
+  ApiPathRewrite:
+    # HTTP API routes are /teams/..., the distribution exposes them as /api/...; strip the prefix on the way in.
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub arena-api-rewrite-${AWS::StackName}
+      AutoPublish: true
+      FunctionConfig: { Comment: strip /api prefix, Runtime: cloudfront-js-2.0 }
+      FunctionCode: |
+        function handler(event) {
+          var r = event.request;
+          if (r.uri.indexOf('/api/') === 0) r.uri = r.uri.substring(4);
+          return r;
+        }
+
 Outputs:
+  SiteUrl:
+    Description: Register this as the third-party app URL in the Connect agent workspace. Supervisor console and wallboard live under it too.
+    Value: !Sub https://${Distribution.DomainName}
+  SiteBucket:
+    Description: Upload target for the pages. Use `node lambda/deploy-pages.js <stack name>`.
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref Distribution
   StreamArn:
     Description: Set this as the agent event stream target in the Connect console (Data streaming).
     Value: !GetAtt AgentEventStream.Arn
   ApiUrl:
-    Description: Base URL for the pages. Open a page with ?api=<this url>&team=<routing profile name>.
+    Description: Direct API URL. The pages use /api on the site URL instead, so no CORS is involved.
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com
   TableName:
     Value: !Ref Table

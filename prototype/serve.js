@@ -35,6 +35,8 @@ async function api(req, res, p) {
 http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   if (url.startsWith('/api')) return api(req, res, url.slice(4) || '/');
+  // Local default: no config, so pages run the simulator unless the query string says otherwise.
+  if (url === '/config.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end('window.ARENA_CONFIG = {};'); }
   const p = path.join(root, url.replace(/^\/+/, '') || 'agent-panel.html');
   if (!p.startsWith(root)) { res.writeHead(403); return res.end(); }
   fs.readFile(p, (err, data) => {

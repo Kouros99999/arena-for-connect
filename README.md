@@ -41,9 +41,12 @@ node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/in
 
 ```bash
 cd lambda && node build.js && sam build && sam deploy --guided
+node lambda/deploy-pages.js <stack name> --team "Billing team"
 ```
 
-Then in the Connect console: enable agent event streaming to the stream ARN the stack outputs, and add the hosted panel URL as a third-party application in the agent workspace. Open any page with `?api=<ApiUrl>&team=<routing profile name>`.
+The stack creates the stream, the table, the Lambdas, the HTTP API, and a private S3 bucket behind CloudFront. The second command uploads the three pages plus a `config.js` that points them at `/api` on the same origin, so there is no CORS and one URL to register.
+
+Then in the Connect console: enable agent event streaming to the stream ARN the stack outputs, and add `<SiteUrl>/agent-panel.html` as a third-party application in the agent workspace. The CloudFront response headers allow framing only from `*.my.connect.aws` and `*.awsapps.com`, or from the single instance you pass as `ConnectInstanceUrl`.
 
 For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
 
