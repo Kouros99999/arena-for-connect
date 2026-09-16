@@ -152,6 +152,11 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
   renderTicker();
   if (sim) { render(); sim.start(); }
-  else engine.start(5).then(render).catch(err => { $('#updated').textContent = 'API error: ' + err.message; });
+  else {
+    document.querySelector('.top .team').textContent = engine.team || 'Team';
+    kudos.length = 0; renderTicker();
+    $('#moment').innerHTML = '<div class="ico">★</div><div class="w">Moments appear here<small>badges, kudos and lead changes as they happen</small></div>';
+    engine.start(5).then(render).catch(err => { $('#updated').textContent = 'API error: ' + err.message; });
+  }
 })();
 </script>
