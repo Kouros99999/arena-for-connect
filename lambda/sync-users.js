@@ -38,7 +38,7 @@ for (const u of users) {
   const line = `${d.Username.padEnd(24)} ${team.padEnd(20)} ${isSup ? 'supervisor' : 'agent'}${email ? '' : '  (no email: cannot receive a temporary password)'}`;
   if (dry) { console.log('would sync', line); continue; }
   let exists = true;
-  try { aws('cognito-idp', 'admin-get-user', '--user-pool-id', poolId, '--username', d.Username); } catch { exists = false; }
+  try { execFileSync('aws', ['cognito-idp', 'admin-get-user', '--user-pool-id', poolId, '--username', d.Username, '--region', region], { stdio: 'ignore' }); } catch { exists = false; }
   if (exists) { aws('cognito-idp', 'admin-update-user-attributes', '--user-pool-id', poolId, '--username', d.Username, '--user-attributes', ...attrs); updated++; }
   else if (!email && !noEmail) { skipped++; console.log('skipped', line); continue; }
   else if (!email) { aws('cognito-idp', 'admin-create-user', '--user-pool-id', poolId, '--username', d.Username, '--user-attributes', ...attrs, '--message-action', 'SUPPRESS'); created++; }
