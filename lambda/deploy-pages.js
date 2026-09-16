@@ -29,6 +29,19 @@ fs.writeFileSync(path.join(tmp, 'index.html'), `<!doctype html><meta charset="ut
 <h1>Arena for Amazon Connect</h1>
 <a href="agent-panel.html">Agent panel</a><a href="supervisor-console.html">Supervisor console</a><a href="wallboard.html">Wallboard</a>\n`);
 
+// Register the site as a sign-in callback on the Cognito client. The template cannot do this
+// without creating a dependency cycle (client -> CloudFront -> API -> client).
+if (out('UserPoolId') && out('UserPoolClientId')) {
+  const pages = ['agent-panel.html', 'supervisor-console.html', 'wallboard.html'];
+  const urls = [...pages.map((p) => site + '/' + p), ...pages.map((p) => 'http://localhost:8765/' + p)];
+  aws('cognito-idp', 'update-user-pool-client', '--user-pool-id', out('UserPoolId'), '--client-id', out('UserPoolClientId'),
+    '--callback-urls', ...urls, '--logout-urls', site + '/', 'http://localhost:8765/',
+    '--allowed-o-auth-flows', 'code', '--allowed-o-auth-scopes', 'openid', 'email', 'profile',
+    '--allowed-o-auth-flows-user-pool-client', '--supported-identity-providers', 'COGNITO',
+    '--prevent-user-existence-errors', 'ENABLED');
+  console.log('registered sign-in callbacks for', site);
+}
+
 console.log('uploading to s3://' + bucket);
 aws('s3', 'sync', tmp, 's3://' + bucket, '--delete', '--cache-control', 'public, max-age=300');
 // config.js must never be cached long: it is what an operator changes.

@@ -179,14 +179,13 @@ Resources:
       AllowedOAuthFlows: [code]
       AllowedOAuthScopes: [openid, email, profile]
       SupportedIdentityProviders: [COGNITO]                  # add a SAML/OIDC provider here to federate with the customer's IdP
+      # The CloudFront URLs cannot be listed here: client -> Distribution -> Api -> client is a cycle.
+      # deploy-pages.js adds them after the stack exists. Localhost covers development.
       CallbackURLs:
-        - !Sub https://${Distribution.DomainName}/agent-panel.html
-        - !Sub https://${Distribution.DomainName}/supervisor-console.html
-        - !Sub https://${Distribution.DomainName}/wallboard.html
         - http://localhost:8765/agent-panel.html
         - http://localhost:8765/supervisor-console.html
         - http://localhost:8765/wallboard.html
-      LogoutURLs: [!Sub 'https://${Distribution.DomainName}/']
+      LogoutURLs: [http://localhost:8765/]
       PreventUserExistenceErrors: ENABLED
       AccessTokenValidity: 60
       IdTokenValidity: 60
