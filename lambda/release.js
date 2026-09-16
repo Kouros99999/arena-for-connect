@@ -4,8 +4,8 @@
 //
 // Produces release/<version>/arena.zip (all Lambda code, one archive), release/<version>/template.yaml
 // (every CodeUri rewritten to the public S3 location) and release/<version>/site.zip (the pages).
-// With --bucket it uploads all three to s3://<bucket>/arena/<version>/ with a public-read ACL so a
-// customer's CloudFormation can fetch the code from a different account. Marketplace copies from there.
+// With --bucket it uploads all three to s3://<bucket>/arena/<version>/. The bucket policy grants public
+// read on arena/* so a customer's CloudFormation can fetch the code from another account; Marketplace copies from there.
 //
 // Needs the AWS CLI on PATH for the upload step. The build itself needs only node.
 'use strict';
@@ -53,7 +53,8 @@ console.log(fs.readdirSync(out).map((f) => `  ${f}  ${fs.statSync(path.join(out,
 // 5. Publish.
 if (upload) {
   const aws = (...a) => execFileSync('aws', [...a, '--region', region], { encoding: 'utf8' }).trim();
-  for (const f of fs.readdirSync(out)) aws('s3', 'cp', path.join(out, f), `s3://${bucket}/arena/${version}/${f}`, '--acl', 'public-read', '--cache-control', 'public, max-age=31536000, immutable');
+  // Public read comes from the bucket policy on arena/*, not per-object ACLs (ACLs are disabled on new buckets).
+  for (const f of fs.readdirSync(out)) aws('s3', 'cp', path.join(out, f), `s3://${bucket}/arena/${version}/${f}`, '--cache-control', 'public, max-age=31536000, immutable');
   console.log(`published to s3://${bucket}/arena/${version}/`);
   console.log(`template URL: https://${bucket}.s3.${region}.amazonaws.com/arena/${version}/template.yaml`);
 } else if (bucket) console.log('upload skipped (--no-upload)');
