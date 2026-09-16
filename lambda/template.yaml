@@ -14,8 +14,8 @@ Parameters:
   AuthMode:
     Type: String
     Default: cognito
-    AllowedValues: [cognito, external, none]
-    Description: cognito creates a user pool in this stack (default). external uses JwtIssuer/JwtAudience from the customer's IdP. none leaves the API open, for a pilot only.
+    AllowedValues: [cognito, external]
+    Description: cognito creates a user pool in this stack (default). external uses JwtIssuer/JwtAudience from the customer's IdP.
   JwtIssuer:
     Type: String
     Default: ''
@@ -39,7 +39,6 @@ Parameters:
 
 Conditions:
   UseCognito: !Equals [!Ref AuthMode, cognito]
-  UseJwt: !Not [!Equals [!Ref AuthMode, none]]
   UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
 
@@ -140,16 +139,16 @@ Resources:
         AllowOrigins: [!Ref AllowedOrigin]
         AllowMethods: [GET, PUT, POST, OPTIONS]
         AllowHeaders: [content-type, authorization]
-      Auth: !If
-        - UseJwt
-        - DefaultAuthorizer: Jwt
-          Authorizers:
-            Jwt:
-              IdentitySource: $request.header.Authorization
-              JwtConfiguration:
-                issuer: !If [UseCognito, !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}', !Ref JwtIssuer]
-                audience: [!If [UseCognito, !Ref UserPoolClient, !Ref JwtAudience]]
-        - !Ref AWS::NoValue
+      Auth:
+        # SAM requires this block to be literal, so the authorizer always exists; only its issuer and audience switch.
+        DefaultAuthorizer: Jwt
+        Authorizers:
+          Jwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !If [UseCognito, !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}', !Ref JwtIssuer]
+              audience:
+                - !If [UseCognito, !Ref UserPoolClient, !Ref JwtAudience]
 
   # ---------- Identity: Cognito user pool, one user per Connect agent ----------
   UserPool:
@@ -220,7 +219,7 @@ Resources:
       Environment:
         Variables:
           ALLOWED_ORIGIN: !Ref AllowedOrigin
-          AUTH_MODE: !If [UseJwt, jwt, none]
+          AUTH_MODE: jwt
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
       Events:

@@ -57,7 +57,7 @@ node lambda/sync-users.js <stack name> --instance <connect instance id> --dry-ru
 node lambda/sync-users.js <stack name> --instance <connect instance id>
 ```
 
-Users whose Connect security profile name contains "supervisor" or "admin" land in the supervisors group. To use the customer's own identity provider instead, either add it as a federated provider on the pool, or deploy with `AuthMode=external` and their OIDC issuer and audience. `AuthMode=none` leaves the API open and is for a pilot only.
+Users whose Connect security profile name contains "supervisor" or "admin" land in the supervisors group. To use the customer's own identity provider instead, either add it as a federated provider on the pool, or deploy with `AuthMode=external` and their OIDC issuer and audience. The API always requires a token; there is no open mode.
 
 For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
 
