@@ -40,12 +40,17 @@ Parameters:
     Type: String
     Default: ''
     Description: Set by the AWS Marketplace listing. When present, a nightly job reports distinct active agents (30-day window) for per-agent billing. Leave empty for pilots and direct deals.
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: Email address that receives operational alarms (ingest or API errors, stream falling behind, failed usage report). Leave empty to create the alarms without a subscription.
 
 Conditions:
   UseCognito: !Equals [!Ref AuthMode, cognito]
   UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
   OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
 
 Globals:
   Function:
@@ -163,6 +168,108 @@ Resources:
             Schedule: cron(15 3 * * ? *)   # 03:15 UTC daily; Marketplace accepts one report per dimension per hour
             Description: Report distinct active agents to AWS Marketplace
 
+  StreaksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-streaks-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: streaks.handler
+      Timeout: 120
+      Environment:
+        Variables:
+          STREAK_QA: '85'
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(30 0 * * ? *)   # 00:30 UTC: assess yesterday, pay streak bonuses into today
+            Description: Assess each agent's previous day and update quality streaks
+
+  # ---------- Operations: alarms and where they go ----------
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub arena-alarms-${AWS::StackName}
+      DisplayName: Arena alarms
+
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
+  IngestErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub arena-ingest-errors-${AWS::StackName}
+      AlarmDescription: The agent event ingest function is failing. Events are retried, then dropped after the stream's 24h retention.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref IngestFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  StreamLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub arena-stream-lag-${AWS::StackName}
+      AlarmDescription: The ingest function is more than five minutes behind the agent event stream. Leaderboards are stale.
+      Namespace: AWS/Lambda
+      MetricName: IteratorAge
+      Dimensions: [{ Name: FunctionName, Value: !Ref IngestFunction }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 300000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub arena-api-errors-${AWS::StackName}
+      AlarmDescription: The Arena API function is throwing. Pages will show API errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ApiFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  Api5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub arena-api-5xx-${AWS::StackName}
+      AlarmDescription: The HTTP API is returning server errors.
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions: [{ Name: ApiId, Value: !Ref Api }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
   MeteringAlarm:
     Type: AWS::CloudWatch::Alarm
     Condition: OnMarketplace
@@ -178,6 +285,7 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
 
   Api:
     Type: AWS::Serverless::HttpApi         # HTTP API, not REST: $1.00 per million requests instead of $3.50
@@ -276,6 +384,14 @@ Resources:
             ApiId: !Ref Api
             Path: /{proxy+}
             Method: ANY
+        Kiosk:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /kiosk/{proxy+}
+            Method: GET
+            Auth:
+              Authorizer: NONE   # the kiosk token in the path is the credential; the function checks it. Read-only routes only.
 
   # ---------- Hosting: private S3 bucket behind CloudFront, API on the same origin under /api ----------
   SiteBucket:
@@ -392,6 +508,9 @@ Outputs:
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com
   TableName:
     Value: !Ref Table
+  AlarmTopicArn:
+    Description: SNS topic every alarm publishes to. Subscribe a pager or chat integration here.
+    Value: !Ref AlarmTopic
   UserPoolId:
     Condition: UseCognito
     Value: !Ref UserPool

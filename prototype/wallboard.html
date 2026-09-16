@@ -173,7 +173,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
   else {
     document.querySelector('.top .team').textContent = engine.team || 'Team';
     $('#moment').innerHTML = '<div class="ico">★</div><div class="w">Moments appear here<small>badges, kudos and lead changes as they happen</small></div>';
-    engine.start(5).then(() => { render(); loadSide(); }).catch(err => { $('#updated').textContent = 'API error: ' + err.message; });
+    engine.start(5).then(() => { document.querySelector('.top .team').textContent = engine.team || 'Team'; render(); loadSide(); })
+      .catch(err => { $('#updated').textContent = err.message; $('#goalTitle').textContent = conn.kiosk ? 'This TV link is invalid or has expired' : 'Could not load'; $('#escTarget').textContent = conn.kiosk ? 'ask a supervisor for a new one from the console' : err.message; });
   }
 })();
 </script>

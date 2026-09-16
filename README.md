@@ -34,7 +34,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/metering.test.js prototype/arena-auth.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/metering.test.js lambda/src/streaks.test.js prototype/arena-auth.test.js
 ```
 
 ## Deploy into an AWS account
@@ -76,6 +76,22 @@ node lambda/release.js 0.1.0 --bucket <your public artifacts bucket>
 ```
 
 This zips the Lambda code and the pages, rewrites every `CodeUri` in the template to the published archive, writes checksums, and uploads all of it with public read to `s3://<bucket>/arena/0.1.0/`. The printed template URL is what goes into the Marketplace listing, and what a customer can launch directly in the CloudFormation console.
+
+## Operations
+
+**Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
+
+**Streaks.** A nightly job at 00:30 UTC assesses each agent's previous day: at least one contact, no auto-fail, every evaluation at or above 85 extends the quality streak; a miss resets it; a day with no contacts holds it. From day two each clean day pays the streak bonus into the new day. Adherence remains in the scoring mix but is not scored until a workforce-management feed exists, and the console says so.
+
+**Wallboard on a TV.** A supervisor clicks "TV link" in the console. That mints a kiosk token, valid 90 days, and copies a wallboard URL that needs no sign-in. Kiosk routes are read-only and served under `/kiosk/{token}/…` with the token as the only credential; a supervisor can list and revoke tokens through the API.
+
+**Deleting an agent's data.** `DELETE /agents/{arn}` (supervisors) or, with admin credentials:
+
+```bash
+node lambda/delete-agent.js <stack name> --agent <agent ARN> --dry-run
+```
+
+It removes the agent's partition, their reward requests, and kudos addressed to them, and logs an audit line. The Cognito user is separate; remove it with `aws cognito-idp admin-delete-user` when the person leaves.
 
 ## Scoring in one paragraph
 

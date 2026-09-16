@@ -129,7 +129,8 @@ tr.flash td{background:var(--flash)}
   <span class="crumb">Supervisor console</span>
   <select aria-label="Team"><option>Billing team · 12 agents</option><option>Support team · 18 agents</option><option>Retention · 9 agents</option></select>
   <span class="spacer"></span>
-  <a class="link" href="#" onclick="return false">Open wallboard</a>
+  <a class="link" href="wallboard.html" target="_blank" rel="noopener" id="wallLink">Open wallboard</a>
+  <button class="btn sm" id="kioskBtn" title="Create a sign-in-free link for a floor TV">TV link</button>
   <span class="crumb" id="clock">09:41</span>
 </div>
 
@@ -294,7 +295,7 @@ tr.flash td{background:var(--flash)}
     $('#mQv').textContent = m.quality+'%'; $('#mPv').textContent = m.productivity+'%'; $('#mAv').textContent = m.adherence+'%';
     const v = Arena.validateMix(m); $('#mixWarn').textContent = v.message;
     const p = engine.preview(m);
-    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Hour in adherence</span><b>+${p.adherenceHour} pts</b>`;
+    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Hour in adherence <small style="color:var(--muted)">(needs a WFM feed, not yet scored)</small></span><b>+${p.adherenceHour} pts</b>`;
     return v.ok;
   }
 
@@ -330,6 +331,18 @@ tr.flash td{background:var(--flash)}
       if (en) { await engine.endChallenge(en.dataset.end); toast('Challenge ended'); loadSide(); }
       if (rv) { toast(`Opening contact sample for ${engine.byId(rv.dataset.review).name} in Contact Lens`); }
     } catch (err) { toast('Failed: ' + err.message); }
+  });
+  // TV link: a kiosk token lets the wallboard run on a floor display with no sign-in. Read-only, 90 days, revocable.
+  $('#kioskBtn').addEventListener('click', async () => {
+    if (!engine.remote) return toast('In the demo the wallboard opens directly; TV links are created against the live API.');
+    if (!conn.isSupervisor) return toast('Supervisors only');
+    try {
+      const k = await engine.createKiosk('Floor TV', 90);
+      const url = new URL('wallboard.html', location.href); url.searchParams.set('kiosk', k.token);
+      await navigator.clipboard.writeText(url.toString()).catch(() => {});
+      toast('TV link copied. Valid until ' + k.expiresAt.slice(0, 10) + '. Paste it into the TV browser.');
+      $('#wallLink').href = url.toString();
+    } catch (e) { toast('Could not create TV link: ' + e.message); }
   });
   $('#clock').textContent = now(); setInterval(() => { $('#clock').textContent = now(); render(); }, 30000);
   setInterval(loadSide, 30000);

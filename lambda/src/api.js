@@ -28,6 +28,12 @@ function route(method, path) {
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/rewards$/))) return { name: 'requestReward', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) return { name: 'decideReward', team: decodeURIComponent(x[1]), id: decodeURIComponent(x[2]) };
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/kudos$/))) return { name: 'kudosFeed', team: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/kiosk$/))) return { name: 'listKiosk', team: decodeURIComponent(x[1]) };
+  if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/kiosk$/))) return { name: 'createKiosk', team: decodeURIComponent(x[1]) };
+  if (method === 'DELETE' && (x = m(/^\/teams\/([^/]+)\/kiosk\/([^/]+)$/))) return { name: 'revokeKiosk', team: decodeURIComponent(x[1]), token: decodeURIComponent(x[2]) };
+  if (method === 'DELETE' && (x = m(/^\/agents\/(.+)$/))) return { name: 'deleteAgent', arn: decodeURIComponent(x[1]) };
+  // Kiosk: unauthenticated at the gateway, the token is the credential. Read-only, wallboard only.
+  if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/events$/))) return { name: 'agentEvents', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && path === '/config/mix') return { name: 'getMix' };
   if (method === 'PUT' && path === '/config/mix') return { name: 'putMix' };
@@ -130,6 +136,43 @@ function makeHandler(deps) {
           const limit = Math.min(50, +(qs.limit || 10));
           const items = (await s.listTeamItems(r.team, 'KD#', limit, true)).map(strip);
           return json(200, { team: r.team, kudos: items });
+        }
+        case 'listKiosk': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const items = (await s.listKiosks(r.team)).map((k) => ({ token: k.token, team: k.team, label: k.label, createdAt: k.createdAt, createdBy: k.createdBy, expiresAt: k.expiresAt }));
+          return json(200, { team: r.team, kiosks: items });
+        }
+        case 'createKiosk': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const b = parse(event);
+          const token = require('crypto').randomBytes(24).toString('base64url');
+          const days = Math.min(365, Math.max(1, +(b.days || 90)));
+          const kiosk = { label: String(b.label || 'Wallboard').slice(0, 60), createdAt: now().toISOString(), createdBy: who(claims), expiresAt: new Date(now().getTime() + days * 86400000).toISOString(), ttl: Math.floor(now().getTime() / 1000) + days * 86400 };
+          await s.putKiosk(token, r.team, kiosk);
+          return json(201, { kiosk: Object.assign({ token, team: r.team }, kiosk, { ttl: undefined }) });
+        }
+        case 'revokeKiosk': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const k = await s.getKiosk(r.token);
+          if (!k || k.team !== r.team) return json(404, { error: 'not found' });
+          await s.deleteKiosk(r.token);
+          return json(200, { revoked: true });
+        }
+        case 'kiosk': {
+          const k = await s.getKiosk(r.token);
+          if (!k || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'kiosk link is invalid or expired' });
+          const iso = now().toISOString();
+          if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: await s.getTeam(k.team, iso) });
+          if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip) });
+          const [items, agents] = await Promise.all([s.listTeamItems(k.team, 'CH#', 50, true), s.getTeam(k.team, iso)]);
+          const today = iso.slice(0, 10);
+          return json(200, { team: k.team, challenges: items.map(strip).map((c) => Object.assign({}, c, { state: c.state === 'ended' ? 'ended' : c.startsAt > today ? 'scheduled' : c.endsAt < today ? 'ended' : 'active', progress: Arena.challengeProgress(c, agents) })) });
+        }
+        case 'deleteAgent': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const deleted = await s.deleteAgent(r.arn);
+          console.info(JSON.stringify({ audit: 'deleteAgent', arn: r.arn, rows: deleted, by: who(claims), at: now().toISOString() }));
+          return json(200, { deleted, agent: r.arn });
         }
         case 'kudos': {
           const body = parse(event);

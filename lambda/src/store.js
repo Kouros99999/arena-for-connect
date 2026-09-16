@@ -157,6 +157,52 @@ async function spendPoints(arn, iso, cost) {
   await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: `WEEK#${weekKey(iso)}` }, UpdateExpression: 'ADD points :c', ExpressionAttributeValues: { ':c': -cost } }));
 }
 
+// ---------- agent data deletion ----------
+/** Every row in an agent's partition, plus their reward requests and kudos addressed to them on the team feed. Returns the keys. */
+async function agentRowKeys(arn, team) {
+  const d = db(); const keysOut = []; let ExclusiveStartKey;
+  do {
+    const r = await d.send(new cmds.QueryCommand({ TableName: TABLE, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': keys.agent(arn) }, ProjectionExpression: 'pk, sk', ExclusiveStartKey }));
+    keysOut.push(...(r.Items || [])); ExclusiveStartKey = r.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  if (team) {
+    for (const item of await listTeamItems(team, 'RW#', 500)) if (item.agentId === arn) keysOut.push({ pk: item.pk, sk: item.sk });
+    for (const item of await listTeamItems(team, 'KD#', 500)) if (item.to === arn) keysOut.push({ pk: item.pk, sk: item.sk });
+  }
+  return keysOut;
+}
+async function deleteKeys(keysIn) {
+  const d = db(); let deleted = 0;
+  for (let i = 0; i < keysIn.length; i += 25) {
+    const chunk = keysIn.slice(i, i + 25);
+    let req = { [TABLE]: chunk.map((k) => ({ DeleteRequest: { Key: { pk: k.pk, sk: k.sk } } })) };
+    while (req && Object.keys(req).length) { const r = await d.send(new cmds.BatchWriteCommand({ RequestItems: req })); req = r.UnprocessedItems; }
+    deleted += chunk.length;
+  }
+  return deleted;
+}
+/** Remove everything Arena holds about one agent. Returns how many rows went. */
+async function deleteAgent(arn) {
+  const live = await getLive(arn);
+  const k = await agentRowKeys(arn, live && live.team);
+  return deleteKeys(k);
+}
+
+// ---------- kiosk tokens: read-only wallboard access without sign-in ----------
+const KIOSK_PREFIX = 'KIOSK#';
+async function putKiosk(token, team, fields) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'KIOSK', sk: KIOSK_PREFIX + token, token, team }, fields) }));
+}
+async function getKiosk(token) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'KIOSK', sk: KIOSK_PREFIX + token } }));
+  return r.Item || null;
+}
+async function listKiosks(team) {
+  const r = await db().send(new cmds.QueryCommand({ TableName: TABLE, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': 'KIOSK' } }));
+  return (r.Items || []).filter((k) => !team || k.team === team);
+}
+async function deleteKiosk(token) { await db().send(new cmds.DeleteCommand({ TableName: TABLE, Key: { pk: 'KIOSK', sk: KIOSK_PREFIX + token } })); }
+
 // ---------- metering ----------
 /** Every agent LIVE row, across all teams. Small table scan; agents number in the hundreds. */
 async function scanLive() {
@@ -166,6 +212,19 @@ async function scanLive() {
     out.push(...(r.Items || [])); ExclusiveStartKey = r.LastEvaluatedKey;
   } while (ExclusiveStartKey);
   return out;
+}
+/** LIVE rows with all attributes, for the streak job. */
+async function scanLiveFull() {
+  const d = db(); const out = []; let ExclusiveStartKey;
+  do {
+    const r = await d.send(new cmds.ScanCommand({ TableName: TABLE, FilterExpression: 'sk = :live AND begins_with(pk, :a)', ExpressionAttributeValues: { ':live': 'LIVE', ':a': 'AGENT#' }, ExclusiveStartKey }));
+    out.push(...(r.Items || [])); ExclusiveStartKey = r.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return out;
+}
+async function getDay(arn, day) { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: 'DAY#' + day } })); return r.Item || null; }
+async function setStreak(arn, streak, assessedDay) {
+  await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: 'LIVE' }, UpdateExpression: 'SET streak = :s, streakAssessed = :d', ExpressionAttributeValues: { ':s': streak, ':d': assessedDay } }));
 }
 async function getMeter(day) { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'METER', sk: 'DAY#' + day } })); return r.Item || null; }
 async function putMeter(day, fields) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'METER', sk: 'DAY#' + day, day }, fields) })); }
@@ -179,4 +238,5 @@ async function putMix(mix) {
 }
 
 module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
-  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter };
+  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
+  agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

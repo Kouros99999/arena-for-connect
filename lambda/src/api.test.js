@@ -113,6 +113,40 @@ test('kudos feed lists newest first', async () => {
   assert.equal(feed[0].note, 'two'); assert.equal(feed[1].note, 'one'); assert.equal(feed[0].pk, undefined);
 });
 
+test('kiosk: supervisor mints a link, the wallboard reads through it without a token, revoke kills it', async () => {
+  const s = fakeStore(); const kiosks = {};
+  s.putKiosk = async (t, team, f) => { kiosks[t] = Object.assign({ token: t, team }, f); };
+  s.getKiosk = async (t) => kiosks[t] || null; s.listKiosks = async () => Object.values(kiosks); s.deleteKiosk = async (t) => { delete kiosks[t]; };
+  const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(Object.assign(req('POST', '/teams/t/kiosk', { body: '{}' }), agentTok))).statusCode, 403);
+  const made = await h(Object.assign(req('POST', '/teams/t/kiosk', { body: JSON.stringify({ label: 'Floor TV', days: 30 }) }), supTok('POST')));
+  assert.equal(made.statusCode, 201); const k = JSON.parse(made.body).kiosk;
+  assert.ok(k.token.length >= 30); assert.equal(k.expiresAt, '2026-10-15T14:05:30.000Z'); assert.equal(k.ttl, undefined);
+  const agents = await h(req('GET', '/kiosk/' + k.token + '/agents'));
+  assert.equal(agents.statusCode, 200); assert.equal(JSON.parse(agents.body).team, 't'); assert.equal(JSON.parse(agents.body).agents[0].name, 'priya');
+  assert.equal((await h(req('GET', '/kiosk/' + k.token + '/challenges'))).statusCode, 200);
+  assert.equal((await h(req('GET', '/kiosk/' + k.token + '/kudos'))).statusCode, 200);
+  assert.equal((await h(req('GET', '/kiosk/nope/agents'))).statusCode, 401);
+  assert.equal(JSON.parse((await h(Object.assign(req('GET', '/teams/t/kiosk'), supTok('GET')))).body).kiosks.length, 1);
+  assert.equal((await h(Object.assign(req('DELETE', '/teams/t/kiosk/' + k.token), supTok('DELETE')))).statusCode, 200);
+  assert.equal((await h(req('GET', '/kiosk/' + k.token + '/agents'))).statusCode, 401);
+});
+
+test('kiosk: an expired link is refused', async () => {
+  const s = fakeStore(); s.getKiosk = async () => ({ token: 'old', team: 't', expiresAt: '2026-01-01T00:00:00.000Z' });
+  const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(req('GET', '/kiosk/old/agents'))).statusCode, 401);
+});
+
+test('deleteAgent: supervisors only, reports rows removed', async () => {
+  const s = fakeStore(); s.deleteAgent = async (arn) => { s.calls.push(['deleteAgent', arn]); return 7; };
+  const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(Object.assign(req('DELETE', '/agents/arn%3Ax%2Fagent%2Fp'), agentTokFor('DELETE')))).statusCode, 403);
+  const r = await h(Object.assign(req('DELETE', '/agents/arn%3Ax%2Fagent%2Fp'), supTok('DELETE')));
+  assert.equal(r.statusCode, 200); assert.deepEqual(JSON.parse(r.body), { deleted: 7, agent: 'arn:x/agent/p' });
+  assert.deepEqual(s.calls.find((c) => c[0] === 'deleteAgent'), ['deleteAgent', 'arn:x/agent/p']);
+});
+
 test('unknown route is 404, OPTIONS is 204', async () => {
   const h = makeHandler({ store: fakeStore(), now: fixed });
   assert.equal((await h(req('GET', '/nope'))).statusCode, 404);

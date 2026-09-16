@@ -27,6 +27,12 @@ test('connect takes agent and team from token claims when signed in', async () =
   assert.equal(override.agentId, 'a9');
 });
 
+test('connect with a kiosk token skips sign-in and is read-only', () => {
+  const fakeAuth = { enabled: () => true, claims: () => ({}), token: async () => 't', ready: async () => 't', isSupervisor: () => true };
+  const conn = Arena.connect('?kiosk=abc', { api: '/api', auth: { domain: 'https://x', clientId: 'c' } }, fakeAuth);
+  assert.equal(conn.kiosk, true); assert.equal(conn.signedIn, false); assert.equal(conn.isSupervisor, false); assert.equal(conn.engine.kiosk, true);
+});
+
 test('connect without auth config is not signed in and treats everyone as supervisor', () => {
   const conn = Arena.connect('', { api: '/api' }, { enabled: () => false });
   assert.equal(conn.signedIn, false); assert.equal(conn.isSupervisor, true); assert.equal(conn.agentId, null);

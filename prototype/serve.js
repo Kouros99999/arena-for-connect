@@ -34,6 +34,16 @@ async function api(req, res, p) {
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const b = await body(req); return json(res, 201, { reward: await engine.requestReward(b.agentId, b.catalogId, b.by) }); }
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) { const b = await body(req); return json(res, 200, { reward: await engine.decideReward(decodeURIComponent(m[2]), b.status, 'mock supervisor') }); }
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/kudos$/))) { const l = (req.url.split('?')[1] || '').match(/limit=(\d+)/); return json(res, 200, { kudos: await engine.kudosFeed(l ? +l[1] : 10) }); }
+    // Kiosk: any token that starts with "demo" works against the mock.
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/kiosk$/))) return json(res, 201, { kiosk: { token: 'demo-' + Math.random().toString(36).slice(2, 10), team: 'Billing team', label: 'Wallboard', expiresAt: new Date(Date.now() + 90 * 86400000).toISOString() } });
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/kiosk$/))) return json(res, 200, { kiosks: [] });
+    if (req.method === 'GET' && (m = p.match(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) {
+      if (!m[1].startsWith('demo')) return json(res, 401, { error: 'kiosk link is invalid or expired' });
+      if (m[2] === 'agents') return json(res, 200, { team: 'Billing team', agents: engine.agents.map((a) => ({ ...a, hue: undefined, initials: undefined })) });
+      if (m[2] === 'challenges') return json(res, 200, { team: 'Billing team', challenges: await engine.challenges() });
+      return json(res, 200, { team: 'Billing team', kudos: await engine.kudosFeed(8) });
+    }
+    if (req.method === 'DELETE' && (m = p.match(/^\/agents\/(.+)$/))) return json(res, 200, { deleted: 0, agent: decodeURIComponent(m[1]) });
   } catch (e) { return json(res, 400, { error: e.message }); }
   if (req.method === 'GET' && p === '/config/mix') return json(res, 200, { mix: engine.getMix() });
   if (req.method === 'PUT' && p === '/config/mix') { const b = await body(req); const mix = { quality: +b.quality, productivity: +b.productivity, adherence: +b.adherence }; const v = engine.setMix(mix); return v.ok ? json(res, 200, { mix, warning: v.message || undefined }) : json(res, 400, { error: v.message }); }

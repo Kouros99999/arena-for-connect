@@ -308,7 +308,10 @@
   // Pages call Arena.connect() and get either a local simulated engine or a polling remote one,
   // depending on ?api=<base url>&team=<routing profile>[&agent=<arn>][&token=<jwt>] in the page URL.
   function createRemoteEngine(opts) {
-    const base = opts.api.replace(/\/$/, ''), team = opts.team || 'unassigned';
+    const base = opts.api.replace(/\/$/, '');
+    // Kiosk mode: a wallboard token stands in for sign-in; the API resolves the team from it.
+    const kiosk = opts.kiosk || null;
+    let team = opts.team || 'unassigned';
     // Token comes from a static value or, when sign-in is configured, from a provider that can refresh it.
     const tokenProvider = opts.tokenProvider || (async () => opts.token || null);
     // Every call waits for sign-in to finish first, so nothing fires during the token exchange.
@@ -318,10 +321,12 @@
     let mix = Object.assign({}, DEFAULT_MIX), lastSeen = {}, timer = null;
     const hueFor = (id) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 
+    const readPath = (what) => kiosk ? `${base}/kiosk/${encodeURIComponent(kiosk)}/${what}` : `${base}/teams/${encodeURIComponent(team)}/${what}`;
     async function refresh() {
-      const r = await fetch(`${base}/teams/${encodeURIComponent(team)}/agents`, { headers: await headersFor() });
-      if (!r.ok) throw new Error('arena api ' + r.status);
+      const r = await fetch(readPath('agents'), { headers: await headersFor() });
+      if (!r.ok) throw new Error(r.status === 401 && kiosk ? 'wallboard link is invalid or expired' : 'arena api ' + r.status);
       const body = await r.json();
+      if (kiosk && body.team) team = body.team;
       engine.agents.length = 0;
       for (const a of body.agents) { a.hue = hueFor(a.id); a.initials = initials(a.name || '?'); engine.agents.push(a); }
       // The signed-in agent may have no rows yet (nothing scored today). Show them at zero rather than nothing.
@@ -355,19 +360,23 @@
       if (!r.ok) throw new Error(data.error || ('arena api ' + r.status));
       return data;
     }
-    const challenges = async () => (await call('GET', `${teamPath()}/challenges`)).challenges;
+    const challenges = async () => (await call('GET', readPath('challenges'))).challenges;
     const createChallenge = async (ch) => (await call('POST', `${teamPath()}/challenges`, ch)).challenge;
     const endChallenge = async (id) => (await call('PUT', `${teamPath()}/challenges/${encodeURIComponent(id)}`, { state: 'ended' })).challenge;
     const rewards = async (status) => (await call('GET', `${teamPath()}/rewards${status ? '?status=' + status : ''}`)).rewards;
     const requestReward = async (agentId, catalogId) => (await call('POST', `${teamPath()}/rewards`, { agentId, catalogId })).reward;
     const decideReward = async (id, status) => (await call('PUT', `${teamPath()}/rewards/${encodeURIComponent(id)}`, { status })).reward;
-    const kudosFeed = async (limit) => (await call('GET', `${teamPath()}/kudos?limit=${limit || 10}`)).kudos;
+    const kudosFeed = async (limit) => (await call('GET', readPath('kudos') + `?limit=${limit || 10}`)).kudos;
+    const kiosks = async () => (await call('GET', `${teamPath()}/kiosk`)).kiosks;
+    const createKiosk = async (label, days) => (await call('POST', `${teamPath()}/kiosk`, { label, days })).kiosk;
+    const revokeKiosk = async (token) => call('DELETE', `${teamPath()}/kiosk/${encodeURIComponent(token)}`);
+    const deleteAgent = async (id) => call('DELETE', `${base}/agents/${encodeURIComponent(id)}`);
     async function start(seconds) { stop(); if (opts.ready) await opts.ready(); timer = setInterval(() => refresh().catch(console.error), (seconds || 5) * 1000); return refresh(); }
     function stop() { if (timer) clearInterval(timer); timer = null; }
 
     return Object.assign({}, engine, {
-      remote: true, team, refresh, events, loadMix, saveMix, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed,
+      remote: true, get team() { return team; }, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, kiosks, createKiosk, revokeKiosk, deleteAgent,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) saveMix(m); return v; },
@@ -380,8 +389,14 @@
     const p = new URLSearchParams(search !== undefined ? search : (typeof location !== 'undefined' ? location.search : ''));
     const c = config || (typeof window !== 'undefined' && window.ARENA_CONFIG) || {};
     const a = auth || (typeof ArenaAuth !== 'undefined' ? ArenaAuth : null);
-    const signedIn = !!(a && c.auth && a.enabled());
+    const kiosk = p.get('kiosk') || c.kiosk || null;
+    const signedIn = !kiosk && !!(a && c.auth && a.enabled());
     const api = p.get('api') || c.api, token = p.get('token') || c.token;
+    if (api && kiosk) {
+      // Wallboard on a TV: no sign-in, read-only, team comes back from the API.
+      const engine = createRemoteEngine({ api, kiosk, team: p.get('team') || c.team });
+      return { engine, remote: true, signedIn: false, kiosk: true, agentId: null, isSupervisor: false };
+    }
     if (api) {
       // With sign-in, identity and team come from the token's custom claims unless the URL overrides them.
       const claims = () => (signedIn && a.claims()) || {};
