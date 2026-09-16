@@ -374,14 +374,17 @@
     async function start(seconds) { stop(); if (opts.ready) await opts.ready(); timer = setInterval(() => refresh().catch(console.error), (seconds || 5) * 1000); return refresh(); }
     function stop() { if (timer) clearInterval(timer); timer = null; }
 
-    return Object.assign({}, engine, {
-      remote: true, get team() { return team; }, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
+    // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
+    const remoteEngine = Object.assign({}, engine, {
+      remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, kiosks, createKiosk, revokeKiosk, deleteAgent,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) saveMix(m); return v; },
       ingest: () => { throw new Error('remote engine is read-only; events arrive from the stream'); },
     });
+    Object.defineProperty(remoteEngine, 'team', { get: () => team, enumerable: true });
+    return remoteEngine;
   }
 
   // Query string wins, then window.ARENA_CONFIG (written by config.js at deploy time), then the simulator.
