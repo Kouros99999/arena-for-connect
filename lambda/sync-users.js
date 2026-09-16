@@ -10,6 +10,9 @@ const args = process.argv.slice(2);
 const stack = args.find((a) => !a.startsWith('--'));
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const instance = opt('instance'), region = opt('region', process.env.AWS_REGION || 'us-east-1'), dry = args.includes('--dry-run');
+// --no-email: create users without an email address and without sending anything. An admin then sets
+// each password with `aws cognito-idp admin-set-user-password --permanent`. For pilots and test instances.
+const noEmail = args.includes('--no-email');
 if (!stack || !instance) { console.error('usage: node lambda/sync-users.js <stack> --instance <connect instance id> [--region R] [--dry-run]'); process.exit(1); }
 
 const aws = (...a) => execFileSync('aws', [...a, '--region', region, '--output', 'json'], { encoding: 'utf8' }).trim();
@@ -37,7 +40,8 @@ for (const u of users) {
   let exists = true;
   try { aws('cognito-idp', 'admin-get-user', '--user-pool-id', poolId, '--username', d.Username); } catch { exists = false; }
   if (exists) { aws('cognito-idp', 'admin-update-user-attributes', '--user-pool-id', poolId, '--username', d.Username, '--user-attributes', ...attrs); updated++; }
-  else if (!email) { skipped++; console.log('skipped', line); continue; }
+  else if (!email && !noEmail) { skipped++; console.log('skipped', line); continue; }
+  else if (!email) { aws('cognito-idp', 'admin-create-user', '--user-pool-id', poolId, '--username', d.Username, '--user-attributes', ...attrs, '--message-action', 'SUPPRESS'); created++; }
   else { aws('cognito-idp', 'admin-create-user', '--user-pool-id', poolId, '--username', d.Username, '--user-attributes', ...attrs, '--desired-delivery-mediums', 'EMAIL'); created++; }
   for (const [group, on] of [['supervisors', isSup], ['agents', !isSup]]) {
     try { aws('cognito-idp', on ? 'admin-add-user-to-group' : 'admin-remove-user-from-group', '--user-pool-id', poolId, '--username', d.Username, '--group-name', group); } catch {}
