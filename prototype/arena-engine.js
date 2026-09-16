@@ -247,6 +247,11 @@
       const body = await r.json();
       engine.agents.length = 0;
       for (const a of body.agents) { a.hue = hueFor(a.id); a.initials = initials(a.name || '?'); engine.agents.push(a); }
+      // The signed-in agent may have no rows yet (nothing scored today). Show them at zero rather than nothing.
+      const self = typeof opts.self === 'function' ? opts.self() : opts.self;
+      if (self && self.id && !engine.agents.some((a) => a.id === self.id)) {
+        engine.agents.push(makeAgent(engine.agents.length, self.name || self.id.split('/').pop(), hueFor(self.id), { id: self.id, team, lastEvent: 0, state: 'Available' }));
+      }
       for (const a of engine.agents) {
         const prev = lastSeen[a.id];
         if (prev !== undefined && prev !== a.today) listeners.forEach((fn) => fn({ agent: a, points: a.today - prev, event: { EventType: 'REFRESH', AgentARN: a.id }, words: 'Points updated' }));
@@ -289,7 +294,8 @@
       // With sign-in, identity and team come from the token's custom claims unless the URL overrides them.
       const claims = () => (signedIn && a.claims()) || {};
       const engine = createRemoteEngine({ api, token, tokenProvider: signedIn ? () => a.token() : undefined, ready: signedIn ? () => a.ready() : undefined,
-        get team() { return p.get('team') || c.team || claims()['custom:team'] || 'unassigned'; } });
+        get team() { return p.get('team') || c.team || claims()['custom:team'] || 'unassigned'; },
+        self: () => { const cl = claims(); const id = p.get('agent') || c.agent || cl['custom:agentArn']; return id ? { id, name: cl.name || cl['cognito:username'] || undefined } : null; } });
       return { engine, remote: true, signedIn, get agentId() { return p.get('agent') || c.agent || claims()['custom:agentArn'] || null; },
         get isSupervisor() { return signedIn ? a.isSupervisor(claims()) : true; } };
     }
