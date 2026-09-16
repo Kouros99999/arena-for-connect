@@ -25,6 +25,16 @@ async function api(req, res, p) {
     return json(res, 200, { team: decodeURIComponent(m[1]), date: now.slice(0, 10), agents: engine.agents.map((a) => ({ ...a, hue: undefined, initials: undefined })) });
   }
   if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/events$/))) return json(res, 200, { agent: m[1], events: (ledger[decodeURIComponent(m[1])] || []).slice(0, 20) });
+  // Challenges, rewards, kudos feed: the local engine already implements them.
+  try {
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/challenges$/))) return json(res, 200, { challenges: await engine.challenges() });
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/challenges$/))) return json(res, 201, { challenge: await engine.createChallenge(await body(req)) });
+    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/challenges\/([^/]+)$/))) return json(res, 200, { challenge: await engine.endChallenge(decodeURIComponent(m[2])) });
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const st = (req.url.split('?')[1] || '').match(/status=([a-z]+)/); return json(res, 200, { rewards: await engine.rewards(st && st[1]), catalog: Arena.CATALOG }); }
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const b = await body(req); return json(res, 201, { reward: await engine.requestReward(b.agentId, b.catalogId, b.by) }); }
+    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) { const b = await body(req); return json(res, 200, { reward: await engine.decideReward(decodeURIComponent(m[2]), b.status, 'mock supervisor') }); }
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/kudos$/))) { const l = (req.url.split('?')[1] || '').match(/limit=(\d+)/); return json(res, 200, { kudos: await engine.kudosFeed(l ? +l[1] : 10) }); }
+  } catch (e) { return json(res, 400, { error: e.message }); }
   if (req.method === 'GET' && p === '/config/mix') return json(res, 200, { mix: engine.getMix() });
   if (req.method === 'PUT' && p === '/config/mix') { const b = await body(req); const mix = { quality: +b.quality, productivity: +b.productivity, adherence: +b.adherence }; const v = engine.setMix(mix); return v.ok ? json(res, 200, { mix, warning: v.message || undefined }) : json(res, 400, { error: v.message }); }
   if (req.method === 'POST' && p === '/kudos') { const b = await body(req); const a = engine.byId(b.to); if (!a || !b.note) return json(res, 400, { error: 'to and note are required' }); const r = engine.ingest({ EventType: 'KUDOS', AgentARN: a.id, EventTimestamp: new Date().toISOString(), From: b.from || 'A teammate', Note: String(b.note).slice(0, 140) }); return json(res, 201, { ok: true, points: r.points }); }

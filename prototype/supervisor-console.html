@@ -138,7 +138,7 @@ tr.flash td{background:var(--flash)}
     <div class="stat"><div class="v num" id="sAgents">12</div><div class="l">agents online</div></div>
     <div class="stat"><div class="v num" id="sPts">0</div><div class="l">team points today</div></div>
     <div class="stat"><div class="v num" id="sQa">—</div><div class="l">avg evaluation today</div></div>
-    <div class="stat" id="sEscStat"><div class="v num" id="sEsc">3.8%</div><div class="l">escalation rate, challenge target 5%</div></div>
+    <div class="stat" id="sEscStat"><div class="v num" id="sEsc">3.8%</div><div class="l">escalation rate today</div></div>
     <div class="stat warn"><div class="v num" id="sAtt">0</div><div class="l">need attention</div></div>
     <div class="stat"><div class="v num" id="sRew">0</div><div class="l">rewards awaiting approval</div></div>
   </div>
@@ -157,17 +157,17 @@ tr.flash td{background:var(--flash)}
       </div>
 
       <div class="card">
-        <div class="card-h"><h2>Challenges</h2><span class="sub">2 active · 1 scheduled</span>
+        <div class="card-h"><h2>Challenges</h2><span class="sub" id="chalCount"></span>
           <div class="r"><button class="btn sm pri" id="newChal">New challenge</button></div></div>
         <div class="card-b" id="chals"></div>
         <form class="form" id="chalForm" hidden>
           <label>Template<select id="fTemplate">
-            <option value="esc">Keep escalations under target (Contact Lens category)</option>
+            <option value="esc">Keep escalations under target</option>
             <option value="qa">Every evaluation above a score</option>
-            <option value="fcr">First-contact resolution on a queue</option>
-            <option value="contest">Head-to-head: team vs team, most points</option>
-            <option value="kudos">Give three kudos this week</option></select></label>
-          <label>Scope<select id="fScope"><option>Billing team</option><option>Billing queue only</option><option>Individual, opt-in</option></select></label>
+            <option value="fcr">First-contact resolution on a queue (needs Contact Lens)</option>
+            <option value="contest">Team points target</option>
+            <option value="kudos">Kudos received per agent</option></select></label>
+          <label>Scope<select id="fScope"><option>Team</option><option>Individual, opt-in</option></select></label>
           <label>Target<input id="fTarget" value="5%"></label>
           <label>Reward per agent<input id="fReward" value="150 pts"></label>
           <label>Starts<input id="fStart" type="date"></label>
@@ -220,31 +220,24 @@ tr.flash td{background:var(--flash)}
   const conn = Arena.connect();
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4, exclude: ['agent-7'], fullNames: true }); // Liam stays quiet so the console has something to show
-  const chals = [
-    {t:'Billing queue: keep escalations under 5%', d:'Team · Contact Lens category "escalation" · ends Fri', prog:.62, st:'3.8% now', reward:'150 pts each', state:'active'},
-    {t:'Every evaluation 85 or better', d:'Individual, opt-in · 9 of 12 joined · ends Fri', prog:.8, st:'4 days clean', reward:'100 pts', state:'active'},
-    {t:'Billing vs Support: most points', d:'Head-to-head · starts Mon · 5 days', prog:0, st:'scheduled', reward:'Team lunch', state:'scheduled'},
-  ];
-  let rewards = [
-    {who:'Aisha Rahman', what:'$25 gift card', why:'Redeemed 2,500 pts'},
-    {who:'Diego Fuentes', what:'Half-day Friday', why:'Level 6 reward'},
-  ];
-  let kudos = [
-    {from:'Marcus Bell', to:'Grace Achieng', note:'took my overflow call', t:'09:22'},
-    {from:'Supervisor Dana', to:'Priya Natarajan', note:'calm under pressure', t:'09:04'},
-  ];
+  let chals = [], rewards = [], kudos = [];
   let sortKey = 'rank', sortDir = 1, evCount = 0;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
   const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+  const hm = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getHours())+':'+pad(d.getMinutes()); };
   const mins = ms => Math.round(ms/60000);
-  function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),1800); }
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2200); }
 
-  engine.on(r => {
-    evCount++;
-    if (r.event.EventType === 'KUDOS') { kudos.unshift({from:r.event.From, to:r.agent.name, note:r.event.Note, t:now()}); kudos = kudos.slice(0,5); }
-    render(r.agent);
-  });
+  // Challenges, pending rewards and the kudos feed come from the engine: in-memory in the demo, the API when live.
+  async function loadSide(){
+    try { [chals, rewards, kudos] = await Promise.all([engine.challenges(), engine.rewards('pending'), engine.kudosFeed(6)]); }
+    catch (e) { toast('API error: ' + e.message); }
+    renderSide();
+  }
+
+  engine.on(r => { evCount++; render(r.agent); if (r.event.EventType === 'KUDOS') loadSide(); });
 
   function render(changed){
     const rows = engine.leaderboard('today');
@@ -255,7 +248,7 @@ tr.flash td{background:var(--flash)}
       const qpill = q===null ? '<span class="pill mute">no evals</span>' : `<span class="pill ${q>=85?'good':q>=75?'warn':'bad'}">${q}%</span>`;
       return `<tr class="${changed===a?'flash':''}" data-id="${a.id}">
         <td class="rk num">${r.rank}</td>
-        <td><span class="who"><span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>${a.name}</span></td>
+        <td><span class="who"><span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>${esc(a.name)}</span></td>
         <td class="r num" style="font-family:Manrope;font-weight:800">${r.points.toLocaleString()}</td>
         <td class="r num">${a.handled}</td>
         <td class="r num mono">${Math.floor(r.aht/60)}:${pad(r.aht%60)}</td>
@@ -268,19 +261,31 @@ tr.flash td{background:var(--flash)}
 
     const order = {bad:0, warn:1, quiet:2};
     const att = engine.agents.flatMap(a => engine.flags(a).map(f => ({a,f}))).sort((x,y) => order[x.f.level]-order[y.f.level]);
-    $('#att').innerHTML = att.length ? att.map(({a,f}) => `<div class="ai"><span class="stripe ${f.level==='quiet'?'mute':f.level}"></span><div class="w"><b>${a.name}</b> · ${f.label}<small>${f.why}</small></div><button class="btn sm" data-review="${a.id}">Review</button></div>`).join('') : '<div class="empty">Nothing flagged.</div>';
+    $('#att').innerHTML = att.length ? att.map(({a,f}) => `<div class="ai"><span class="stripe ${f.level==='quiet'?'mute':f.level}"></span><div class="w"><b>${esc(a.name)}</b> · ${f.label}<small>${f.why}</small></div><button class="btn sm" data-review="${a.id}">Review</button></div>`).join('') : '<div class="empty">Nothing flagged.</div>';
 
     const s = engine.stats();
-    if (conn.remote) { const sel = document.querySelector('.chrome select'); sel.innerHTML = `<option>${engine.team || 'Team'} · ${s.agents} agents</option>`; }
+    if (conn.remote) { const sel = document.querySelector('.chrome select'); sel.innerHTML = `<option>${esc(engine.team || 'Team')} · ${s.agents} agents</option>`; }
     $('#sAgents').textContent = s.online; $('#sPts').textContent = s.points.toLocaleString();
     $('#sQa').textContent = s.qa !== null ? s.qa + '%' : '—';
+    const escCh = chals.find(c => c.template === 'esc' && c.state === 'active');
+    $('#sEsc').textContent = s.escalationRate === null ? '—' : s.escalationRate.toFixed(1) + '%';
+    $('#sEscStat').querySelector('.l').textContent = escCh ? `escalation rate, challenge target ${escCh.target}%` : 'escalation rate today';
+    $('#sEscStat').className = 'stat ' + (s.escalationRate === null ? '' : escCh && s.escalationRate > escCh.target ? 'bad' : 'good');
     $('#sAtt').textContent = att.length; $('#sRew').textContent = rewards.length; $('#evCount').textContent = evCount;
+    renderSide();
+  }
 
-    $('#chals').innerHTML = chals.map(c => `<div class="chal"><div><div class="t">${c.t}</div><div class="d">${c.d}</div></div>
-      <div class="st"><span class="pill ${c.state==='active'?'good':'mute'}">${c.state}</span></div>
-      <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round(c.prog*100)}%"></i></div><span>${c.st} · ${c.reward}</span></div></div>`).join('');
-    $('#rewards').innerHTML = rewards.length ? rewards.map((r,i) => `<div class="rw"><div><b>${r.who}</b> · ${r.what}<small>${r.why}</small></div><div class="acts"><button class="btn sm pri" data-approve="${i}">Approve</button><button class="btn sm" data-decline="${i}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
-    $('#kudos').innerHTML = kudos.map(k => `<div class="rw"><div><b>${k.from}</b> → ${k.to}<small>“${k.note}” · ${k.t}</small></div></div>`).join('');
+  function renderSide(){
+    const active = chals.filter(c => c.state === 'active').length, sched = chals.filter(c => c.state === 'scheduled').length;
+    $('#chalCount').textContent = `${active} active · ${sched} scheduled`;
+    const shown = chals.filter(c => c.state !== 'ended');
+    $('#chals').innerHTML = shown.length ? shown.map(c => { const p = c.progress || {}; return `<div class="chal"><div><div class="t">${esc(c.title)}</div><div class="d">${esc(c.scope)} · ${c.startsAt === c.endsAt ? c.endsAt : c.startsAt + ' to ' + c.endsAt}${p.measured === false ? ' · <span style="color:var(--warn)">' + esc(p.label) + '</span>' : ''}</div></div>
+      <div class="st"><span class="pill ${c.state==='active' ? (p.onTrack ? 'good' : 'warn') : 'mute'}">${c.state === 'active' ? (p.onTrack ? 'on track' : 'behind') : c.state}</span>${c.state !== 'ended' && conn.isSupervisor !== false ? ` <button class="btn sm" data-end="${c.id}" title="End this challenge">End</button>` : ''}</div>
+      <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round((p.progress || 0)*100)}%"></i></div><span>${esc(p.measured === false ? '' : p.label)}${p.measured === false ? '' : ' · '}${c.reward} pts each</span></div></div>`; }).join('')
+      : '<div class="empty">No challenges yet. Schedule one below.</div>';
+    $('#rewards').innerHTML = rewards.length ? rewards.map(r => `<div class="rw"><div><b>${esc(r.agentName)}</b> · ${esc(r.what)}<small>${r.cost.toLocaleString()} pts · requested ${hm(r.requestedAt)}</small></div><div class="acts"><button class="btn sm pri" data-approve="${r.id}">Approve</button><button class="btn sm" data-decline="${r.id}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
+    $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b>${esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
+    $('#sRew').textContent = rewards.length;
   }
 
   function readMix(){ return { quality:+$('#mQ').value, productivity:+$('#mP').value, adherence:+$('#mA').value }; }
@@ -299,31 +304,39 @@ tr.flash td{background:var(--flash)}
     $('#speed').addEventListener('input', e => sim.setRate(+e.target.value));
   } else {
     $('#pause').hidden = true; document.querySelector('.demo').hidden = true;
-    if (!conn.isSupervisor) { $('#saveMix').disabled = true; $('#saveMix').title = 'Supervisors only'; $('#mixWarn').textContent = 'Read only: your account is not in the supervisors group.'; }
+    if (!conn.isSupervisor) { $('#saveMix').disabled = true; $('#saveMix').title = 'Supervisors only'; $('#mixWarn').textContent = 'Read only: your account is not in the supervisors group.'; $('#newChal').hidden = true; }
   }
   ['mQ','mP','mA'].forEach(id => $('#'+id).addEventListener('input', renderMix));
   $('#saveMix').addEventListener('click', async () => { if (!renderMix()) return;
     if (engine.remote) { const r = await engine.saveMix(readMix()); toast(r.ok ? 'Scoring mix saved' : 'Not saved: ' + r.message); }
-    else { engine.setMix(readMix()); toast('Scoring mix saved for Billing team'); } });
-  $('#newChal').addEventListener('click', () => { $('#chalForm').hidden = !$('#chalForm').hidden; });
+    else { engine.setMix(readMix()); toast('Scoring mix saved'); } });
+
+  // New challenge form: template drives the default target and reward.
+  const tpl = () => Arena.TEMPLATES[$('#fTemplate').value] || Arena.TEMPLATES.contest;
+  function fillTemplateDefaults(){ const t = tpl(); $('#fTarget').value = t.defaultTarget + (t.unit === '%' ? '%' : ''); $('#fReward').value = t.reward + ' pts'; }
+  $('#newChal').addEventListener('click', () => { $('#chalForm').hidden = !$('#chalForm').hidden; if (!$('#chalForm').hidden) fillTemplateDefaults(); });
   $('#cancelChal').addEventListener('click', () => { $('#chalForm').hidden = true; });
-  $('#fTemplate').addEventListener('change', e => { $('#fTarget').value = {esc:'5%', qa:'85', fcr:'80%', contest:'—', kudos:'3'}[e.target.value]; });
-  $('#chalForm').addEventListener('submit', e => { e.preventDefault();
+  $('#fTemplate').addEventListener('change', fillTemplateDefaults);
+  $('#chalForm').addEventListener('submit', async e => { e.preventDefault();
     const t = $('#fTemplate'); const label = t.options[t.selectedIndex].text.replace(/ \(.*\)/, '');
-    chals.push({t:`${label} · ${$('#fTarget').value}`, d:`${$('#fScope').value} · ${$('#fStart').value||'today'} to ${$('#fEnd').value||'Fri'}`, prog:0, st:'scheduled', reward:$('#fReward').value, state:'scheduled'});
-    $('#chalForm').hidden = true; toast('Challenge scheduled'); render(); });
-  document.addEventListener('click', e => {
-    const ap = e.target.closest('[data-approve]'), dc = e.target.closest('[data-decline]'), rv = e.target.closest('[data-review]');
-    if (ap) { const r = rewards.splice(+ap.dataset.approve,1)[0]; toast(`Approved ${r.what} for ${r.who}`); render(); }
-    if (dc) { const r = rewards.splice(+dc.dataset.decline,1)[0]; toast(`Declined ${r.what} for ${r.who}`); render(); }
-    if (rv) { toast(`Opening contact sample for ${engine.byId(rv.dataset.review).name} in Contact Lens`); }
+    try {
+      const c = await engine.createChallenge({ template: t.value, title: `${label} · ${$('#fTarget').value}`, scope: $('#fScope').value, target: $('#fTarget').value, reward: $('#fReward').value, startsAt: $('#fStart').value, endsAt: $('#fEnd').value });
+      $('#chalForm').hidden = true; toast(c.state === 'active' ? 'Challenge started' : 'Challenge scheduled'); loadSide();
+    } catch (err) { toast('Not saved: ' + err.message); } });
+  document.addEventListener('click', async e => {
+    const ap = e.target.closest('[data-approve]'), dc = e.target.closest('[data-decline]'), rv = e.target.closest('[data-review]'), en = e.target.closest('[data-end]');
+    try {
+      if (ap || dc) { const id = (ap || dc).dataset[ap ? 'approve' : 'decline']; const r = await engine.decideReward(id, ap ? 'approved' : 'declined'); toast(`${ap ? 'Approved' : 'Declined'} ${r.what} for ${r.agentName}`); if (engine.remote) await engine.refresh(); render(); loadSide(); }
+      if (en) { await engine.endChallenge(en.dataset.end); toast('Challenge ended'); loadSide(); }
+      if (rv) { toast(`Opening contact sample for ${engine.byId(rv.dataset.review).name} in Contact Lens`); }
+    } catch (err) { toast('Failed: ' + err.message); }
   });
   $('#clock').textContent = now(); setInterval(() => { $('#clock').textContent = now(); render(); }, 30000);
-  setInterval(() => { const r = 3.2 + Math.random()*1.4; $('#sEsc').textContent = r.toFixed(1)+'%'; chals[0].st = r.toFixed(1)+'% now'; chals[0].prog = Math.max(.1, 1 - r/5*.6); $('#sEscStat').className = 'stat ' + (r<5?'good':'bad'); }, 6000);
+  setInterval(loadSide, 30000);
   const d = new Date(); $('#fStart').value = d.toISOString().slice(0,10); d.setDate(d.getDate()+5); $('#fEnd').value = d.toISOString().slice(0,10);
   renderMix(); render();
-  if (sim) sim.start();
+  if (sim) { sim.start(); loadSide(); }
   else engine.loadMix().then(m => { $('#mQ').value = m.quality; $('#mP').value = m.productivity; $('#mA').value = m.adherence; renderMix(); })
-    .then(() => engine.start(5)).then(render).catch(err => toast('API error: ' + err.message));
+    .then(() => engine.start(5)).then(() => { render(); loadSide(); }).catch(err => toast('API error: ' + err.message));
 })();
 </script>

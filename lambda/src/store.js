@@ -37,6 +37,7 @@ function weekKey(iso) {
 const keys = {
   agent: (arn) => 'AGENT#' + arn,
   team: (team, kind, period) => `TEAM#${team}#${kind}${period ? '#' + period : ''}`,
+  teamItems: (team) => 'TEAMITEMS#' + team,   // challenges (CH#), rewards (RW#), kudos feed (KD#)
 };
 
 /** Build the writes for one scored event. Pure, returned as plain objects so it can be tested. */
@@ -57,6 +58,9 @@ function planWrites(ev, points, now) {
   writes.push({ op: 'update', key: { pk, sk: 'LIVE' },
     expr: 'SET ' + liveSet.join(', ') + ', gsi1pk = :g1, gsi1sk = :g2',
     values: { ':ts': ts, ':team': team, ':user': ev.Username || ev.AgentARN, ':g1': keys.team(team, 'LIVE'), ':g2': pk, ...(ev.State ? { ':state': ev.State } : {}), ...(ev.Name ? { ':name': ev.Name } : {}) } });
+
+  // Kudos also land on a team feed so the console and wallboard can list them without scanning agents.
+  if (ev.EventType === 'KUDOS') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Note, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
 
   if (points !== 0 || isContact || isEval || ev.EventType === 'KUDOS') {
     for (const [kind, period] of [['DAY', dayKey(ts)], ['WEEK', weekKey(ts)]]) {
@@ -124,6 +128,35 @@ async function listEvents(arn, limit) {
   return r.Items || [];
 }
 
+// ---------- team items: challenges, rewards, kudos feed ----------
+async function listTeamItems(team, prefix, limit, newestFirst) {
+  const r = await db().send(new cmds.QueryCommand({ TableName: TABLE, KeyConditionExpression: 'pk = :pk AND begins_with(sk, :p)',
+    ExpressionAttributeValues: { ':pk': keys.teamItems(team), ':p': prefix }, ScanIndexForward: !newestFirst, Limit: limit || 50 }));
+  return r.Items || [];
+}
+async function putTeamItem(team, sk, item) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: keys.teamItems(team), sk }, item) }));
+  return item;
+}
+async function getTeamItem(team, sk) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: keys.teamItems(team), sk } }));
+  return r.Item || null;
+}
+/** Update named fields on a team item. Returns the updated item or null if it does not exist. */
+async function updateTeamItem(team, sk, fields) {
+  const names = {}, values = {}, sets = [];
+  Object.entries(fields).forEach(([k, v], i) => { names['#f' + i] = k; values[':v' + i] = v; sets.push(`#f${i} = :v${i}`); });
+  try {
+    const r = await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.teamItems(team), sk }, UpdateExpression: 'SET ' + sets.join(', '),
+      ExpressionAttributeNames: names, ExpressionAttributeValues: values, ConditionExpression: 'attribute_exists(pk)', ReturnValues: 'ALL_NEW' }));
+    return r.Attributes;
+  } catch (e) { if (e.name === 'ConditionalCheckFailedException') return null; throw e; }
+}
+/** Spend points from an agent's week total (reward approval). */
+async function spendPoints(arn, iso, cost) {
+  await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: `WEEK#${weekKey(iso)}` }, UpdateExpression: 'ADD points :c', ExpressionAttributeValues: { ':c': -cost } }));
+}
+
 async function getMix() {
   const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'MIX' } }));
   return r.Item ? r.Item.mix : null;
@@ -132,4 +165,5 @@ async function putMix(mix) {
   await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'MIX', mix, updatedAt: new Date().toISOString() } }));
 }
 
-module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix };
+module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
+  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints };

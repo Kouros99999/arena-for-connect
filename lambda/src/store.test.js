@@ -34,6 +34,13 @@ test('an evaluation appends to the evals list; auto-fail appends 0', () => {
   assert.deepEqual(w.values[':ev'], [0]); assert.equal(w.values[':af'], 1);
 });
 
+test('a kudos event also writes a team feed row', () => {
+  const ev = { EventType: 'KUDOS', AgentARN: 'arn:x/agent/p', EventTimestamp: '2026-09-15T14:05:30.000Z', From: 'Marcus', Note: 'great save', Team: 'Billing team', ToName: 'Priya N' };
+  const w = store.planWrites(ev, 8, 0);
+  const feed = w.find((x) => x.op === 'put' && x.item.sk.startsWith('KD#'));
+  assert.ok(feed); assert.equal(feed.item.pk, 'TEAMITEMS#Billing team'); assert.equal(feed.item.toName, 'Priya N'); assert.equal(feed.item.from, 'Marcus');
+});
+
 test('mergeTeam produces the engine agent shape', () => {
   const pk = 'AGENT#arn:x/agent/p';
   const agents = store.mergeTeam(

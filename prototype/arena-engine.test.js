@@ -66,6 +66,37 @@ test('badges', () => {
   assert.equal(b.streak7, true); assert.equal(b.team, true); assert.equal(b.first95, false); assert.equal(b.fifty, false);
 });
 
+test('challengeProgress measures from agent data', () => {
+  const agents = [{ handled: 10, escalations: 1, today: 300, evals: [90, 88], kudosReceived: 3 }, { handled: 10, escalations: 0, today: 200, evals: [70], kudosReceived: 1 }];
+  const esc = Arena.challengeProgress({ template: 'esc', target: '5%' }, agents);
+  assert.equal(esc.value, '5.0%'); assert.equal(esc.onTrack, true); assert.equal(esc.measured, true);
+  assert.equal(Arena.challengeProgress({ template: 'esc', target: 5 }, [{ handled: 0 }]).measured, false);
+  const qa = Arena.challengeProgress({ template: 'qa', target: 85 }, agents);
+  assert.equal(qa.value, '1/2'); assert.equal(qa.onTrack, false);
+  const contest = Arena.challengeProgress({ template: 'contest', target: 1000 }, agents);
+  assert.equal(contest.progress, 0.5); assert.equal(contest.onTrack, false);
+  const kudos = Arena.challengeProgress({ template: 'kudos', target: 3 }, agents);
+  assert.equal(kudos.value, '1/2');
+  assert.equal(Arena.challengeProgress({ template: 'fcr', target: 80 }, agents).measured, false);
+});
+
+test('local engine: challenges, rewards and kudos feed', async () => {
+  const e = Arena.seedTeam(Arena.createEngine());
+  const list = await e.challenges();
+  assert.equal(list.length, 3); assert.ok(list[0].progress);
+  const made = await e.createChallenge({ template: 'contest', target: 500, startsAt: '2099-01-01', endsAt: '2099-01-05' });
+  assert.equal(made.state, 'scheduled'); assert.equal(made.reward, 250);
+  assert.equal((await e.endChallenge(made.id)).state, 'ended');
+  const pending = await e.rewards('pending'); assert.equal(pending.length, 2);
+  await assert.rejects(() => e.requestReward(e.agents[0].id, 'lunch'), /needs 8,000/);
+  const rw = await e.requestReward(e.agents[3].id, 'parking'); assert.equal(rw.status, 'pending');
+  const before = e.agents[3].week;
+  await e.decideReward(rw.id, 'approved', 'Dana'); assert.equal(e.agents[3].week, before - 1500);
+  assert.equal(await e.kudos(e.agents[1].id, 'nice', 'Priya'), true);
+  const feed = await e.kudosFeed(5); assert.equal(feed[0].note, 'nice'); assert.equal(feed[0].toName, e.agents[1].name);
+  assert.equal(e.stats().escalationRate !== null, true);
+});
+
 test('connect: query string beats config, config beats simulator', () => {
   assert.equal(Arena.connect('', {}).remote, false);
   const viaConfig = Arena.connect('', { api: '/api', team: 'Billing team' });

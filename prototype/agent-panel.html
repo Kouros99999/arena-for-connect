@@ -110,6 +110,13 @@ button{font:inherit;cursor:pointer}
 .fi .pt{font-family:Manrope,sans-serif;font-weight:800;color:var(--accent);white-space:nowrap}
 .fi .pt.neg{color:var(--down)}
 
+.act{display:grid;grid-template-columns:1fr auto;gap:6px}
+.act input,.act select{border:1px solid var(--line);border-radius:4px;padding:6px 8px;background:var(--panel);color:var(--ink);font:inherit;font-size:13px;min-width:0}
+.act input{grid-column:1/-1}
+.act .btn{border:1px solid var(--accent);background:var(--accent);color:#fff;padding:5px 10px;border-radius:4px;font-size:12.5px;font-weight:600}
+.act .btn:focus-visible,.act select:focus-visible,.act input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.msg{font-size:12.5px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:6px 8px}
+.msg.bad{color:var(--down);background:var(--sub)}
 /* Demo controls, not part of the product */
 .demo{border-top:1px dashed var(--line);background:var(--sub);padding:10px 16px;display:flex;flex-direction:column;gap:8px}
 .demo .l{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
@@ -176,13 +183,19 @@ button{font:inherit;cursor:pointer}
       </div>
 
       <div class="section">
-        <h3>Active challenge <span>ends Fri</span></h3>
-        <div class="chal">
-          <div class="t">Billing queue: keep escalations under 5%</div>
-          <div class="d">Team goal. Escalation rate is measured on Contact Lens categories, not self-reported.</div>
-          <div class="bar"><i id="chalBar" style="width:62%"></i></div>
-          <div class="meta"><span>Currently <b class="num" id="chalRate">3.8%</b></span><span>+150 pts each if held</span></div>
-        </div>
+        <h3>Active challenge <span id="chalEnds"></span></h3>
+        <div class="chal" id="chalCard"><div class="d">Loading…</div></div>
+      </div>
+
+      <div class="section">
+        <h3>Send kudos</h3>
+        <div class="act"><select id="kudosTo" aria-label="Teammate"></select><input id="kudosNote" maxlength="140" placeholder="What did they do?"><button id="kudosSend" class="btn">Send</button></div>
+      </div>
+
+      <div class="section">
+        <h3>Redeem points <span><span id="weekPts" class="num">0</span> pts this week</span></h3>
+        <div class="act"><select id="redeemItem" aria-label="Reward"></select><button id="redeemBtn" class="btn">Request</button></div>
+        <div class="msg" id="msg" hidden></div>
       </div>
 
       <div class="section">
@@ -220,19 +233,39 @@ button{font:inherit;cursor:pointer}
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
   let YOU = conn.remote ? null : engine.agents[0];
-  let range = 'today', feed = [], lastRank = {};
+  let range = 'today', feed = [], lastRank = {}, chal = null;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
   const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function note(msg, bad){ const m = $('#msg'); m.textContent = msg; m.className = 'msg' + (bad ? ' bad' : ''); m.hidden = false; clearTimeout(note.t); note.t = setTimeout(() => { m.hidden = true; }, 3500); }
 
+  // Remote refreshes rebuild the agent objects, so always re-resolve "you" by id before rendering.
+  const resolveYou = () => { if (YOU) { const cur = engine.byId(YOU.id); if (cur) YOU = cur; } };
   engine.on(r => {
-    if (r.agent === YOU) { feed.unshift({ words: r.words, pts: r.points, t: now() }); feed = feed.slice(0, 6); }
+    if (YOU && r.agent.id === YOU.id) { feed.unshift({ words: r.words, pts: r.points, t: now() }); feed = feed.slice(0, 6); }
     const log = $('#log'); log.textContent = JSON.stringify(r.event) + '\n' + log.textContent.split('\n').slice(0,2).join('\n');
     render(r.agent);
   });
 
+  async function loadChallenge(){
+    try { const list = await engine.challenges(); chal = list.find(c => c.state === 'active') || null; } catch (e) { chal = null; }
+    renderChallenge();
+  }
+  function renderChallenge(){
+    const box = $('#chalCard');
+    if (!chal) { $('#chalEnds').textContent = ''; box.innerHTML = '<div class="d">No active challenge. Your supervisor can start one from the console.</div>'; return; }
+    const p = chal.progress || {};
+    $('#chalEnds').textContent = 'ends ' + chal.endsAt;
+    box.innerHTML = `<div class="t">${esc(chal.title)}</div>
+      <div class="d">${esc(chal.scope)}. Measured from Connect data, not self-reported.</div>
+      <div class="bar"><i style="width:${Math.round((p.progress || 0) * 100)}%"></i></div>
+      <div class="meta"><span>${p.measured === false ? esc(p.label) : 'Currently <b class="num">' + esc(p.value) + '</b> · ' + (p.onTrack ? 'on track' : 'behind')}</span><span>+${chal.reward} pts each if held</span></div>`;
+  }
+
   function render(changed){
-    if (!YOU) return;
+    resolveYou();
+    if (!YOU || !engine.byId(YOU.id)) return;
     const rows = engine.leaderboard(range);
     const board = $('#board');
     board.innerHTML = rows.map(r => {
@@ -241,7 +274,7 @@ button{font:inherit;cursor:pointer}
       return `<div class="rowa ${a===YOU?'you':''} ${r.rank<=3?'top':''} ${changed===a?'flash':''}" data-id="${a.id}">
         <span class="rk num">${r.rank}</span>
         <span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>
-        <span class="nm">${a===YOU?'You':a.name}<small>${a.handled} contacts · ${r.qa!==null?r.qa+'% QA':'no evals yet'}</small></span>
+        <span class="nm">${a===YOU?'You':esc(a.name)}<small>${a.handled} contacts · ${r.qa!==null?r.qa+'% QA':'no evals yet'}</small></span>
         <span class="p num">${r.points.toLocaleString()}</span>${mv}</div>`;
     }).join('');
     rows.forEach(r => lastRank[r.agent.id] = r.rank);
@@ -264,12 +297,33 @@ button{font:inherit;cursor:pointer}
     $('#feed').innerHTML = feed.length ? feed.map(f => `<div class="fi"><div><div class="w">${f.words}</div><div class="t">${f.t}</div></div><div class="pt num ${f.pts<0?'neg':''}">${f.pts>0?'+':''}${f.pts}</div></div>`).join('')
       : '<div class="fi"><div class="w">Points appear here as contacts, evaluations and kudos come in.</div></div>';
     $('#badges').innerHTML = engine.badges(YOU).map(b => `<span class="badge ${b.earned?'':'locked'}"><b></b>${b.name}</span>`).join('');
+
+    // Kudos recipients: teammates only. Redeem: catalog priced against this week's points.
+    const sel = $('#kudosTo'), cur = sel.value;
+    sel.innerHTML = engine.agents.filter(a => a !== YOU).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('') || '<option value="">No teammates yet</option>';
+    if (cur) sel.value = cur;
+    $('#weekPts').textContent = YOU.week.toLocaleString();
+    const rs = $('#redeemItem'), rcur = rs.value;
+    rs.innerHTML = Arena.CATALOG.map(c => `<option value="${c.id}" ${YOU.week < c.cost ? 'disabled' : ''}>${esc(c.name)} · ${c.cost.toLocaleString()} pts${YOU.week < c.cost ? ' (not yet)' : ''}</option>`).join('');
+    if (rcur) rs.value = rcur;
   }
 
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
     range = b.dataset.range; lastRank = {}; render();
   }));
+  $('#kudosSend').addEventListener('click', async () => {
+    const to = $('#kudosTo').value, text = $('#kudosNote').value.trim();
+    if (!to || !text) return note('Pick a teammate and write a note.', true);
+    try { const ok = await engine.kudos(to, text, YOU.name); note(ok ? 'Kudos sent.' : 'Could not send kudos.', !ok); if (ok) { $('#kudosNote').value = ''; if (engine.remote) await engine.refresh(); render(); } }
+    catch (e) { note('Could not send kudos: ' + e.message, true); }
+  });
+  $('#redeemBtn').addEventListener('click', async () => {
+    const item = Arena.CATALOG.find(c => c.id === $('#redeemItem').value);
+    if (!item) return;
+    try { await engine.requestReward(YOU.id, item.id, YOU.name); note(`Requested ${item.name}. Your supervisor will approve it; ${item.cost.toLocaleString()} pts come off once approved.`); }
+    catch (e) { note('Not requested: ' + e.message, true); }
+  });
   if (sim) {
     document.querySelectorAll('[data-sim]').forEach(b => b.addEventListener('click', () => sim.fire(b.dataset.sim, YOU)));
     $('#pause').addEventListener('click', e => { if (sim.running) { sim.stop(); e.target.textContent = 'Resume stream'; } else { sim.start(); e.target.textContent = 'Pause stream'; } });
@@ -279,18 +333,18 @@ button{font:inherit;cursor:pointer}
     document.querySelector('.contact .note').textContent = 'Live data from the Arena API. The pane refreshes every five seconds from DynamoDB, fed by the agent event stream.';
   }
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
-  setInterval(() => { const r = 3.2 + Math.random()*1.4; $('#chalRate').textContent = r.toFixed(1) + '%'; $('#chalBar').style.width = Math.max(10, 100 - r/5*60) + '%'; }, 6000);
+  setInterval(loadChallenge, 30000);
 
   if (sim) {
     feed = [{words:'Evaluation scored <b>92%</b>', pts:20, t:'09:12'},{words:'Handled <b>Billing</b> contact, 5 min', pts:10, t:'09:05'},{words:'Streak bonus, day 7', pts:Arena.BASE.streakDay, t:'08:31'}];
-    render(); sim.start();
+    render(); loadChallenge(); sim.start();
   } else {
-    const words = e => e.type==='CONTACT_HANDLED' ? `Handled <b>${e.queue||'a'}</b> contact, ${Math.round((e.handleTime||0)/60)} min`
+    const words = e => e.type==='CONTACT_HANDLED' ? `Handled <b>${esc(e.queue||'a')}</b> contact, ${Math.round((e.handleTime||0)/60)} min`
       : e.type==='EVALUATION_SUBMITTED' ? (e.autoFail ? 'Evaluation <b>auto-fail</b>' : `Evaluation scored <b>${e.score}%</b>`)
-      : e.type==='KUDOS' ? `Kudos from <b>${e.from}</b>: “${e.note}”` : e.type;
+      : e.type==='KUDOS' ? `Kudos from <b>${esc(e.from)}</b>: “${esc(e.note)}”` : e.type;
     async function loadFeed(){ const evs = await engine.events(YOU.id, 6); feed = evs.filter(e => e.points).map(e => ({ words: words(e), pts: e.points, t: e.at.slice(11,16) })); render(); }
-    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); } render(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
-    engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); else render(r.agent); });
+    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); } render(); loadChallenge(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
+    engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); });
   }
 })();
 </script>

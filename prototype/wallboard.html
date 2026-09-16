@@ -84,10 +84,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 
     <div class="side">
       <div class="goal">
-        <div class="t">Keep escalations under 5% this week</div>
-        <div class="big"><span class="v num" id="esc">3.8%</span><span class="tg">target 5.0% · ends Fri</span></div>
-        <div class="bar"><i id="escBar" style="width:60%"></i></div>
-        <div class="m"><span>Team is <b id="escState">on track</b></span><span>+150 pts each if held</span></div>
+        <div class="t" id="goalTitle">Loading challenge…</div>
+        <div class="big"><span class="v num" id="esc">—</span><span class="tg" id="escTarget"></span></div>
+        <div class="bar"><i id="escBar" style="width:0%"></i></div>
+        <div class="m"><span>Team is <b id="escState">—</b></span><span id="goalReward"></span></div>
       </div>
 
       <div class="stats">
@@ -115,29 +115,47 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
   const conn = Arena.connect();
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
-  const kudos = [{f:'Marcus',t:'Grace Achieng',n:'took my overflow call'},{f:'Supervisor Dana',t:'Priya Natarajan',n:'calm under pressure'},{f:'Sofia',t:'Ethan Cole',n:'thanks for the handoff'}];
+  let kudos = [], goal = null;
   const delta = {};
   let leader = null;
   const $ = s => document.querySelector(s); const pad = n => String(n).padStart(2,'0');
   const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   function moment(ico, html, sub){ $('#moment').innerHTML = `<div class="ico">${ico}</div><div class="w">${html}<small>${sub} · ${now()}</small></div>`; }
 
   engine.on(r => {
     const ev = r.event, a = r.agent;
-    if (ev.EventType === 'EVALUATION_SUBMITTED' && ev.Score >= 95) moment('★', `<b>${a.name}</b> scored ${ev.Score}% on an evaluation`, 'First 95 badge');
-    if (ev.EventType === 'KUDOS') { kudos.unshift({f:ev.From, t:a.name, n:ev.Note}); kudos.length = Math.min(kudos.length, 8); renderTicker(); moment('♥', `<b>${ev.From}</b> sent kudos to <b>${a.name}</b>`, `“${ev.Note}”`); }
+    if (ev.EventType === 'EVALUATION_SUBMITTED' && ev.Score >= 95) moment('★', `<b>${esc(a.name)}</b> scored ${ev.Score}% on an evaluation`, 'First 95 badge');
+    if (ev.EventType === 'KUDOS') { moment('♥', `<b>${esc(ev.From)}</b> sent kudos to <b>${esc(a.name)}</b>`, `“${esc(ev.Note)}”`); loadSide(); }
     delta[a.id] = r.points; setTimeout(() => { delta[a.id] = 0; }, 4000);
     render(a);
   });
 
+  // The goal card is the first active challenge; the ticker is the team kudos feed.
+  async function loadSide(){
+    try { const [chs, ks] = await Promise.all([engine.challenges(), engine.kudosFeed(8)]); goal = chs.find(c => c.state === 'active') || null; kudos = ks; }
+    catch (e) { /* keep last good */ }
+    renderGoal(); renderTicker();
+  }
+  function renderGoal(){
+    if (!goal) { $('#goalTitle').textContent = 'No active challenge'; $('#esc').textContent = '—'; $('#escTarget').textContent = 'ask a supervisor to start one'; $('#escBar').style.width = '0%'; $('#escState').textContent = '—'; $('#goalReward').textContent = ''; return; }
+    const p = goal.progress || {};
+    $('#goalTitle').textContent = goal.title;
+    $('#esc').textContent = p.value || '—'; $('#esc').classList.toggle('over', p.measured !== false && !p.onTrack);
+    $('#escTarget').textContent = `target ${goal.target}${Arena.TEMPLATES[goal.template] && Arena.TEMPLATES[goal.template].unit === '%' ? '%' : ''} · ends ${goal.endsAt}`;
+    $('#escBar').style.width = Math.round((p.progress || 0) * 100) + '%';
+    $('#escState').textContent = p.measured === false ? p.label : (p.onTrack ? 'on track' : 'behind');
+    $('#goalReward').textContent = `+${goal.reward} pts each if held`;
+  }
+
   function render(changed){
     const rows = engine.leaderboard('today').slice(0, 8);
-    if (leader !== null && rows[0].agent.id !== leader) moment('▲', `<b>${rows[0].agent.name}</b> takes the lead`, `${rows[0].points.toLocaleString()} points`);
-    leader = rows[0].agent.id;
+    if (rows.length && leader !== null && rows[0].agent.id !== leader) moment('▲', `<b>${esc(rows[0].agent.name)}</b> takes the lead`, `${rows[0].points.toLocaleString()} points`);
+    leader = rows.length ? rows[0].agent.id : null;
     $('#rows').innerHTML = rows.map(r => { const a = r.agent, d = delta[a.id] || 0; return `<div class="row ${changed===a?'flash':''}" data-id="${a.id}">
       <span class="rk num">${r.rank}</span>
       <span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>
-      <span class="nm">${a.name}<small>${a.handled} contacts · ${r.qa!==null?r.qa+'% QA':'no evals yet'}</small></span>
+      <span class="nm">${esc(a.name)}<small>${a.handled} contacts · ${r.qa!==null?r.qa+'% QA':'no evals yet'}</small></span>
       <span class="pt num">${r.points.toLocaleString()}<span class="d">${d>0?'+'+d:d<0?d:''}</span></span></div>`; }).join('');
     if (changed) setTimeout(() => { const el = $('#rows').querySelector(`[data-id="${changed.id}"]`); el && el.classList.remove('flash'); }, 900);
     const s = engine.stats();
@@ -145,18 +163,17 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
     $('#qa').textContent = s.qa !== null ? s.qa + '%' : '—';
     $('#handled').textContent = s.handled;
     $('#updated').textContent = 'updated ' + now();
+    renderGoal();
   }
-  function renderTicker(){ $('#track').innerHTML = kudos.map(k => `<span><b>${k.f}</b> → <b>${k.t}</b>: “${k.n}”</span>`).join(''); }
+  function renderTicker(){ $('#track').innerHTML = kudos.length ? kudos.map(k => `<span><b>${esc(k.from)}</b> → <b>${esc(k.toName || k.to)}</b>: “${esc(k.note)}”</span>`).join('') : '<span>Kudos sent by teammates scroll here</span>'; }
 
-  setInterval(() => { const r = 3.2 + Math.random()*1.6, over = r >= 5; $('#esc').textContent = r.toFixed(1)+'%'; $('#esc').classList.toggle('over', over); $('#escBar').style.width = Math.max(8, 100 - r/5*60)+'%'; $('#escState').textContent = over ? 'over target' : 'on track'; }, 6000);
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
-  renderTicker();
-  if (sim) { render(); sim.start(); }
+  setInterval(loadSide, 30000);
+  if (sim) { render(); loadSide(); sim.start(); }
   else {
     document.querySelector('.top .team').textContent = engine.team || 'Team';
-    kudos.length = 0; renderTicker();
     $('#moment').innerHTML = '<div class="ico">★</div><div class="w">Moments appear here<small>badges, kudos and lead changes as they happen</small></div>';
-    engine.start(5).then(render).catch(err => { $('#updated').textContent = 'API error: ' + err.message; });
+    engine.start(5).then(() => { render(); loadSide(); }).catch(err => { $('#updated').textContent = 'API error: ' + err.message; });
   }
 })();
 </script>
