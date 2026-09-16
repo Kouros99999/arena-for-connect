@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Connect Arena Supervisor Console</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -270,6 +271,7 @@ tr.flash td{background:var(--flash)}
     $('#att').innerHTML = att.length ? att.map(({a,f}) => `<div class="ai"><span class="stripe ${f.level==='quiet'?'mute':f.level}"></span><div class="w"><b>${a.name}</b> · ${f.label}<small>${f.why}</small></div><button class="btn sm" data-review="${a.id}">Review</button></div>`).join('') : '<div class="empty">Nothing flagged.</div>';
 
     const s = engine.stats();
+    if (conn.remote) { const sel = document.querySelector('.chrome select'); sel.innerHTML = `<option>${engine.team || 'Team'} · ${s.agents} agents</option>`; }
     $('#sAgents').textContent = s.online; $('#sPts').textContent = s.points.toLocaleString();
     $('#sQa').textContent = s.qa !== null ? s.qa + '%' : '—';
     $('#sAtt').textContent = att.length; $('#sRew').textContent = rewards.length; $('#evCount').textContent = evCount;

@@ -234,7 +234,8 @@
     const base = opts.api.replace(/\/$/, ''), team = opts.team || 'unassigned';
     // Token comes from a static value or, when sign-in is configured, from a provider that can refresh it.
     const tokenProvider = opts.tokenProvider || (async () => opts.token || null);
-    const headersFor = async () => { const t = await tokenProvider(); return Object.assign({ 'content-type': 'application/json' }, t ? { authorization: 'Bearer ' + t } : {}); };
+    // Every call waits for sign-in to finish first, so nothing fires during the token exchange.
+    const headersFor = async () => { if (opts.ready) await opts.ready(); const t = await tokenProvider(); return Object.assign({ 'content-type': 'application/json' }, t ? { authorization: 'Bearer ' + t } : {}); };
     const engine = createEngine({ agents: [] });
     const listeners = [];
     let mix = Object.assign({}, DEFAULT_MIX), lastSeen = {}, timer = null;
