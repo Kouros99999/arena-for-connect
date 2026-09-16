@@ -260,7 +260,7 @@ tr.flash td{background:var(--flash)}
         <td class="r num">${a.handled}</td>
         <td class="r num mono">${Math.floor(r.aht/60)}:${pad(r.aht%60)}</td>
         <td class="r">${qpill}</td>
-        <td class="r num" style="color:var(--muted)">${mins(Date.now()-a.lastEvent)} min ago</td>
+        <td class="r num" style="color:var(--muted)">${a.lastEvent ? mins(Date.now()-a.lastEvent) + ' min ago' : 'never'}</td>
         <td>${f.map(x => `<span class="pill ${x.level==='quiet'?'mute':x.level}">${x.label}</span>`).join(' ')}</td></tr>`;
     }).join('');
     if (changed) setTimeout(() => { const el = $('#tbl tbody').querySelector(`[data-id="${changed.id}"]`); el && el.classList.remove('flash'); }, 700);

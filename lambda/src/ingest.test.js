@@ -8,7 +8,7 @@ const base = (over) => Object.assign({
   AWSAccountId: '123456789012', AgentARN: ARN, Version: '2017-10-01', EventId: 'e1',
   EventTimestamp: '2026-09-15T14:05:30.000Z', EventType: 'STATE_CHANGE',
   CurrentAgentSnapshot: { AgentStatus: { Name: 'Available', Type: 'ROUTABLE' }, Contacts: [],
-    Configuration: { Username: 'priya', RoutingProfile: { Name: 'Billing team' } } },
+    Configuration: { Username: 'priya', FirstName: 'Priya', LastName: 'Natarajan', RoutingProfile: { Name: 'Billing team' } } },
   PreviousAgentSnapshot: { AgentStatus: { Name: 'Break', Type: 'CUSTOM' }, Contacts: [] },
 }, over);
 
@@ -16,7 +16,7 @@ test('state change emits AGENT_STATE_CHANGE with team and username', () => {
   const out = translate(base());
   assert.equal(out.length, 1);
   assert.equal(out[0].EventType, 'AGENT_STATE_CHANGE');
-  assert.equal(out[0].State, 'Available'); assert.equal(out[0].Team, 'Billing team'); assert.equal(out[0].Username, 'priya');
+  assert.equal(out[0].State, 'Available'); assert.equal(out[0].Team, 'Billing team'); assert.equal(out[0].Username, 'priya'); assert.equal(out[0].Name, 'Priya Natarajan');
 });
 
 test('same status in both snapshots emits nothing', () => {

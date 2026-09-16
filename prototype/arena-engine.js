@@ -250,7 +250,7 @@
       // The signed-in agent may have no rows yet (nothing scored today). Show them at zero rather than nothing.
       const self = typeof opts.self === 'function' ? opts.self() : opts.self;
       if (self && self.id && !engine.agents.some((a) => a.id === self.id)) {
-        engine.agents.push(makeAgent(engine.agents.length, self.name || self.id.split('/').pop(), hueFor(self.id), { id: self.id, team, lastEvent: 0, state: 'Available' }));
+        engine.agents.push(makeAgent(engine.agents.length, self.name || self.id.split('/').pop(), hueFor(self.id), { id: self.id, team, lastEvent: 0, state: 'Offline', placeholder: true }));
       }
       for (const a of engine.agents) {
         const prev = lastSeen[a.id];

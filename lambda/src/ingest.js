@@ -28,9 +28,10 @@ function translate(raw) {
   const curState = cur.AgentStatus && cur.AgentStatus.Name, prevState = prev.AgentStatus && prev.AgentStatus.Name;
   const team = cur.Configuration && cur.Configuration.RoutingProfile && cur.Configuration.RoutingProfile.Name;
   const username = cur.Configuration && cur.Configuration.Username;
+  const name = [cur.Configuration && cur.Configuration.FirstName, cur.Configuration && cur.Configuration.LastName].filter(Boolean).join(' ') || undefined;
 
   if (raw.EventType === 'LOGIN' || raw.EventType === 'LOGOUT' || (raw.EventType === 'STATE_CHANGE' && curState !== prevState)) {
-    out.push({ EventType: 'AGENT_STATE_CHANGE', AgentARN: arn, EventTimestamp: ts, State: raw.EventType === 'LOGOUT' ? 'Offline' : curState || 'Unknown', Team: team, Username: username });
+    out.push({ EventType: 'AGENT_STATE_CHANGE', AgentARN: arn, EventTimestamp: ts, State: raw.EventType === 'LOGOUT' ? 'Offline' : curState || 'Unknown', Team: team, Username: username, Name: name });
   }
 
   // A contact that was not ENDED before and is ENDED now has just been handled.
@@ -39,7 +40,7 @@ function translate(raw) {
     const before = prevById[c.ContactId];
     if (c.State === 'ENDED' && (!before || before.State !== 'ENDED') && c.ConnectedToAgentTimestamp) {
       const handle = Math.max(0, Math.round((Date.parse(ts) - Date.parse(c.ConnectedToAgentTimestamp)) / 1000));
-      out.push({ EventType: 'CONTACT_HANDLED', AgentARN: arn, EventTimestamp: ts, ContactId: c.ContactId, Queue: c.Queue && c.Queue.Name, Channel: c.Channel, HandleTime: handle, Team: team, Username: username });
+      out.push({ EventType: 'CONTACT_HANDLED', AgentARN: arn, EventTimestamp: ts, ContactId: c.ContactId, Queue: c.Queue && c.Queue.Name, Channel: c.Channel, HandleTime: handle, Team: team, Username: username, Name: name });
     }
   }
   return out;

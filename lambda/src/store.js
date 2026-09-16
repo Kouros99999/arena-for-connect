@@ -53,9 +53,10 @@ function planWrites(ev, points, now) {
 
   const liveSet = ['lastEvent = :ts', 'team = :team', 'username = if_not_exists(username, :user)'];
   if (ev.State) liveSet.push('agentState = :state');
+  if (ev.Name) liveSet.push('displayName = :name');
   writes.push({ op: 'update', key: { pk, sk: 'LIVE' },
     expr: 'SET ' + liveSet.join(', ') + ', gsi1pk = :g1, gsi1sk = :g2',
-    values: { ':ts': ts, ':team': team, ':user': ev.Username || ev.AgentARN, ':g1': keys.team(team, 'LIVE'), ':g2': pk, ...(ev.State ? { ':state': ev.State } : {}) } });
+    values: { ':ts': ts, ':team': team, ':user': ev.Username || ev.AgentARN, ':g1': keys.team(team, 'LIVE'), ':g2': pk, ...(ev.State ? { ':state': ev.State } : {}), ...(ev.Name ? { ':name': ev.Name } : {}) } });
 
   if (points !== 0 || isContact || isEval || ev.EventType === 'KUDOS') {
     for (const [kind, period] of [['DAY', dayKey(ts)], ['WEEK', weekKey(ts)]]) {
@@ -103,7 +104,7 @@ async function queryGsi(gsi1pk) {
 function mergeTeam(live, day, week) {
   const byArn = new Map();
   const get = (pk) => { if (!byArn.has(pk)) byArn.set(pk, { id: pk.replace(/^AGENT#/, ''), today: 0, week: 0, handled: 0, ahtSum: 0, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Offline', lastEvent: 0 }); return byArn.get(pk); };
-  for (const r of live) { const a = get(r.pk); a.name = r.username; a.state = r.agentState || 'Offline'; a.lastEvent = r.lastEvent ? Date.parse(r.lastEvent) : 0; a.streak = r.streak || 0; a.team = r.team; }
+  for (const r of live) { const a = get(r.pk); a.name = r.displayName || r.username; a.username = r.username; a.state = r.agentState || 'Offline'; a.lastEvent = r.lastEvent ? Date.parse(r.lastEvent) : 0; a.streak = r.streak || 0; a.team = r.team; }
   for (const r of day) { const a = get(r.pk); Object.assign(a, { today: r.points || 0, handled: r.handled || 0, ahtSum: r.ahtSum || 0, evals: r.evals || [], autofails: r.autofails || 0, kudosReceived: r.kudosReceived || 0, escalations: r.escalations || 0 }); a.name = a.name || r.username; }
   for (const r of week) { const a = get(r.pk); a.week = r.points || 0; a.name = a.name || r.username; }
   return [...byArn.values()].map((a) => { a.name = a.name || a.id.split('/').pop(); return a; });
