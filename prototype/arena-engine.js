@@ -270,7 +270,7 @@
     function stop() { if (timer) clearInterval(timer); timer = null; }
 
     return Object.assign({}, engine, {
-      remote: true, refresh, events, loadMix, saveMix, kudos, start, stop,
+      remote: true, team, refresh, events, loadMix, saveMix, kudos, start, stop,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) saveMix(m); return v; },

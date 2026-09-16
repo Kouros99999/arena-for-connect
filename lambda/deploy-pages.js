@@ -43,8 +43,9 @@ if (out('UserPoolId') && out('UserPoolClientId')) {
 }
 
 console.log('uploading to s3://' + bucket);
-aws('s3', 'sync', tmp, 's3://' + bucket, '--delete', '--cache-control', 'public, max-age=300', '--exclude', '*', '--include', '*.html', '--content-type', 'text/html; charset=utf-8');
-aws('s3', 'sync', tmp, 's3://' + bucket, '--cache-control', 'public, max-age=300', '--exclude', '*', '--include', '*.js', '--content-type', 'text/javascript; charset=utf-8');
+// Short browser cache so a redeploy shows up within a minute; CloudFront is invalidated below anyway.
+aws('s3', 'sync', tmp, 's3://' + bucket, '--delete', '--cache-control', 'public, max-age=60', '--exclude', '*', '--include', '*.html', '--content-type', 'text/html; charset=utf-8');
+aws('s3', 'sync', tmp, 's3://' + bucket, '--cache-control', 'public, max-age=60', '--exclude', '*', '--include', '*.js', '--content-type', 'text/javascript; charset=utf-8');
 // config.js must never be cached long: it is what an operator changes.
 aws('s3', 'cp', path.join(tmp, 'config.js'), 's3://' + bucket + '/config.js', '--cache-control', 'no-cache', '--content-type', 'text/javascript');
 console.log('invalidating', dist);
