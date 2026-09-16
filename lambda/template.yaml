@@ -48,7 +48,6 @@ Globals:
     Architectures: [arm64]               # Graviton: roughly 20% cheaper per ms
     MemorySize: 256
     Timeout: 15
-    CodeUri: src/
     Environment:
       Variables:
         TABLE: !Ref Table
@@ -90,6 +89,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub arena-ingest-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
       Handler: ingest.handler
       Timeout: 30
       Policies:
@@ -113,6 +113,7 @@ Resources:
     Condition: UseEvaluations
     Properties:
       FunctionName: !Sub arena-evaluations-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
       Handler: evaluations.handler
       Environment:
         Variables:
@@ -214,6 +215,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub arena-api-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
       Handler: api.handler
       Environment:
         Variables:
