@@ -157,6 +157,19 @@ async function spendPoints(arn, iso, cost) {
   await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: `WEEK#${weekKey(iso)}` }, UpdateExpression: 'ADD points :c', ExpressionAttributeValues: { ':c': -cost } }));
 }
 
+// ---------- metering ----------
+/** Every agent LIVE row, across all teams. Small table scan; agents number in the hundreds. */
+async function scanLive() {
+  const d = db(); const out = []; let ExclusiveStartKey;
+  do {
+    const r = await d.send(new cmds.ScanCommand({ TableName: TABLE, FilterExpression: 'sk = :live AND begins_with(pk, :a)', ExpressionAttributeValues: { ':live': 'LIVE', ':a': 'AGENT#' }, ProjectionExpression: 'pk, lastEvent', ExclusiveStartKey }));
+    out.push(...(r.Items || [])); ExclusiveStartKey = r.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return out;
+}
+async function getMeter(day) { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'METER', sk: 'DAY#' + day } })); return r.Item || null; }
+async function putMeter(day, fields) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'METER', sk: 'DAY#' + day, day }, fields) })); }
+
 async function getMix() {
   const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'MIX' } }));
   return r.Item ? r.Item.mix : null;
@@ -166,4 +179,4 @@ async function putMix(mix) {
 }
 
 module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
-  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints };
+  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter };

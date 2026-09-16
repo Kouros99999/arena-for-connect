@@ -34,7 +34,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js prototype/arena-auth.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/metering.test.js prototype/arena-auth.test.js
 ```
 
 ## Deploy into an AWS account
@@ -64,6 +64,18 @@ For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect
 ## Challenges, rewards, kudos
 
 Challenges come from templates (escalation rate, evaluation floor, team points target, kudos per agent) and their progress is always computed from agent data by the same function in the browser and the API, never self-reported. Supervisors create and end them from the console. Agents redeem weekly points against a catalog; each request waits for supervisor approval, which deducts the points. Kudos are sent from the agent panel, score 8 points for the recipient, and land on a team feed that the console and wallboard show. All of it lives in the same DynamoDB table as team items, with routes under `/teams/{team}/challenges`, `/rewards` and `/kudos`.
+
+## Marketplace: metering and releases
+
+A nightly Lambda counts distinct agents with any activity in the trailing 30 days and reports the number to the AWS Marketplace Metering Service as the `agents` dimension, once per day and idempotent on retry. It only reports when the stack is deployed with `MarketplaceProductCode`; without it the count is recorded in the table and nothing is sent, so pilots and direct deals use the same template. An alarm fires if a nightly report fails.
+
+To cut a self-contained release that any account can deploy:
+
+```bash
+node lambda/release.js 0.1.0 --bucket <your public artifacts bucket>
+```
+
+This zips the Lambda code and the pages, rewrites every `CodeUri` in the template to the published archive, writes checksums, and uploads all of it with public read to `s3://<bucket>/arena/0.1.0/`. The printed template URL is what goes into the Marketplace listing, and what a customer can launch directly in the CloudFormation console.
 
 ## Scoring in one paragraph
 

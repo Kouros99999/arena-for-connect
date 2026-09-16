@@ -36,11 +36,16 @@ Parameters:
     Type: String
     Default: ''
     Description: Access URL of the Connect instance, e.g. https://myinstance.my.connect.aws, so the agent workspace may frame the pages. Leave empty to allow any *.my.connect.aws and *.awsapps.com instance.
+  MarketplaceProductCode:
+    Type: String
+    Default: ''
+    Description: Set by the AWS Marketplace listing. When present, a nightly job reports distinct active agents (30-day window) for per-agent billing. Leave empty for pilots and direct deals.
 
 Conditions:
   UseCognito: !Equals [!Ref AuthMode, cognito]
   UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
+  OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
 
 Globals:
   Function:
@@ -132,6 +137,47 @@ Resources:
                 bucket: { name: [!Ref EvaluationsBucket] }
                 object: { key: [{ prefix: !Ref EvaluationsPrefix }] }
             RetryPolicy: { MaximumRetryAttempts: 3, MaximumEventAgeInSeconds: 3600 }
+
+  MeteringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-metering-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: metering.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          PRODUCT_CODE: !Ref MarketplaceProductCode
+          USAGE_DIMENSION: agents
+          USAGE_WINDOW_DAYS: '30'
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: [aws-marketplace:MeterUsage]
+              Resource: '*'
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(15 3 * * ? *)   # 03:15 UTC daily; Marketplace accepts one report per dimension per hour
+            Description: Report distinct active agents to AWS Marketplace
+
+  MeteringAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: OnMarketplace
+    Properties:
+      AlarmName: !Sub arena-metering-errors-${AWS::StackName}
+      AlarmDescription: The nightly Marketplace usage report failed. Billing is behind until it succeeds.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref MeteringFunction }]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
   Api:
     Type: AWS::Serverless::HttpApi         # HTTP API, not REST: $1.00 per million requests instead of $3.50

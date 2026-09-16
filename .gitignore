@@ -8,3 +8,4 @@ lambda/src/arena-engine.js
 Thumbs.db
 .claude/settings.local.json
 lambda/packaged.yaml
+release/
