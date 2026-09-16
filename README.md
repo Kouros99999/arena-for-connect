@@ -61,6 +61,10 @@ Users whose Connect security profile name contains "supervisor" or "admin" land 
 
 For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
 
+## Challenges, rewards, kudos
+
+Challenges come from templates (escalation rate, evaluation floor, team points target, kudos per agent) and their progress is always computed from agent data by the same function in the browser and the API, never self-reported. Supervisors create and end them from the console. Agents redeem weekly points against a catalog; each request waits for supervisor approval, which deducts the points. Kudos are sent from the agent panel, score 8 points for the recipient, and land on a team feed that the console and wallboard show. All of it lives in the same DynamoDB table as team items, with routes under `/teams/{team}/challenges`, `/rewards` and `/kudos`.
+
 ## Scoring in one paragraph
 
 Quality outweighs speed by design. A handled contact earns 6 to 12 points depending on handle time. An evaluation earns up to 30. An evaluation auto-fail removes 40 and no scoring mix can soften it. Supervisors tune the quality, productivity, and adherence weights, which must add to 100, and the console warns when quality drops under 40. Flags catch agents who have gone quiet, agents with high volume and low quality, and auto-fails.
