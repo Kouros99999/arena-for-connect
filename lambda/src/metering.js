@@ -16,14 +16,15 @@
 const store = require('./store.js');
 
 const PRODUCT_CODE = process.env.PRODUCT_CODE || '';
+const CUSTOMER_ID = process.env.CUSTOMER_ID || '';     // SaaS listings: the buyer's CustomerIdentifier from ResolveCustomer
 const DIMENSION = process.env.USAGE_DIMENSION || 'agents';
 const WINDOW_DAYS = +(process.env.USAGE_WINDOW_DAYS || 30);
 
 let mm;
 function metering() {
   if (mm) return mm;
-  const { MarketplaceMeteringClient, MeterUsageCommand } = require('@aws-sdk/client-marketplace-metering');
-  mm = { client: new MarketplaceMeteringClient({}), MeterUsageCommand };
+  const { MarketplaceMeteringClient, MeterUsageCommand, BatchMeterUsageCommand } = require('@aws-sdk/client-marketplace-metering');
+  mm = { client: new MarketplaceMeteringClient({ region: 'us-east-1' }), MeterUsageCommand, BatchMeterUsageCommand };   // metering endpoint is us-east-1 for SaaS
   return mm;
 }
 
@@ -45,11 +46,22 @@ async function report(count, now, deps) {
   if (prior && prior.reported) return { skipped: 'already reported', day, count: prior.count };
   if (!PRODUCT_CODE) { await s.putMeter(day, { count, reported: false, note: 'no PRODUCT_CODE' }); return { skipped: 'not a Marketplace deployment', day, count }; }
   const m = deps.metering || metering();
-  const r = await m.client.send(new m.MeterUsageCommand({
-    ProductCode: PRODUCT_CODE, Timestamp: new Date(now), UsageDimension: DIMENSION, UsageQuantity: count, DryRun: false,
-  }));
-  await s.putMeter(day, { count, reported: true, meteringRecordId: r.MeteringRecordId, at: new Date(now).toISOString() });
-  return { reported: true, day, count, meteringRecordId: r.MeteringRecordId };
+  let recordId;
+  if (CUSTOMER_ID) {
+    // SaaS product: report on behalf of the subscribed customer. Marketplace rejects a record it already has.
+    const r = await m.client.send(new m.BatchMeterUsageCommand({ ProductCode: PRODUCT_CODE,
+      UsageRecords: [{ Timestamp: new Date(now), CustomerIdentifier: CUSTOMER_ID, Dimension: DIMENSION, Quantity: count }] }));
+    const res = (r.Results || [])[0], bad = (r.UnprocessedRecords || [])[0];
+    if (bad) throw new Error('Marketplace did not accept the usage record');
+    if (res && res.Status && res.Status !== 'Success' && res.Status !== 'DuplicateRecord') throw new Error('Marketplace usage record status ' + res.Status);
+    recordId = res && res.MeteringRecordId;
+  } else {
+    // AMI/container product: the running instance reports for itself.
+    const r = await m.client.send(new m.MeterUsageCommand({ ProductCode: PRODUCT_CODE, Timestamp: new Date(now), UsageDimension: DIMENSION, UsageQuantity: count, DryRun: false }));
+    recordId = r.MeteringRecordId;
+  }
+  await s.putMeter(day, { count, reported: true, meteringRecordId: recordId, mode: CUSTOMER_ID ? 'saas' : 'ami', at: new Date(now).toISOString() });
+  return { reported: true, day, count, meteringRecordId: recordId, mode: CUSTOMER_ID ? 'saas' : 'ami' };
 }
 
 exports.handler = async (event, context, deps) => {

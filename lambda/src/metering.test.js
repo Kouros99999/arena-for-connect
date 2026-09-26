@@ -41,3 +41,28 @@ test('with a product code it meters once per day and is idempotent on retry', as
   delete process.env.PRODUCT_CODE;
   delete require.cache[require.resolve('./metering.js')];
 });
+
+test('SaaS mode reports through BatchMeterUsage for the subscribed customer and accepts a duplicate as done', async () => {
+  process.env.PRODUCT_CODE = 'abc123'; process.env.CUSTOMER_ID = 'cust-9';
+  delete require.cache[require.resolve('./metering.js')];
+  const m = require('./metering.js');
+  const s = fakeStore(); const sent = [];
+  const deps = { store: s, now: () => NOW, metering: {
+    client: { send: async (cmd) => { sent.push(cmd); return { Results: [{ MeteringRecordId: 'rec-s', Status: sent.length === 1 ? 'Success' : 'DuplicateRecord' }], UnprocessedRecords: [] }; } },
+    MeterUsageCommand: function (input) { this.kind = 'single'; this.input = input; }, BatchMeterUsageCommand: function (input) { this.kind = 'batch'; this.input = input; } } };
+  const r = await m.handler({}, {}, deps);
+  assert.equal(r.reported, true); assert.equal(r.mode, 'saas'); assert.equal(sent[0].kind, 'batch');
+  assert.equal(sent[0].input.UsageRecords[0].CustomerIdentifier, 'cust-9'); assert.equal(sent[0].input.UsageRecords[0].Quantity, 2);
+  delete process.env.PRODUCT_CODE; delete process.env.CUSTOMER_ID;
+  delete require.cache[require.resolve('./metering.js')];
+});
+
+test('SaaS mode fails loudly when Marketplace leaves the record unprocessed', async () => {
+  process.env.PRODUCT_CODE = 'abc123'; process.env.CUSTOMER_ID = 'cust-9';
+  delete require.cache[require.resolve('./metering.js')];
+  const m = require('./metering.js');
+  const deps = { store: fakeStore(), now: () => NOW, metering: { client: { send: async () => ({ Results: [], UnprocessedRecords: [{}] }) }, MeterUsageCommand: function () {}, BatchMeterUsageCommand: function (i) { this.input = i; } } };
+  await assert.rejects(() => m.handler({}, {}, deps), /did not accept/);
+  delete process.env.PRODUCT_CODE; delete process.env.CUSTOMER_ID;
+  delete require.cache[require.resolve('./metering.js')];
+});

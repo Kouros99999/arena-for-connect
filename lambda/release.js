@@ -40,6 +40,11 @@ let tpl = fs.readFileSync(path.join(__dirname, 'template.yaml'), 'utf8');
 const before = (tpl.match(/CodeUri: src\//g) || []).length;
 tpl = tpl.replace(/CodeUri: src\/[^\n]*/g, `CodeUri: ${codeUri}`);
 tpl = tpl.replace(/^Description: (.*)$/m, `Description: Arena for Amazon Connect v${version}. $1`);
+// Point the site installer at this release's site.zip by default, so a plain launch installs the pages too.
+if (bucket) {
+  const siteUrl = `https://${bucket}.s3.${region}.amazonaws.com/arena/${version}/site.zip`;
+  tpl = tpl.replace(/(  SiteArchiveUrl:\n    Type: String\n    Default: )''/, `$1'${siteUrl}'`);
+}
 fs.writeFileSync(path.join(out, 'template.yaml'), tpl);
 
 // 4. Checksums so a reviewer can verify what they downloaded.

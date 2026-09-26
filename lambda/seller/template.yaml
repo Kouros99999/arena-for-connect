@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Arena seller-side services for AWS Marketplace. Deploy once in the seller account (us-east-1). Registration page, subscription notifications, customer records.
+
+Parameters:
+  ReleaseBase:
+    Type: String
+    Description: Base URL of the release the registration page launches, e.g. https://arena-releases-533267257907.s3.us-east-1.amazonaws.com/arena/0.2.0
+  SupportEmail:
+    Type: String
+    Default: ''
+  MarketplaceTopicArn:
+    Type: String
+    Default: ''
+    Description: SNS topic ARN Marketplace assigns to the SaaS product (shown on the listing after creation). Leave empty until the listing exists, then update the stack.
+  LaunchRegion:
+    Type: String
+    Default: us-east-1
+    Description: Region the CloudFormation launch link opens in.
+
+Conditions:
+  HasTopic: !Not [!Equals [!Ref MarketplaceTopicArn, '']]
+
+Resources:
+  Customers:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub arena-customers-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: customerId, AttributeType: S }]
+      KeySchema: [{ AttributeName: customerId, KeyType: HASH }]
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  RegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-register-${AWS::StackName}
+      CodeUri: ./
+      Handler: register.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          RELEASE_BASE: !Ref ReleaseBase
+          CUSTOMERS_TABLE: !Ref Customers
+          SUPPORT_EMAIL: !Ref SupportEmail
+          LAUNCH_REGION: !Ref LaunchRegion
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Customers }
+        - Statement:
+            - Effect: Allow
+              Action: [aws-marketplace:ResolveCustomer]
+              Resource: '*'
+      Events:
+        Register:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: /register, Method: ANY }
+        Health:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: /health, Method: GET }
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Description: Arena Marketplace registration
+
+  NotifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-notify-${AWS::StackName}
+      CodeUri: ./
+      Handler: notify.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          CUSTOMERS_TABLE: !Ref Customers
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Customers }
+
+  NotifyPermission:
+    Type: AWS::Lambda::Permission
+    Condition: HasTopic
+    Properties:
+      FunctionName: !Ref NotifyFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref MarketplaceTopicArn
+
+  NotifySubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasTopic
+    Properties:
+      TopicArn: !Ref MarketplaceTopicArn
+      Protocol: lambda
+      Endpoint: !GetAtt NotifyFunction.Arn
+
+Outputs:
+  RegistrationUrl:
+    Description: Paste this as the SaaS fulfillment (registration) URL in the Marketplace listing.
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/register
+  CustomersTable:
+    Value: !Ref Customers

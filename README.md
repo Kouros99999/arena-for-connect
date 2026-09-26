@@ -34,7 +34,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/metering.test.js lambda/src/streaks.test.js prototype/arena-auth.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js
 ```
 
 ## Deploy into an AWS account
@@ -76,6 +76,18 @@ node lambda/release.js 0.1.0 --bucket <your public artifacts bucket>
 ```
 
 This zips the Lambda code and the pages, rewrites every `CodeUri` in the template to the published archive, writes checksums, and uploads all of it with public read to `s3://<bucket>/arena/0.1.0/`. The printed template URL is what goes into the Marketplace listing, and what a customer can launch directly in the CloudFormation console.
+
+## Selling on AWS Marketplace (SaaS listing)
+
+Marketplace has no product type for a serverless CloudFormation stack, so Arena is listed as **SaaS**: the buyer subscribes, Marketplace posts their subscription token to our registration page, and that page hands them a one-click CloudFormation launch link with their customer identifier and the product code as parameters. The stack they launch installs the pages itself (`SiteArchiveUrl`, a custom resource) and meters nightly against their subscription with `BatchMeterUsage`.
+
+The seller-side pieces live in `lambda/seller/` and deploy once, in the seller account, in us-east-1:
+
+```bash
+cd lambda/seller && sam build && sam deploy --guided   # ReleaseBase = the release URL, SupportEmail
+```
+
+Its `RegistrationUrl` output goes into the listing as the fulfillment URL. After Marketplace creates the product it shows an SNS topic ARN for subscription notifications; update the seller stack with `MarketplaceTopicArn` so subscribe and unsubscribe events land in the customers table.
 
 ## Operations
 

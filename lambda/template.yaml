@@ -40,6 +40,18 @@ Parameters:
     Type: String
     Default: ''
     Description: Set by the AWS Marketplace listing. When present, a nightly job reports distinct active agents (30-day window) for per-agent billing. Leave empty for pilots and direct deals.
+  MarketplaceCustomerId:
+    Type: String
+    Default: ''
+    Description: Your AWS Marketplace customer identifier, filled in automatically when you launch from the Arena registration page. Leave empty for pilots and direct deals.
+  SiteArchiveUrl:
+    Type: String
+    Default: ''
+    Description: HTTPS URL of the site.zip for this release. When set, the stack installs the pages into its own CloudFront site and registers sign-in callbacks, so nothing needs to be run by hand. Filled in by the release build.
+  DefaultTeam:
+    Type: String
+    Default: ''
+    Description: Routing profile name the supervisor console and wallboard open on when the signed-in user has no team attribute. Optional.
   AlarmEmail:
     Type: String
     Default: ''
@@ -51,6 +63,7 @@ Conditions:
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
   OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+  InstallSite: !Not [!Equals [!Ref SiteArchiveUrl, '']]
 
 Globals:
   Function:
@@ -153,13 +166,14 @@ Resources:
       Environment:
         Variables:
           PRODUCT_CODE: !Ref MarketplaceProductCode
+          CUSTOMER_ID: !Ref MarketplaceCustomerId
           USAGE_DIMENSION: agents
           USAGE_WINDOW_DAYS: '30'
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - Statement:
             - Effect: Allow
-              Action: [aws-marketplace:MeterUsage]
+              Action: [aws-marketplace:MeterUsage, aws-marketplace:BatchMeterUsage]
               Resource: '*'
       Events:
         Nightly:
@@ -476,6 +490,40 @@ Resources:
               - EventType: viewer-request
                 FunctionARN: !GetAtt ApiPathRewrite.FunctionMetadata.FunctionARN
         ViewerCertificate: { CloudFrontDefaultCertificate: true }
+
+  # ---------- Site installer: puts the pages and config into the site bucket at stack create/update ----------
+  SiteDeployerFunction:
+    Type: AWS::Serverless::Function
+    Condition: InstallSite
+    Properties:
+      FunctionName: !Sub arena-site-deployer-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: site-deployer.handler
+      Timeout: 300
+      MemorySize: 512
+      Policies:
+        - S3CrudPolicy: { BucketName: !Ref SiteBucket }
+        - Statement:
+            - Effect: Allow
+              Action: [cloudfront:CreateInvalidation]
+              Resource: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+            - Effect: Allow
+              Action: [cognito-idp:UpdateUserPoolClient, cognito-idp:DescribeUserPoolClient]
+              Resource: !If [UseCognito, !GetAtt UserPool.Arn, !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*']
+
+  SiteInstall:
+    Type: Custom::ArenaSite
+    Condition: InstallSite
+    Properties:
+      ServiceToken: !GetAtt SiteDeployerFunction.Arn
+      ArchiveUrl: !Ref SiteArchiveUrl
+      Bucket: !Ref SiteBucket
+      DistributionId: !Ref Distribution
+      SiteUrl: !Sub https://${Distribution.DomainName}
+      Team: !Ref DefaultTeam
+      UserPoolId: !If [UseCognito, !Ref UserPool, '']
+      ClientId: !If [UseCognito, !Ref UserPoolClient, '']
+      AuthDomain: !If [UseCognito, !Sub 'https://arena-${AWS::StackName}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com', '']
 
   ApiPathRewrite:
     # HTTP API routes are /teams/..., the distribution exposes them as /api/...; strip the prefix on the way in.
