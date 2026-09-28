@@ -39,7 +39,7 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 
 ## Support
 
-- **Support email:** info@kovros.com
+- **Support email:** *(yours)*
 - **Support URL:** https://github.com/Kouros99999/arena-for-connect
 - **Support description:** Email support with a one-business-day response. Deployment guide, scripts and issue tracker on GitHub.
 - **Privacy policy URL:** *(needed; a one-page policy stating data stays in the customer's account and Arena collects only the Marketplace customer identifier and subscription state)*
