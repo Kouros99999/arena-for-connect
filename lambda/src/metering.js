@@ -2,9 +2,10 @@
  * Arena usage metering for AWS Marketplace.
  *
  * Runs once a day (EventBridge schedule). Counts distinct agents with any scored
- * activity in the trailing 30 days and reports that number as the "agents"
- * dimension to the Marketplace Metering Service. Marketplace bills the customer
- * per agent from that report; nothing else in the product depends on it.
+ * activity in the trailing USAGE_WINDOW_DAYS (1 on the Marketplace listing) and
+ * reports that number as the USAGE_DIMENSION ("agent_days": one unit per agent
+ * per active day). Marketplace bills the customer from that report; nothing
+ * else in the product depends on it.
  *
  * Off-Marketplace (no PRODUCT_CODE set) the function logs the count and exits,
  * so the same stack runs for pilots and direct deals without a Marketplace listing.
@@ -16,9 +17,10 @@
 const store = require('./store.js');
 
 const PRODUCT_CODE = process.env.PRODUCT_CODE || '';
-const CUSTOMER_ID = process.env.CUSTOMER_ID || '';     // SaaS listings: the buyer's CustomerIdentifier from ResolveCustomer
-const DIMENSION = process.env.USAGE_DIMENSION || 'agents';
-const WINDOW_DAYS = +(process.env.USAGE_WINDOW_DAYS || 30);
+const LICENSE_ARN = process.env.LICENSE_ARN || '';               // SaaS listings: the buyer's LicenseArn from ResolveCustomer
+const CUSTOMER_ACCOUNT_ID = process.env.CUSTOMER_ACCOUNT_ID || ''; // SaaS listings: the buyer's CustomerAWSAccountId
+const DIMENSION = process.env.USAGE_DIMENSION || 'agent_days';
+const WINDOW_DAYS = +(process.env.USAGE_WINDOW_DAYS || 1);
 
 let mm;
 function metering() {
@@ -47,10 +49,11 @@ async function report(count, now, deps) {
   if (!PRODUCT_CODE) { await s.putMeter(day, { count, reported: false, note: 'no PRODUCT_CODE' }); return { skipped: 'not a Marketplace deployment', day, count }; }
   const m = deps.metering || metering();
   let recordId;
-  if (CUSTOMER_ID) {
-    // SaaS product: report on behalf of the subscribed customer. Marketplace rejects a record it already has.
-    const r = await m.client.send(new m.BatchMeterUsageCommand({ ProductCode: PRODUCT_CODE,
-      UsageRecords: [{ Timestamp: new Date(now), CustomerIdentifier: CUSTOMER_ID, Dimension: DIMENSION, Quantity: count }] }));
+  if (LICENSE_ARN) {
+    // SaaS product (concurrent-agreements integration): bill the license the buyer registered with. No ProductCode when
+    // LicenseArn is present. Marketplace keeps the first record per license, dimension and hour; a duplicate is not an error.
+    const r = await m.client.send(new m.BatchMeterUsageCommand({
+      UsageRecords: [{ Timestamp: new Date(now), CustomerAWSAccountId: CUSTOMER_ACCOUNT_ID, LicenseArn: LICENSE_ARN, Dimension: DIMENSION, Quantity: count }] }));
     const res = (r.Results || [])[0], bad = (r.UnprocessedRecords || [])[0];
     if (bad) throw new Error('Marketplace did not accept the usage record');
     if (res && res.Status && res.Status !== 'Success' && res.Status !== 'DuplicateRecord') throw new Error('Marketplace usage record status ' + res.Status);
@@ -60,8 +63,8 @@ async function report(count, now, deps) {
     const r = await m.client.send(new m.MeterUsageCommand({ ProductCode: PRODUCT_CODE, Timestamp: new Date(now), UsageDimension: DIMENSION, UsageQuantity: count, DryRun: false }));
     recordId = r.MeteringRecordId;
   }
-  await s.putMeter(day, { count, reported: true, meteringRecordId: recordId, mode: CUSTOMER_ID ? 'saas' : 'ami', at: new Date(now).toISOString() });
-  return { reported: true, day, count, meteringRecordId: recordId, mode: CUSTOMER_ID ? 'saas' : 'ami' };
+  await s.putMeter(day, { count, reported: true, meteringRecordId: recordId, mode: LICENSE_ARN ? 'saas' : 'ami', at: new Date(now).toISOString() });
+  return { reported: true, day, count, meteringRecordId: recordId, mode: LICENSE_ARN ? 'saas' : 'ami' };
 }
 
 exports.handler = async (event, context, deps) => {

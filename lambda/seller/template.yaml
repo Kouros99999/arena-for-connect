@@ -1,34 +1,30 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Arena seller-side services for AWS Marketplace. Deploy once in the seller account (us-east-1). Registration page, subscription notifications, customer records.
+Description: Arena seller-side services for AWS Marketplace. Deploy once in the seller account (us-east-1). Registration page, license lifecycle notifications (EventBridge), customer records. Concurrent-agreements integration.
 
 Parameters:
   ReleaseBase:
     Type: String
-    Description: Base URL of the release the registration page launches, e.g. https://arena-releases-533267257907.s3.us-east-1.amazonaws.com/arena/0.2.0
+    Description: Base URL of the release the registration page launches, e.g. https://arena-releases-533267257907.s3.us-east-1.amazonaws.com/arena/0.3.0
   SupportEmail:
     Type: String
     Default: ''
-  MarketplaceTopicArn:
+  MarketplaceProductCode:
     Type: String
-    Default: ''
-    Description: SNS topic ARN Marketplace assigns to the SaaS product (shown on the listing after creation). Leave empty until the listing exists, then update the stack.
+    Default: 60k3e92pedv832asl3vbpibz7
+    Description: Product code of the Arena SaaS listing; license events are filtered to it.
   LaunchRegion:
     Type: String
     Default: us-east-1
     Description: Region the CloudFormation launch link opens in.
 
-Conditions:
-  HasTopic: !Not [!Equals [!Ref MarketplaceTopicArn, '']]
-
 Resources:
   Customers:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub arena-customers-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{ AttributeName: customerId, AttributeType: S }]
-      KeySchema: [{ AttributeName: customerId, KeyType: HASH }]
+      AttributeDefinitions: [{ AttributeName: licenseArn, AttributeType: S }]
+      KeySchema: [{ AttributeName: licenseArn, KeyType: HASH }]
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
 
   RegisterFunction:
@@ -81,23 +77,17 @@ Resources:
           CUSTOMERS_TABLE: !Ref Customers
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Customers }
-
-  NotifyPermission:
-    Type: AWS::Lambda::Permission
-    Condition: HasTopic
-    Properties:
-      FunctionName: !Ref NotifyFunction
-      Action: lambda:InvokeFunction
-      Principal: sns.amazonaws.com
-      SourceArn: !Ref MarketplaceTopicArn
-
-  NotifySubscription:
-    Type: AWS::SNS::Subscription
-    Condition: HasTopic
-    Properties:
-      TopicArn: !Ref MarketplaceTopicArn
-      Protocol: lambda
-      Endpoint: !GetAtt NotifyFunction.Arn
+      Events:
+        LicenseEvents:
+          Type: EventBridgeRule
+          Properties:
+            # Marketplace emits these on the default bus of the seller account in us-east-1 only.
+            Pattern:
+              source: [aws.agreement-marketplace]
+              detail-type: ['License Updated - Manufacturer', 'License Deprovisioned - Manufacturer']
+              detail:
+                product:
+                  code: [!Ref MarketplaceProductCode]
 
 Outputs:
   RegistrationUrl:

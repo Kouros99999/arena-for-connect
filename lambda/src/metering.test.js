@@ -16,7 +16,7 @@ test('countActive counts distinct agents inside the window', () => {
 
 function fakeStore() {
   const meters = {};
-  return { meters, scanLive: async () => [{ pk: 'AGENT#a', lastEvent: day(1) }, { pk: 'AGENT#b', lastEvent: day(3) }],
+  return { meters, scanLive: async () => [{ pk: 'AGENT#a', lastEvent: day(0.5) }, { pk: 'AGENT#b', lastEvent: day(0.9) }, { pk: 'AGENT#c', lastEvent: day(3) }],
     getMeter: async (d) => meters[d] || null, putMeter: async (d, f) => { meters[d] = f; } };
 }
 
@@ -35,15 +35,15 @@ test('with a product code it meters once per day and is idempotent on retry', as
   const deps = { store: s, now: () => NOW, metering: { client: { send: async (cmd) => { sent.push(cmd.input); return { MeteringRecordId: 'rec-1' }; } }, MeterUsageCommand: function (input) { this.input = input; } } };
   const first = await m.handler({}, {}, deps);
   assert.equal(first.reported, true); assert.equal(sent.length, 1);
-  assert.equal(sent[0].ProductCode, 'abc123'); assert.equal(sent[0].UsageDimension, 'agents'); assert.equal(sent[0].UsageQuantity, 2);
+  assert.equal(sent[0].ProductCode, 'abc123'); assert.equal(sent[0].UsageDimension, 'agent_days'); assert.equal(sent[0].UsageQuantity, 2);
   const again = await m.handler({}, {}, deps);
   assert.match(again.skipped, /already reported/); assert.equal(sent.length, 1);
   delete process.env.PRODUCT_CODE;
   delete require.cache[require.resolve('./metering.js')];
 });
 
-test('SaaS mode reports through BatchMeterUsage for the subscribed customer and accepts a duplicate as done', async () => {
-  process.env.PRODUCT_CODE = 'abc123'; process.env.CUSTOMER_ID = 'cust-9';
+test('SaaS mode reports through BatchMeterUsage against the license and accepts a duplicate as done', async () => {
+  process.env.PRODUCT_CODE = 'abc123'; process.env.LICENSE_ARN = 'arn:lic-9'; process.env.CUSTOMER_ACCOUNT_ID = '111122223333';
   delete require.cache[require.resolve('./metering.js')];
   const m = require('./metering.js');
   const s = fakeStore(); const sent = [];
@@ -52,17 +52,19 @@ test('SaaS mode reports through BatchMeterUsage for the subscribed customer and 
     MeterUsageCommand: function (input) { this.kind = 'single'; this.input = input; }, BatchMeterUsageCommand: function (input) { this.kind = 'batch'; this.input = input; } } };
   const r = await m.handler({}, {}, deps);
   assert.equal(r.reported, true); assert.equal(r.mode, 'saas'); assert.equal(sent[0].kind, 'batch');
-  assert.equal(sent[0].input.UsageRecords[0].CustomerIdentifier, 'cust-9'); assert.equal(sent[0].input.UsageRecords[0].Quantity, 2);
-  delete process.env.PRODUCT_CODE; delete process.env.CUSTOMER_ID;
+  const rec = sent[0].input.UsageRecords[0];
+  assert.equal(rec.LicenseArn, 'arn:lic-9'); assert.equal(rec.CustomerAWSAccountId, '111122223333'); assert.equal(rec.Dimension, 'agent_days'); assert.equal(rec.Quantity, 2);
+  assert.equal(sent[0].input.ProductCode, undefined);
+  delete process.env.PRODUCT_CODE; delete process.env.LICENSE_ARN; delete process.env.CUSTOMER_ACCOUNT_ID;
   delete require.cache[require.resolve('./metering.js')];
 });
 
 test('SaaS mode fails loudly when Marketplace leaves the record unprocessed', async () => {
-  process.env.PRODUCT_CODE = 'abc123'; process.env.CUSTOMER_ID = 'cust-9';
+  process.env.PRODUCT_CODE = 'abc123'; process.env.LICENSE_ARN = 'arn:lic-9'; process.env.CUSTOMER_ACCOUNT_ID = '111122223333';
   delete require.cache[require.resolve('./metering.js')];
   const m = require('./metering.js');
   const deps = { store: fakeStore(), now: () => NOW, metering: { client: { send: async () => ({ Results: [], UnprocessedRecords: [{}] }) }, MeterUsageCommand: function () {}, BatchMeterUsageCommand: function (i) { this.input = i; } } };
   await assert.rejects(() => m.handler({}, {}, deps), /did not accept/);
-  delete process.env.PRODUCT_CODE; delete process.env.CUSTOMER_ID;
+  delete process.env.PRODUCT_CODE; delete process.env.LICENSE_ARN; delete process.env.CUSTOMER_ACCOUNT_ID;
   delete require.cache[require.resolve('./metering.js')];
 });

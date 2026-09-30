@@ -39,11 +39,15 @@ Parameters:
   MarketplaceProductCode:
     Type: String
     Default: ''
-    Description: Set by the AWS Marketplace listing. When present, a nightly job reports distinct active agents (30-day window) for per-agent billing. Leave empty for pilots and direct deals.
-  MarketplaceCustomerId:
+    Description: Set by the AWS Marketplace listing. When present, a nightly job reports the number of agents with scored activity that day (agent_days dimension). Leave empty for pilots and direct deals.
+  MarketplaceLicenseArn:
     Type: String
     Default: ''
-    Description: Your AWS Marketplace customer identifier, filled in automatically when you launch from the Arena registration page. Leave empty for pilots and direct deals.
+    Description: The AWS Marketplace license ARN of your subscription, filled in automatically when you launch from the Arena registration page. Leave empty for pilots and direct deals.
+  MarketplaceCustomerAccountId:
+    Type: String
+    Default: ''
+    Description: The AWS account ID that subscribed on AWS Marketplace, filled in automatically from the registration page. Leave empty for pilots and direct deals.
   SiteArchiveUrl:
     Type: String
     Default: ''
@@ -166,9 +170,10 @@ Resources:
       Environment:
         Variables:
           PRODUCT_CODE: !Ref MarketplaceProductCode
-          CUSTOMER_ID: !Ref MarketplaceCustomerId
-          USAGE_DIMENSION: agents
-          USAGE_WINDOW_DAYS: '30'
+          LICENSE_ARN: !Ref MarketplaceLicenseArn
+          CUSTOMER_ACCOUNT_ID: !Ref MarketplaceCustomerAccountId
+          USAGE_DIMENSION: agent_days   # listing dimension: one unit per agent with scored activity that day
+          USAGE_WINDOW_DAYS: '1'
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - Statement:

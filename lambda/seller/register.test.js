@@ -4,12 +4,12 @@ process.env.RELEASE_BASE = 'https://rel.example/arena/0.2.0'; process.env.CUSTOM
 const { handler, launchUrl, tokenFrom } = require('./register.js');
 const { parseRecord } = require('./notify.js');
 
-test('launchUrl carries customer id, product code, template and site archive', () => {
-  const full = launchUrl('cust-1', 'prod-1', { releaseBase: 'https://rel.example/arena/0.2.0', region: 'us-east-1' });
+test('launchUrl carries license, account, product code, template and site archive', () => {
+  const full = launchUrl('arn:lic-1', '111122223333', 'prod-1', { releaseBase: 'https://rel.example/arena/0.2.0', region: 'us-east-1' });
   assert.ok(full.startsWith('https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?'));
   const q = new URLSearchParams(full.slice(full.lastIndexOf('?') + 1));
   assert.equal(q.get('templateURL'), 'https://rel.example/arena/0.2.0/template.yaml');
-  assert.equal(q.get('param_MarketplaceCustomerId'), 'cust-1'); assert.equal(q.get('param_MarketplaceProductCode'), 'prod-1');
+  assert.equal(q.get('param_MarketplaceLicenseArn'), 'arn:lic-1'); assert.equal(q.get('param_MarketplaceCustomerAccountId'), '111122223333'); assert.equal(q.get('param_MarketplaceProductCode'), 'prod-1');
   assert.equal(q.get('param_SiteArchiveUrl'), 'https://rel.example/arena/0.2.0/site.zip'); assert.equal(q.get('stackName'), 'arena');
 });
 
@@ -27,16 +27,18 @@ function fake(resolve) {
 const req = (method, body) => ({ rawPath: '/register', requestContext: { http: { method } }, body });
 
 test('POST with a valid token resolves the customer, records them, and shows the launch page', async () => {
-  const f = fake({ CustomerIdentifier: 'cust-1', ProductCode: 'prod-1', CustomerAWSAccountId: '111122223333' });
+  const f = fake({ LicenseArn: 'arn:aws:license-manager::111122223333:license:l-1', CustomerIdentifier: 'cust-1', ProductCode: 'prod-1', CustomerAWSAccountId: '111122223333' });
   const r = await handler(req('POST', 'x-amzn-marketplace-token=tok'), {}, { clients: f.clients, now: () => new Date('2026-09-26T10:00:00Z') });
-  assert.equal(r.statusCode, 200); assert.match(r.body, /Launch Arena in CloudFormation/); assert.match(r.body, /111122223333/); assert.match(r.body, /param_MarketplaceCustomerId=cust-1/);
-  assert.equal(f.writes[0].Key.customerId, 'cust-1'); assert.equal(f.writes[0].ExpressionAttributeValues[':a'], '111122223333');
+  assert.equal(r.statusCode, 200); assert.match(r.body, /Launch Arena in CloudFormation/); assert.match(r.body, /111122223333/); assert.match(r.body, /param_MarketplaceLicenseArn=arn/);
+  assert.equal(f.writes[0].Key.licenseArn, 'arn:aws:license-manager::111122223333:license:l-1'); assert.equal(f.writes[0].ExpressionAttributeValues[':a'], '111122223333');
 });
 
 test('POST without a token or with a bad token is a friendly 400', async () => {
   assert.equal((await handler(req('POST', ''), {}, { clients: fake({}).clients })).statusCode, 400);
   const bad = await handler(req('POST', 'x-amzn-marketplace-token=expired'), {}, { clients: fake(Object.assign(new Error('nope'), { name: 'InvalidTokenException' })).clients });
   assert.equal(bad.statusCode, 400); assert.match(bad.body, /could not be verified/);
+  const noLic = await handler(req('POST', 'x-amzn-marketplace-token=tok'), {}, { clients: fake({ CustomerIdentifier: 'cust-1', ProductCode: 'prod-1' }).clients });
+  assert.equal(noLic.statusCode, 400);
 });
 
 test('GET shows the landing page; /health is JSON', async () => {
@@ -44,10 +46,12 @@ test('GET shows the landing page; /health is JSON', async () => {
   assert.equal(JSON.parse((await handler({ rawPath: '/health', requestContext: { http: { method: 'GET' } } }, {}, { clients: fake({}).clients })).body).ok, true);
 });
 
-test('notify parses Marketplace subscription messages and ignores junk', () => {
-  const rec = { Sns: { Timestamp: '2026-09-26T10:00:00Z', Message: JSON.stringify({ action: 'subscribe-success', 'customer-identifier': 'cust-1', 'product-code': 'prod-1' }) } };
-  const p = parseRecord(rec);
-  assert.equal(p.customerId, 'cust-1'); assert.equal(p.action, 'subscribe-success'); assert.equal(p.productCode, 'prod-1');
-  assert.equal(parseRecord({ Sns: { Message: 'not json' } }), null);
-  assert.equal(parseRecord({ Sns: { Message: '{}' } }), null);
+test('notify parses Marketplace license events and ignores junk', () => {
+  const ev = { 'detail-type': 'License Updated - Manufacturer', source: 'aws.agreement-marketplace', time: '2026-09-26T10:00:00Z',
+    detail: { agreement: { id: 'agmt-1' }, acceptor: { accountId: '111122223333' }, offer: { id: 'offer-1' }, product: { code: 'prod-1', id: 'prod-x' }, license: { arn: 'arn:lic-1' } } };
+  const p = parseRecord(ev);
+  assert.equal(p.licenseArn, 'arn:lic-1'); assert.equal(p.state, 'active'); assert.equal(p.productCode, 'prod-1'); assert.equal(p.accountId, '111122223333'); assert.equal(p.agreementId, 'agmt-1');
+  assert.equal(parseRecord(Object.assign({}, ev, { 'detail-type': 'License Deprovisioned - Manufacturer' })).state, 'deprovisioned');
+  assert.equal(parseRecord({ detail: {} }), null);
+  assert.equal(parseRecord({ 'detail-type': 'Something Else', detail: { license: { arn: 'x' } } }), null);
 });

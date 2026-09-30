@@ -1,13 +1,16 @@
 /*
- * AWS Marketplace SaaS subscription notifications. Runs in the SELLER account.
+ * AWS Marketplace license lifecycle notifications. Runs in the SELLER account (us-east-1).
  *
- * Marketplace publishes to an SNS topic it owns (one per product) when a buyer subscribes, is
- * about to be unsubscribed, or has been unsubscribed, and when entitlements change. This records
- * each event against the customer so support can see subscription state, and so a future job can
- * disable metering for churned customers.
+ * SaaS products on the concurrent-agreements integration get their notifications from Amazon
+ * EventBridge, not SNS: "License Updated - Manufacturer" when a buyer's license is created or
+ * changed (usage may be reported) and "License Deprovisioned - Manufacturer" when it ends
+ * (about one hour of grace for final usage). Each event carries the LicenseArn, which is the
+ * key of the customers table and the identifier the customer's stack meters against.
  */
 'use strict';
 const TABLE = process.env.CUSTOMERS_TABLE || '';
+
+const STATES = { 'License Updated - Manufacturer': 'active', 'License Deprovisioned - Manufacturer': 'deprovisioned' };
 
 let clients;
 function real() {
@@ -17,29 +20,31 @@ function real() {
   return clients;
 }
 
-/** Pure: turn one SNS record into the fields to store. */
-function parseRecord(rec) {
-  let msg;
-  try { msg = JSON.parse(rec.Sns && rec.Sns.Message || '{}'); } catch { return null; }
-  const action = msg.action || msg['action'];
-  const customerId = msg['customer-identifier'];
-  if (!customerId || !action) return null;
-  return { customerId, action, productCode: msg['product-code'], offerId: msg['offer-identifier'], at: rec.Sns.Timestamp || new Date().toISOString(), free: msg['isFreeTrialTermPresent'] };
+/** Pure: turn one EventBridge event into the fields to store, or null when it is not a license event. */
+function parseRecord(ev) {
+  const state = STATES[ev && ev['detail-type']];
+  const d = (ev && ev.detail) || {};
+  const licenseArn = d.license && d.license.arn;
+  if (!state || !licenseArn) return null;
+  return { licenseArn, state, type: ev['detail-type'], at: ev.time || new Date().toISOString(),
+    accountId: d.acceptor && d.acceptor.accountId, productCode: d.product && d.product.code, agreementId: d.agreement && d.agreement.id, offerId: d.offer && d.offer.id };
 }
 
 exports.handler = async (event, context, deps) => {
   const c = (deps && deps.clients) || real();
-  const seen = [];
-  for (const rec of event.Records || []) {
-    const r = parseRecord(rec);
+  // EventBridge invokes with one event; an SQS or batch wrapper would put several under Records.
+  const events = Array.isArray(event.Records) ? event.Records.map((r) => { try { return JSON.parse(r.body || r.Sns?.Message || '{}'); } catch { return null; } }) : [event];
+  let handled = 0;
+  for (const ev of events) {
+    const r = parseRecord(ev);
     if (!r) continue;
-    seen.push(r);
-    if (TABLE) await c.ddb.send(new c.UpdateCommand({ TableName: TABLE, Key: { customerId: r.customerId },
-      UpdateExpression: 'SET lastAction = :a, lastActionAt = :t, productCode = if_not_exists(productCode, :p), subscriptionState = :s',
-      ExpressionAttributeValues: { ':a': r.action, ':t': r.at, ':p': r.productCode || 'unknown', ':s': r.action === 'unsubscribe-success' ? 'unsubscribed' : r.action === 'unsubscribe-pending' ? 'unsubscribing' : 'subscribed' } }));
-    console.log(JSON.stringify({ notification: r.action, customer: r.customerId }));
+    handled++;
+    if (TABLE) await c.ddb.send(new c.UpdateCommand({ TableName: TABLE, Key: { licenseArn: r.licenseArn },
+      UpdateExpression: 'SET licenseState = :s, lastEvent = :e, lastEventAt = :t, awsAccountId = if_not_exists(awsAccountId, :a), productCode = if_not_exists(productCode, :p), agreementId = :g, offerId = :o',
+      ExpressionAttributeValues: { ':s': r.state, ':e': r.type, ':t': r.at, ':a': r.accountId || 'unknown', ':p': r.productCode || 'unknown', ':g': r.agreementId || '', ':o': r.offerId || '' } }));
+    console.log(JSON.stringify({ notification: r.type, license: r.licenseArn, account: r.accountId }));
   }
-  return { handled: seen.length };
+  return { handled };
 };
 
 exports.parseRecord = parseRecord;

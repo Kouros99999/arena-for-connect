@@ -6,7 +6,7 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 
 - **Product title:** Arena for Amazon Connect
 - **Product ID:** prod-4qi5gee6lfmq6 (created 2026-09-29)
-- **Product code:** 60k3e92pedv832asl3vbpibz7 — the value for the stack parameter `MarketplaceProductCode`; the registration page passes it automatically
+- **Product code:** 60k3e92pedv832asl3vbpibz7 — the value for the stack parameter `MarketplaceProductCode`; the registration page passes it automatically, together with `MarketplaceLicenseArn` and `MarketplaceCustomerAccountId` from ResolveCustomer
 - **Short description (≤ 300 chars):** Agent engagement for Amazon Connect: a live leaderboard inside the agent workspace, a supervisor console with challenges and rewards, and a floor wallboard. Quality-weighted scoring, deployed into your own AWS account.
 - **Long description:**
 
@@ -28,16 +28,21 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 ## Delivery
 
 - **Fulfillment URL:** `RegistrationUrl` output of the seller stack (ends in `/register`)
-- **SNS topic:** assigned by Marketplace after creation; put it into the seller stack as `MarketplaceTopicArn`
+- **Notifications:** the product page shows a legacy SNS topic (`arn:aws:sns:us-east-1:287250355862:aws-mp-subscription-notification-60k3e92pedv832asl3vbpibz7`), but products created after 2026-06-01 use the concurrent-agreements integration, whose notifications are EventBridge events (`aws.agreement-marketplace`, "License Updated/Deprovisioned - Manufacturer") on the seller account's default bus in us-east-1. The seller stack subscribes to them; the SNS topic is not used.
 - **Supported regions:** us-east-1 first; add regions where the release bucket is replicated
 
 ## Pricing
 
 - **Model:** SaaS subscription with usage
-- **Dimension:** `agents` — "Active agents", unit "per agent per month"
-- **Price:** $12.00 per active agent per month (Quality tier). Optional private offers at $8 (Core) and $15 (Rewards).
+- **Dimension:** `agent_days` — display "Active agent-day", unit type Units, description "One agent with scored activity on a day (UTC). About 12 USD per agent per month."
+- **Price:** $0.40 per agent-day (≈ $12 per agent per month). Entered as the test price $0.00000001 while the listing is in limited visibility; set the real price in the update request that asks for public availability. Optional private offers at $0.27 (Core) and $0.50 (Rewards) per agent-day.
+- **Metering change needed:** the stack must report a per-day count (`USAGE_DIMENSION=agent_days`, `USAGE_WINDOW_DAYS=1`) instead of the trailing-30-day count; see README.
 - **Free trial:** 30 days, up to 25 agents
-- **Refund policy text:** Cancel any time from AWS Marketplace; usage is billed monthly in arrears for agents active in the trailing 30 days, and no further usage is reported after cancellation.
+- **Refund policy text:** Cancel any time from AWS Marketplace; usage is billed monthly in arrears for agent-days already reported, and no further usage is reported after cancellation.
+
+## Draft state (2026-09-29)
+
+All eight wizard steps entered and validated, saved with **Save and exit** (not submitted). Allowlist: 533267257907 (our own account, for testing the subscribe flow). Resume from the product page → **Resume product creation**. Still to fill before submitting: support email, privacy policy URL.
 
 ## Support
 

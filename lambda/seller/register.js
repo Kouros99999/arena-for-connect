@@ -2,9 +2,10 @@
  * AWS Marketplace SaaS registration (fulfillment) endpoint for Arena. Runs in the SELLER account.
  *
  * Flow: a buyer subscribes on the Marketplace listing, Marketplace redirects their browser here with a
- * POST carrying x-amzn-marketplace-token. We resolve the token to their CustomerIdentifier and product
- * code, record the customer, and show a page with a one-click CloudFormation launch link that carries
- * both values as parameters, so the stack they deploy meters against their own subscription.
+ * POST carrying x-amzn-marketplace-token. We resolve the token to their LicenseArn, AWS account ID and
+ * product code (the concurrent-agreements integration required for SaaS products created after June 2026),
+ * record the license, and show a page with a one-click CloudFormation launch link that carries those values
+ * as parameters, so the stack they deploy meters against their own license.
  *
  *   POST /register          form-encoded x-amzn-marketplace-token  -> registration page
  *   GET  /register          plain landing page (no token): explains how to subscribe
@@ -29,10 +30,10 @@ function real() {
 }
 
 /** Pure: the CloudFormation quick-create URL for this customer. */
-function launchUrl(customerId, productCode, opts) {
+function launchUrl(licenseArn, accountId, productCode, opts) {
   opts = opts || {};
   const base = opts.releaseBase || RELEASE_BASE, region = opts.region || REGION;
-  const q = new URLSearchParams({ templateURL: base + '/template.yaml', stackName: 'arena', param_MarketplaceCustomerId: customerId, param_MarketplaceProductCode: productCode, param_SiteArchiveUrl: base + '/site.zip' });
+  const q = new URLSearchParams({ templateURL: base + '/template.yaml', stackName: 'arena', param_MarketplaceLicenseArn: licenseArn, param_MarketplaceCustomerAccountId: accountId, param_MarketplaceProductCode: productCode, param_SiteArchiveUrl: base + '/site.zip' });
   return `https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/create/review?${q}`;
 }
 
@@ -56,12 +57,12 @@ function registeredPage(c) {
 <p class="muted">Opens the CloudFormation console in ${esc(c.region)} with the template and your subscription pre-filled. Keep this page: the link stays valid for your subscription.</p>
 <h2>What happens next</h2>
 <ol>
-<li><b>Deploy.</b> Review the parameters, tick the IAM acknowledgement, and create the stack. About ten minutes, most of it CloudFront.</li>
+<li><b>Deploy.</b> Review the parameters (your license and account are pre-filled), tick the IAM acknowledgement, and create the stack. About ten minutes, most of it CloudFront.</li>
 <li><b>Point Amazon Connect at Arena.</b> In the Connect console, under Data streaming, set the agent event stream to the <code>StreamArn</code> the stack outputs.</li>
 <li><b>Add the panel to the agent workspace.</b> Register <code>&lt;SiteUrl&gt;/agent-panel.html</code> as a third-party application and grant it on your agents' security profiles.</li>
 <li><b>Create sign-ins.</b> Add your agents and supervisors to the Cognito user pool the stack created (the <code>UserPoolId</code> output), with the <code>custom:agentArn</code> and <code>custom:team</code> attributes. The <code>sync-users</code> script in the docs does this from your Connect directory in one command.</li>
 </ol>
-<div class="warn">Billing is per active agent per month, reported nightly from your stack. Nothing is billed until agents produce activity.</div>
+<div class="warn">Billing is per active agent-day, reported nightly from your stack against this subscription. Nothing is billed until agents produce activity.</div>
 <h2>Need help?</h2>
 <p>Documentation and scripts: <a href="https://github.com/Kouros99999/arena-for-connect">github.com/Kouros99999/arena-for-connect</a>${SUPPORT ? ` · Support: <a href="mailto:${esc(SUPPORT)}">${esc(SUPPORT)}</a>` : ''}</p>`);
 }
@@ -87,12 +88,13 @@ exports.handler = async (event, context, deps) => {
   let resolved;
   try { resolved = await c.metering.send(new c.ResolveCustomerCommand({ RegistrationToken: token })); }
   catch (err) { console.error('resolve failed', err.name); return html(400, page('Subscription could not be verified', '<h1>Subscription could not be verified</h1><p>The link may have expired. Return to AWS Marketplace and choose Set up your account again.</p>')); }
-  const customer = { CustomerIdentifier: resolved.CustomerIdentifier, ProductCode: resolved.ProductCode, CustomerAWSAccountId: resolved.CustomerAWSAccountId };
-  const launch = launchUrl(customer.CustomerIdentifier, customer.ProductCode);
-  if (TABLE) await c.ddb.send(new c.UpdateCommand({ TableName: TABLE, Key: { customerId: customer.CustomerIdentifier },
-    UpdateExpression: 'SET productCode = :p, awsAccountId = :a, registeredAt = if_not_exists(registeredAt, :t), lastSeenAt = :t, launchUrl = :l',
-    ExpressionAttributeValues: { ':p': customer.ProductCode, ':a': customer.CustomerAWSAccountId, ':t': now.toISOString(), ':l': launch } }));
-  console.log(JSON.stringify({ registered: customer.CustomerIdentifier, account: customer.CustomerAWSAccountId }));
+  if (!resolved.LicenseArn) { console.error('resolve returned no LicenseArn'); return html(400, page('Subscription could not be verified', '<h1>Subscription could not be verified</h1><p>Return to AWS Marketplace and choose Set up your account again.</p>')); }
+  const customer = { LicenseArn: resolved.LicenseArn, ProductCode: resolved.ProductCode, CustomerAWSAccountId: resolved.CustomerAWSAccountId, CustomerIdentifier: resolved.CustomerIdentifier };
+  const launch = launchUrl(customer.LicenseArn, customer.CustomerAWSAccountId, customer.ProductCode);
+  if (TABLE) await c.ddb.send(new c.UpdateCommand({ TableName: TABLE, Key: { licenseArn: customer.LicenseArn },
+    UpdateExpression: 'SET productCode = :p, awsAccountId = :a, legacyCustomerId = :c, registeredAt = if_not_exists(registeredAt, :t), lastSeenAt = :t, launchUrl = :l',
+    ExpressionAttributeValues: { ':p': customer.ProductCode, ':a': customer.CustomerAWSAccountId, ':c': customer.CustomerIdentifier || '', ':t': now.toISOString(), ':l': launch } }));
+  console.log(JSON.stringify({ registered: customer.LicenseArn, account: customer.CustomerAWSAccountId }));
   return html(200, registeredPage(Object.assign({ launch, region: REGION }, customer)));
 };
 

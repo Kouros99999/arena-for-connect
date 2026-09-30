@@ -67,7 +67,7 @@ Challenges come from templates (escalation rate, evaluation floor, team points t
 
 ## Marketplace: metering and releases
 
-A nightly Lambda counts distinct agents with any activity in the trailing 30 days and reports the number to the AWS Marketplace Metering Service as the `agents` dimension, once per day and idempotent on retry. It only reports when the stack is deployed with `MarketplaceProductCode`; without it the count is recorded in the table and nothing is sent, so pilots and direct deals use the same template. An alarm fires if a nightly report fails.
+A nightly Lambda counts distinct agents with any activity in the previous day and reports the number to the AWS Marketplace Metering Service as the `agent_days` dimension (one unit per agent per active day, listed at $0.40), once per day and idempotent on retry. `USAGE_DIMENSION` and `USAGE_WINDOW_DAYS` on the metering function change the dimension and window for private deals. It only reports when the stack is deployed with `MarketplaceProductCode`; without it the count is recorded in the table and nothing is sent, so pilots and direct deals use the same template. An alarm fires if a nightly report fails.
 
 To cut a self-contained release that any account can deploy:
 
@@ -79,7 +79,7 @@ This zips the Lambda code and the pages, rewrites every `CodeUri` in the templat
 
 ## Selling on AWS Marketplace (SaaS listing)
 
-Marketplace has no product type for a serverless CloudFormation stack, so Arena is listed as **SaaS**: the buyer subscribes, Marketplace posts their subscription token to our registration page, and that page hands them a one-click CloudFormation launch link with their customer identifier and the product code as parameters. The stack they launch installs the pages itself (`SiteArchiveUrl`, a custom resource) and meters nightly against their subscription with `BatchMeterUsage`.
+Marketplace has no product type for a serverless CloudFormation stack, so Arena is listed as **SaaS**: the buyer subscribes, Marketplace posts their subscription token to our registration page, and that page hands them a one-click CloudFormation launch link with their customer identifier and the product code as parameters. The stack they launch installs the pages itself (`SiteArchiveUrl`, a custom resource) and meters nightly against their license with `BatchMeterUsage`. This is the concurrent-agreements integration Marketplace requires of SaaS products created after June 2026: the registration page resolves the token to a `LicenseArn` and `CustomerAWSAccountId`, both travel as stack parameters, every usage record names them (and no product code), and license lifecycle notifications arrive through EventBridge rather than SNS.
 
 The seller-side pieces live in `lambda/seller/` and deploy once, in the seller account, in us-east-1:
 
@@ -87,7 +87,7 @@ The seller-side pieces live in `lambda/seller/` and deploy once, in the seller a
 cd lambda/seller && sam build && sam deploy --guided   # ReleaseBase = the release URL, SupportEmail
 ```
 
-Its `RegistrationUrl` output goes into the listing as the fulfillment URL. After Marketplace creates the product it shows an SNS topic ARN for subscription notifications; update the seller stack with `MarketplaceTopicArn` so subscribe and unsubscribe events land in the customers table.
+Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The stack also subscribes to the "License Updated - Manufacturer" and "License Deprovisioned - Manufacturer" events for the product code, so each license's state lands in the customers table, keyed by `LicenseArn`. Usage may be reported from the first update event until about an hour after the deprovision event.
 
 ## Operations
 
