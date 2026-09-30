@@ -5,6 +5,8 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 ## Product
 
 - **Product title:** Arena for Amazon Connect
+- **Product ID:** prod-4qi5gee6lfmq6 (created 2026-09-29)
+- **Product code:** 60k3e92pedv832asl3vbpibz7 — the value for the stack parameter `MarketplaceProductCode`; the registration page passes it automatically
 - **Short description (≤ 300 chars):** Agent engagement for Amazon Connect: a live leaderboard inside the agent workspace, a supervisor console with challenges and rewards, and a floor wallboard. Quality-weighted scoring, deployed into your own AWS account.
 - **Long description:**
 
