@@ -2,7 +2,7 @@ name: Deploy demo to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: [prototype/**, .github/workflows/pages.yml]
+    paths: [prototype/**, web/**, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -27,12 +27,7 @@ jobs:
           mkdir -p site
           cp prototype/*.html prototype/arena-engine.js prototype/arena-auth.js site/
           echo 'window.ARENA_CONFIG = {};' > site/config.js
-          cat > site/index.html <<'EOF'
-          <!doctype html><meta charset="utf-8"><title>Arena for Amazon Connect</title>
-          <style>body{font-family:system-ui;max-width:40rem;margin:4rem auto;padding:0 1rem;line-height:1.5}a{display:block;margin:.4rem 0}</style>
-          <h1>Arena for Amazon Connect</h1><p>Demo pages on simulated data.</p>
-          <a href="agent-panel.html">Agent panel</a><a href="supervisor-console.html">Supervisor console</a><a href="wallboard.html">Wallboard</a>
-          EOF
+          cp web/* site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

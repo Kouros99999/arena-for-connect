@@ -42,14 +42,15 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 
 ## Draft state (2026-09-29)
 
-All eight wizard steps entered and validated, saved with **Save and exit** (not submitted). Allowlist: 533267257907 (our own account, for testing the subscribe flow). Resume from the product page → **Resume product creation**. Still to fill before submitting: support email, privacy policy URL.
+All eight wizard steps entered and validated, saved with **Save and exit** (not submitted). Allowlist: 533267257907 (our own account, for testing the subscribe flow). Resume from the product page → **Resume product creation**. Still to put into the wizard before submitting: support email and privacy policy URL below, once the domain resolves.
 
 ## Support
 
-- **Support email:** *(yours)*
-- **Support URL:** https://github.com/Kouros99999/arena-for-connect
+- **Support email:** support@arenaforconnect.com (Cloudflare Email Routing forwards it; must be working before it goes into the listing)
+- **Support URL:** https://arenaforconnect.com/support.html (until DNS is live: https://kouros99999.github.io/arena-for-connect/support.html)
 - **Support description:** Email support with a one-business-day response. Deployment guide, scripts and issue tracker on GitHub.
-- **Privacy policy URL:** *(needed; a one-page policy stating data stays in the customer's account and Arena collects only the Marketplace customer identifier and subscription state)*
+- **Privacy policy URL:** https://arenaforconnect.com/privacy.html (source: `web/privacy.html`; until DNS is live: https://kouros99999.github.io/arena-for-connect/privacy.html)
+- **Domain:** arenaforconnect.com, registered at Cloudflare 2026-10-03
 - **EULA:** Standard Contract for AWS Marketplace
 
 ## Compliance and security (for the listing questionnaire)

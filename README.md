@@ -18,6 +18,7 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
+| `web/` | Public site for arenaforconnect.com: landing page, support, privacy policy (deployed with the demo by GitHub Pages) |
 | `docs/` | Research brief and notes |
 
 ## Run locally
