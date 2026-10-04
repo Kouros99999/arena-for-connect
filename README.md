@@ -37,7 +37,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -100,6 +100,8 @@ To cut a self-contained release that any account can deploy:
 ```bash
 node lambda/release.js 0.1.0 --bucket <your public artifacts bucket>
 ```
+
+**Release notes come first.** The script refuses to run until `web/releases.json` has an entry for the version at the top of the file: version, date, a title, a one-sentence summary, the changes in plain customer language, and anything a customer must do when upgrading. That one file drives the public notes page (`releases.html`) and the "latest version" line on the landing page, and a copy ships beside the template as `RELEASE_NOTES.json`. Pushing the commit publishes the notes to the website, so a version never goes out without the site saying what changed.
 
 This zips the Lambda code and the pages, rewrites every `CodeUri` in the template to the published archive, writes checksums, and uploads all of it with public read to `s3://<bucket>/arena/0.1.0/`. The printed template URL is what goes into the Marketplace listing, and what a customer can launch directly in the CloudFormation console.
 

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arena Release Notes</title>
+<meta name="description" content="What changed in each version of Arena for Amazon Connect.">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css">
+<header>
+  <a class="mark" href="./"><img src="logo.svg" alt="" width="32" height="32">Arena for Amazon Connect</a>
+  <nav><a href="releases.html">Release notes</a><a href="support.html">Support</a><a href="privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <h1>Release notes</h1>
+  <p class="lede">What changed in each version of Arena, newest first.</p>
+  <div id="releases"><p class="muted">Loading release notes…</p></div>
+  <noscript><p>The release notes need JavaScript to display. The same content is in <a href="releases.json">releases.json</a>.</p></noscript>
+</main>
+<footer>
+  <a href="releases.html">Release notes</a><a href="privacy.html">Privacy policy</a><a href="support.html">Support</a>
+  <p>Arena is a product of EKPK LLC. Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates.</p>
+</footer>
+<script>
+(async function () {
+  const box = document.getElementById('releases');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const day = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  try {
+    const list = await (await fetch('releases.json', { cache: 'no-cache' })).json();
+    box.innerHTML = list.map((r, i) => `<section class="rel" id="v${esc(r.version)}">
+      <h2>Version ${esc(r.version)}${i === 0 ? ' <span class="tag">Latest</span>' : ''}</h2>
+      <p class="muted">${day(r.date)}</p>
+      <p><b>${esc(r.title)}.</b> ${esc(r.summary)}</p>
+      <ul>${r.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+      ${r.upgrade && r.upgrade.length ? `<h3>If you are upgrading</h3><ul>${r.upgrade.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
+    </section>`).join('');
+    if (location.hash) { const el = document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView(); }
+  } catch (e) { box.innerHTML = '<p>The release notes could not be loaded. Please try again shortly.</p>'; }
+})();
+</script>
+</html>

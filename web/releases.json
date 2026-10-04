@@ -1,0 +1,66 @@
+[
+  {
+    "version": "0.4.0",
+    "date": "2026-10-03",
+    "title": "Quality on every contact, a results report, and coaching",
+    "summary": "Arena now measures quality on every analysed contact, shows whether things are improving, and turns a flag into an agreed action.",
+    "changes": [
+      "Customer sentiment: each contact analysed by Contact Lens earns points from the customer's overall sentiment. It never deducts points.",
+      "Survey scores: post-contact survey answers earn points, read from Connect contact records or sent by an outside survey tool.",
+      "New flag for an agent whose customer sentiment stays low across several contacts.",
+      "Results report: compares the last 7, 14, 30 or 90 days with the period before, for the team and for each agent, with a daily chart, CSV export and a print layout.",
+      "Coaching plans: open a plan from any flag with an agreed action, a follow-up date and a private supervisor note. The agent confirms it in their panel, and the console shows the numbers before and since.",
+      "The supervisor console and agent panel show customer sentiment and survey score alongside the evaluation average."
+    ],
+    "upgrade": [
+      "No action is needed to keep existing behaviour.",
+      "To score customer sentiment, set the new AnalysisBucket setting to the bucket Connect writes Contact Lens analysis to, and turn on EventBridge notifications for that bucket.",
+      "To score survey answers from Connect, send contact records to the Arena stream and set CsatAttribute to the contact attribute your survey writes."
+    ]
+  },
+  {
+    "version": "0.3.0",
+    "date": "2026-09-29",
+    "title": "AWS Marketplace license integration",
+    "summary": "Arena moved to the current AWS Marketplace integration for software subscriptions.",
+    "changes": [
+      "A subscription is now identified by its AWS Marketplace license, and usage is reported against that license.",
+      "Billing unit changed to the active agent-day: one unit for each agent with scored activity on a day.",
+      "The registration page passes the license and AWS account to the stack automatically when you launch."
+    ],
+    "upgrade": [
+      "Stack settings changed: MarketplaceLicenseArn and MarketplaceCustomerAccountId replace MarketplaceCustomerId. Launch from the registration page so they are filled in for you."
+    ]
+  },
+  {
+    "version": "0.2.0",
+    "date": "2026-09-26",
+    "title": "One-click setup and operations",
+    "summary": "Arena installs its own pages and looks after itself in production.",
+    "changes": [
+      "Registration page: subscribe on AWS Marketplace and launch Arena into your account from one link.",
+      "The stack installs the agent panel, console and wallboard itself. Nothing to upload by hand.",
+      "Alarms for ingest errors, the stream falling behind, API errors and failed usage reports, by email if you give an address.",
+      "Agent data deletion: remove everything Arena holds about one agent, from the console API or an admin script.",
+      "Quality streaks are assessed every night, with a bonus from the second clean day.",
+      "Wallboard TV links: a supervisor creates a sign-in-free link for a floor display, valid for 90 days and revocable."
+    ],
+    "upgrade": []
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-09-16",
+    "title": "First release",
+    "summary": "The leaderboard, console and wallboard on live Amazon Connect data.",
+    "changes": [
+      "Agent panel inside the Connect agent workspace: points, level, streak, badges and the team leaderboard.",
+      "Supervisor console: live leaderboard, flags for agents gone quiet, high volume with low quality, and evaluation auto-fails, plus a scoring mix you can tune.",
+      "Wallboard for a floor TV.",
+      "Scoring from the Connect agent event stream and Contact Lens evaluations. Quality outweighs speed, and an auto-fail removes points no setting can soften.",
+      "Challenges measured from Connect data, a reward catalog with supervisor approval, and kudos between teammates.",
+      "Sign-in through a user pool created in your account, or your own identity provider.",
+      "Everything deploys as one CloudFormation stack into your own AWS account."
+    ],
+    "upgrade": []
+  }
+]

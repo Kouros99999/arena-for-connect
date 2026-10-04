@@ -20,8 +20,19 @@ const bucket = opt('bucket', process.env.ARENA_RELEASE_BUCKET || ''), region = o
 const upload = !args.includes('--no-upload') && !!bucket;
 
 const root = path.join(__dirname, '..');
+// Release notes are part of a release: the website's notes page and "latest version" line are built from this file.
+const notesFile = path.join(root, 'web', 'releases.json');
+const notes = JSON.parse(fs.readFileSync(notesFile, 'utf8'));
+const entry = notes.find((n) => n.version === version);
+if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) {
+  console.error(`No release notes for ${version}.\nAdd an entry at the top of web/releases.json (version, date, title, summary, changes, upgrade) and run this again.\nThe notes page at arenaforconnect.com/releases.html and the landing page's "latest version" line come from that file.`);
+  process.exit(1);
+}
+if (notes[0].version !== version && !args.includes('--allow-older')) { console.error(`web/releases.json lists ${notes[0].version} first, not ${version}. Put the newest version at the top, or pass --allow-older to rebuild an earlier one.`); process.exit(1); }
 const out = path.join(root, 'release', version);
 fs.rmSync(out, { recursive: true, force: true }); fs.mkdirSync(out, { recursive: true });
+
+fs.writeFileSync(path.join(out, 'RELEASE_NOTES.json'), JSON.stringify(entry, null, 2) + '\n');   // the notes ship beside the template
 
 // 1. Lambda code: src/ plus the shared engine, zipped with files at the archive root.
 fs.copyFileSync(path.join(root, 'prototype', 'arena-engine.js'), path.join(__dirname, 'src', 'arena-engine.js'));
@@ -62,6 +73,7 @@ if (upload) {
   for (const f of fs.readdirSync(out)) aws('s3', 'cp', path.join(out, f), `s3://${bucket}/arena/${version}/${f}`, '--cache-control', 'public, max-age=31536000, immutable');
   console.log(`published to s3://${bucket}/arena/${version}/`);
   console.log(`template URL: https://${bucket}.s3.${region}.amazonaws.com/arena/${version}/template.yaml`);
+  console.log(`\nNext: commit and push. The push publishes the ${version} notes to https://arenaforconnect.com/releases.html.`);
 } else if (bucket) console.log('upload skipped (--no-upload)');
 else console.log('no --bucket given: template references ./arena.zip; run `aws cloudformation package` on it or pass --bucket to publish');
 

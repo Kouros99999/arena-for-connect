@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="site.css">
 <header>
   <a class="mark" href="./"><img src="logo.svg" alt="" width="32" height="32">Arena for Amazon Connect</a>
-  <nav><a href="support.html">Support</a><a href="privacy.html">Privacy</a></nav>
+  <nav><a href="releases.html">Release notes</a><a href="support.html">Support</a><a href="privacy.html">Privacy</a></nav>
 </header>
 <main>
   <h1>A fair, live leaderboard for your Amazon Connect agents</h1>
@@ -24,9 +24,20 @@
   <h2>How it is delivered</h2>
   <p>Arena is sold through AWS Marketplace and deploys as one CloudFormation stack into your AWS account. Agent data never leaves that account. Setup is a launch link, two settings in the Connect console, and users synced from your Connect directory.</p>
   <p class="muted">The demo pages above run on simulated data in your browser.</p>
+  <p class="latest" id="latest" hidden></p>
 </main>
 <footer>
-  <a href="privacy.html">Privacy policy</a><a href="support.html">Support</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation</a>
+  <a href="releases.html">Release notes</a><a href="privacy.html">Privacy policy</a><a href="support.html">Support</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation</a>
   <p>Arena is a product of EKPK LLC. Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon.</p>
 </footer>
+<script>
+fetch('releases.json', { cache: 'no-cache' }).then((r) => r.json()).then((list) => {
+  const r = list[0], el = document.getElementById('latest');
+  if (!r || !el) return;
+  const day = new Date(r.date + 'T12:00:00Z').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  el.textContent = 'Latest version: ' + r.version + ', ' + day + '. ' + r.title + '. ';
+  const a = document.createElement('a'); a.href = 'releases.html#v' + r.version; a.textContent = 'See what changed'; el.appendChild(a);
+  el.hidden = false;
+}).catch(() => {});
+</script>
 </html>
