@@ -16,7 +16,7 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 
   Arena deploys as a CloudFormation stack into your own AWS account. Agent data never leaves it. Setup is a launch link from this listing, two settings in the Connect console, and users synced from your Connect directory.
 
-- **Product logo:** 110×110 PNG, "A" mark on teal (#0F766E). *(to create)*
+- **Product logo:** podium inside an open ring, white on teal (#0F766E) with an amber (#FBBF24) winner dot. Source `web/logo.svg`; PNGs from `python web/make-logo.py`. Published at https://arena-releases-533267257907.s3.us-east-1.amazonaws.com/arena/assets/logo-podium.png (512 px)
 - **Highlights (3):**
   1. Leaderboard, points and streaks inside the Connect agent workspace, updated within seconds of each contact.
   2. Challenges and rewards measured from Connect data and Contact Lens evaluations, never self-reported.

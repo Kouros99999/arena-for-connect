@@ -5,7 +5,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe
 header,main,footer{max-width:46rem;margin:0 auto;padding:0 16px}
 header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:1.2rem;padding-bottom:1.2rem;flex-wrap:wrap}
 .mark{display:inline-flex;align-items:center;gap:.6rem;font-weight:700;color:var(--ink);text-decoration:none}
-.mark span{display:inline-grid;place-items:center;width:2rem;height:2rem;border-radius:6px;background:var(--brand);color:var(--brand-ink)}
+.mark img{display:block;width:2rem;height:2rem}
 nav a{color:var(--muted);text-decoration:none;margin-left:1rem}
 nav a:hover{color:var(--ink)}
 h1{font-size:1.9rem;line-height:1.2;margin:1.5rem 0 .6rem}
