@@ -27,7 +27,7 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 
 ## Listing copy to refresh at the next update (features added in 0.4.0)
 
-Not yet in the stored listing. Suggested wording when the listing is next edited:
+Entered in the stored listing on 2026-10-03 (Save updates request succeeded 11:16 PM PDT):
 
 - Long description, add: "Beyond evaluations, Arena scores customer sentiment from Contact Lens on every analysed contact and post-contact survey answers, so quality is measured on all contacts and not only the few that are reviewed. A results report compares any period with the one before it, and a coaching workflow turns a flag into an agreed action with a follow-up date and before-and-after numbers."
 - Highlight 2 could become: "Quality measured on every contact: evaluations, Contact Lens customer sentiment and survey scores, with coaching plans that show before and after."
