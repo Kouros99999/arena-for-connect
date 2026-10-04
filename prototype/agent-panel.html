@@ -175,6 +175,14 @@ button{font:inherit;cursor:pointer}
         <div class="tile gold"><div class="v num" id="streak">7</div><div class="l">day quality streak</div></div>
         <div class="tile"><div class="v num" id="handled">0</div><div class="l">contacts handled</div></div>
         <div class="tile"><div class="v num" id="qa">—</div><div class="l">avg evaluation</div></div>
+        <div class="tile"><div class="v num" id="sent">—</div><div class="l">customer sentiment</div></div>
+        <div class="tile"><div class="v num" id="csat">—</div><div class="l">survey score</div></div>
+        <div class="tile"><div class="v num" id="kud">0</div><div class="l">kudos received</div></div>
+      </div>
+
+      <div class="section" id="coachSec" hidden>
+        <h3>Your coaching plan <span id="coachDue"></span></h3>
+        <div class="chal" id="coachCard"></div>
       </div>
 
       <div class="section">
@@ -214,6 +222,8 @@ button{font:inherit;cursor:pointer}
       <div class="btns">
         <button data-sim="contact">Contact handled</button>
         <button data-sim="eval">Evaluation scored</button>
+        <button data-sim="sentiment">Customer sentiment</button>
+        <button data-sim="csat">Survey answer</button>
         <button data-sim="kudos">Kudos received</button>
         <button data-sim="autofail">Auto-fail</button>
         <button id="pause">Pause stream</button>
@@ -233,7 +243,7 @@ button{font:inherit;cursor:pointer}
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
   let YOU = conn.remote ? null : engine.agents[0];
-  let range = 'today', feed = [], lastRank = {}, chal = null;
+  let range = 'today', feed = [], lastRank = {}, chal = null, plans = [];
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
   const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
@@ -252,6 +262,23 @@ button{font:inherit;cursor:pointer}
     try { const list = await engine.challenges(); chal = list.find(c => c.state === 'active') || null; } catch (e) { chal = null; }
     renderChallenge();
   }
+  // Coaching: the agent sees the agreed action and the follow-up date, never the supervisor's private note.
+  async function loadCoaching(){
+    if (!YOU) return;
+    try { plans = await engine.coaching({ agentId: YOU.id, status: 'open' }); } catch (e) { plans = []; }
+    renderCoaching();
+  }
+  function renderCoaching(){
+    const sec = $('#coachSec'); sec.hidden = !plans.length;
+    if (!plans.length) return;
+    $('#coachDue').textContent = plans[0].dueAt ? 'follow-up ' + plans[0].dueAt : '';
+    $('#coachCard').innerHTML = plans.map(c => `<div class="t">${esc(c.action || c.reason)}</div>
+      <div class="d">${esc(c.reason)}${c.createdBy ? ' · agreed with ' + esc(c.createdBy) : ''}</div>
+      <div class="meta"><span>${c.acknowledgedAt ? 'You marked this as seen.' : 'Let your supervisor know you have seen this.'}</span>${c.acknowledgedAt ? '' : `<button class="btn" data-ack="${c.id}" style="border:1px solid var(--accent);background:var(--accent);color:#fff;padding:4px 10px;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer">Got it</button>`}</div>`).join('<hr style="border:0;border-top:1px solid var(--line);margin:8px 0">');
+  }
+  document.addEventListener('click', async e => { const b = e.target.closest('[data-ack]'); if (!b) return;
+    try { await engine.updateCoaching(b.dataset.ack, { acknowledged: true }); await loadCoaching(); } catch (err) { note('Could not save: ' + err.message, true); } });
+
   function renderChallenge(){
     const box = $('#chalCard');
     if (!chal) { $('#chalEnds').textContent = ''; box.innerHTML = '<div class="d">No active challenge. Your supervisor can start one from the console.</div>'; return; }
@@ -288,6 +315,9 @@ button{font:inherit;cursor:pointer}
     $('#handled').textContent = YOU.handled;
     $('#streak').textContent = YOU.streak;
     $('#qa').textContent = me.qa !== null ? me.qa + '%' : '—';
+    $('#sent').textContent = me.sentiment !== null && me.sentiment !== undefined ? (me.sentiment > 0 ? '+' : '') + me.sentiment.toFixed(1) : '—';
+    $('#csat').textContent = me.csat !== null && me.csat !== undefined ? me.csat.toFixed(1) : '—';
+    $('#kud').textContent = YOU.kudosReceived || 0;
 
     const lvl = engine.level(YOU);
     $('#lvlName').textContent = `Level ${lvl.index} · ${lvl.name}`;
@@ -333,17 +363,20 @@ button{font:inherit;cursor:pointer}
     document.querySelector('.contact .note').textContent = 'Live data from the Arena API. The pane refreshes every five seconds from DynamoDB, fed by the agent event stream.';
   }
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
-  setInterval(loadChallenge, 30000);
+  setInterval(loadChallenge, 30000); setInterval(loadCoaching, 30000);
 
   if (sim) {
     feed = [{words:'Evaluation scored <b>92%</b>', pts:20, t:'09:12'},{words:'Handled <b>Billing</b> contact, 5 min', pts:10, t:'09:05'},{words:'Streak bonus, day 7', pts:Arena.BASE.streakDay, t:'08:31'}];
-    render(); loadChallenge(); sim.start();
+    render(); loadChallenge(); loadCoaching(); sim.start();
   } else {
     const words = e => e.type==='CONTACT_HANDLED' ? `Handled <b>${esc(e.queue||'a')}</b> contact, ${Math.round((e.handleTime||0)/60)} min`
       : e.type==='EVALUATION_SUBMITTED' ? (e.autoFail ? 'Evaluation <b>auto-fail</b>' : `Evaluation scored <b>${e.score}%</b>`)
-      : e.type==='KUDOS' ? `Kudos from <b>${esc(e.from)}</b>: “${esc(e.note)}”` : e.type;
+      : e.type==='KUDOS' ? `Kudos from <b>${esc(e.from)}</b>: “${esc(e.note)}”`
+      : e.type==='SENTIMENT_SCORED' ? `Customer sentiment <b>${e.sentiment > 0 ? '+' : ''}${e.sentiment}</b> on a contact`
+      : e.type==='CSAT_RECEIVED' ? `Customer survey: <b>${e.score} of 5</b>`
+      : e.type==='STREAK_DAY' ? `Streak bonus${e.day ? ', day ' + e.day : ''}` : e.type;
     async function loadFeed(){ const evs = await engine.events(YOU.id, 6); feed = evs.filter(e => e.points).map(e => ({ words: words(e), pts: e.points, t: e.at.slice(11,16) })); render(); }
-    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); } render(); loadChallenge(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
+    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
     engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); });
   }
 })();

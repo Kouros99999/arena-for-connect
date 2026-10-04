@@ -25,6 +25,13 @@ Copy for the SaaS listing wizard. Fields follow the Marketplace form order.
 - **Keywords:** amazon connect, contact center, gamification, agent engagement, leaderboard, agent performance, contact lens
 - **Product video:** none for v0.2.0
 
+## Listing copy to refresh at the next update (features added in 0.4.0)
+
+Not yet in the stored listing. Suggested wording when the listing is next edited:
+
+- Long description, add: "Beyond evaluations, Arena scores customer sentiment from Contact Lens on every analysed contact and post-contact survey answers, so quality is measured on all contacts and not only the few that are reviewed. A results report compares any period with the one before it, and a coaching workflow turns a flag into an agreed action with a follow-up date and before-and-after numbers."
+- Highlight 2 could become: "Quality measured on every contact: evaluations, Contact Lens customer sentiment and survey scores, with coaching plans that show before and after."
+
 ## Delivery
 
 - **Fulfillment URL:** `RegistrationUrl` output of the seller stack (ends in `/register`)

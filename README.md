@@ -11,11 +11,13 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `prototype/agent-panel.html` | Third-party app for the Connect agent workspace |
 | `prototype/supervisor-console.html` | Supervisor console: leaderboard, flags, scoring mix, challenges, rewards |
 | `prototype/wallboard.html` | Floor display, sized for a TV |
+| `prototype/report.html` | Results report for supervisors: this period against the one before, per-agent changes, coaching outcomes, CSV export |
 | `prototype/arena-engine.js` | Shared scoring engine: rules, mix, levels, badges, anomaly flags, simulator, remote client |
 | `prototype/serve.js` | Local dev server with a mock of the API under `/api` |
 | `lambda/src/ingest.js` | Lambda on the Connect agent event stream (Kinesis) |
 | `lambda/src/evaluations.js` | Lambda on Contact Lens evaluation output (S3 via EventBridge), deduped per evaluation |
-| `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos |
+| `lambda/src/sentiment.js` | Lambda on Contact Lens conversational analytics output: customer sentiment per contact, deduped per contact |
+| `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos, challenges, rewards, history, coaching, metric import |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
 | `web/` | Public site for arenaforconnect.com: landing page, support, privacy policy (deployed with the demo by GitHub Pages) |
@@ -35,7 +37,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js
 ```
 
 ## Deploy into an AWS account
@@ -61,6 +63,29 @@ node lambda/sync-users.js <stack name> --instance <connect instance id>
 Users whose Connect security profile name contains "supervisor" or "admin" land in the supervisors group. To use the customer's own identity provider instead, either add it as a federated provider on the pool, or deploy with `AuthMode=external` and their OIDC issuer and audience. The API always requires a token; there is no open mode.
 
 For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
+
+## Customer sentiment and survey scores
+
+Evaluations cover only the few contacts a reviewer gets to. Two more quality signals cover the rest, and both scale with the quality weight in the scoring mix. Neither ever deducts points: customers are sometimes unhappy for reasons no agent controls.
+
+**Customer sentiment.** Pass `AnalysisBucket` at deploy time (the bucket Connect writes Contact Lens conversational analytics to, usually the recordings bucket) and turn on EventBridge notifications for it. Each analysed contact scores its overall customer sentiment, from -5 to +5: up to 8 points at the default mix. The analysis file names the contact but not the agent, so the agent comes from a marker the event-stream ingest writes when the contact is handled; if the analysis arrives first it is retried. An agent whose average drops to -1 or lower across five or more analysed contacts is flagged.
+
+**Survey scores.** If a post-contact survey flow writes the customer's answer to a contact attribute, send Connect's contact records to the same Kinesis stream as the agent events and set `CsatAttribute` to that attribute's name (default `csat`). Scores on 1-5, 0-10 and 0-100 scales are brought to 1-5; a 5 earns 10 points. For survey tools outside Connect, a supervisor token can post a score instead:
+
+```bash
+curl -X POST "$API/teams/Billing%20team/metrics" -H "authorization: Bearer $TOKEN" \
+  -d '{"agentId":"<agent ARN>","metric":"csat","score":5,"contactId":"<contact id>"}'
+```
+
+Both appear in the console (a team tile and a column per agent), in the agent panel, and in the report.
+
+## Results report
+
+`report.html`, linked from the console, answers "is this working?". It compares the last 7, 14, 30 or 90 days with the same number of days before them: evaluation average, customer sentiment, survey score, auto-fails, escalation rate, handle time, contacts and points, each with its change. A chart shows one measure by day with the previous period's average as a dashed line, and a table lists every agent with their evaluation average before and now. It prints cleanly and exports CSV. The data is the per-agent day rows Arena already keeps, read through `GET /teams/{team}/history?days=30`; supervisors only.
+
+## Coaching
+
+A flag is only useful if something happens next. **Coach** on any flag opens a plan: why, the action agreed with the agent, a follow-up date, and a private note only supervisors see. Opening a plan records the agent's 14-day averages as a baseline. The console then shows each open plan with the numbers before and since, whether the agent has seen it, and whether the follow-up date has passed. The agent sees the agreed action in their panel and confirms with **Got it**; they cannot edit or close it, and never see the private note. Closing a plan stores the result, and the report lists every plan with the evaluation average before and after. Plans are team items like challenges and rewards, under `/teams/{team}/coaching`, and are removed with the agent's other data on deletion.
 
 ## Challenges, rewards, kudos
 

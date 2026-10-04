@@ -152,3 +152,106 @@ test('unknown route is 404, OPTIONS is 204', async () => {
   assert.equal((await h(req('GET', '/nope'))).statusCode, 404);
   assert.equal((await h(req('OPTIONS', '/kudos'))).statusCode, 204);
 });
+
+// ---------- history, coaching, metrics ----------
+const supReq = (method, path, body, qs) => ({ rawPath: path, queryStringParameters: qs, body: body ? JSON.stringify(body) : undefined,
+  requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['supervisors'], name: 'Dana' } } } } });
+const agentReq = (method, path, body, arn) => ({ rawPath: path, body: body ? JSON.stringify(body) : undefined,
+  requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['agents'], 'custom:agentArn': arn, name: 'Priya' } } } } });
+
+function historyStore() {
+  const s = fakeStore();
+  const row = (id, over) => Object.assign({ pk: 'AGENT#' + id, username: id, points: 100, handled: 10, ahtSum: 3000, evals: [80] }, over);
+  s.days = { '2026-09-15': [row('a1', { evals: [90], sentSum: 6, sentCount: 3 })], '2026-09-14': [row('a1', { evals: [88] })], '2026-09-08': [row('a1', { evals: [70] })], '2026-09-02': [row('a1', { evals: [72] })] };
+  s.getTeamDays = async (team, dates) => { s.calls.push(['getTeamDays', team, dates]); const out = {}; for (const d of dates) out[d] = s.days[d] || []; return out; };
+  s.getTeamLive = async () => [{ pk: 'AGENT#a1', displayName: 'Priya Natarajan', username: 'priya' }];
+  s.getAgentDays = async (arn, from, to) => { s.calls.push(['getAgentDays', arn, from, to]); return Object.keys(s.days).filter((d) => d >= from && d <= to).flatMap((d) => s.days[d].filter((r) => r.pk === 'AGENT#' + arn)); };
+  s.getLive = async (arn) => (arn === 'a1' ? { team: 'Billing team', username: 'priya' } : null);
+  s.apply = async (w) => { s.calls.push(['apply', w]); return s.applyResult; };
+  return s;
+}
+
+test('history is for supervisors and compares the period with the one before', async () => {
+  const s = historyStore(); const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(agentReq('GET', '/teams/Billing%20team/history', null, 'a1'))).statusCode, 403);
+  const r = await h(supReq('GET', '/teams/Billing%20team/history', null, { days: '7' }));
+  assert.equal(r.statusCode, 200);
+  const rep = JSON.parse(r.body).report;
+  const dates = s.calls.find((c) => c[0] === 'getTeamDays')[2];
+  assert.equal(dates.length, 14); assert.equal(dates[0], '2026-09-02'); assert.equal(dates[13], '2026-09-15');
+  assert.equal(rep.period, 7); assert.equal(rep.from, '2026-09-09'); assert.equal(rep.to, '2026-09-15');
+  assert.equal(rep.current.qa, 89); assert.equal(rep.previous.qa, 71); assert.equal(rep.change.qa, 18);
+  assert.equal(rep.current.sentiment, 2); assert.equal(rep.agents[0].name, 'Priya Natarajan'); assert.equal(rep.series.length, 7);
+});
+
+test('history falls back to 30 days for an unsupported period', async () => {
+  const s = historyStore(); const h = makeHandler({ store: s, now: fixed });
+  await h(supReq('GET', '/teams/t/history', null, { days: '500' }));
+  assert.equal(s.calls.find((c) => c[0] === 'getTeamDays')[2].length, 60);
+});
+
+test('coaching: a supervisor opens a plan with a 14-day baseline', async () => {
+  const s = historyStore(); const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(agentReq('POST', '/teams/Billing%20team/coaching', { agentId: 'a1' }, 'a1'))).statusCode, 403);
+  assert.equal((await h(supReq('POST', '/teams/Billing%20team/coaching', {}))).statusCode, 400);
+  assert.equal((await h(supReq('POST', '/teams/Billing%20team/coaching', { agentId: 'ghost' }))).statusCode, 404);
+  const r = await h(supReq('POST', '/teams/Billing%20team/coaching', { agentId: 'a1', reason: 'Auto-fail today', note: 'private', action: 'Use the checklist', dueAt: '2026-09-22' }));
+  assert.equal(r.statusCode, 201);
+  const c = JSON.parse(r.body).coaching;
+  assert.equal(c.status, 'open'); assert.equal(c.agentName, 'priya'); assert.equal(c.createdBy, 'Dana'); assert.equal(c.dueAt, '2026-09-22');
+  assert.deepEqual(s.calls.find((x) => x[0] === 'getAgentDays').slice(1), ['a1', '2026-09-02', '2026-09-15']);
+  assert.equal(c.baseline.qa, 80); assert.equal(c.baseline.days, 4);
+  assert.ok(s.items[0].sk.startsWith('CO#2026-09-15T14:05:30.000Z#'));
+});
+
+test('coaching: agents see only their own plans, without the private note; supervisors see all', async () => {
+  const s = historyStore(); const h = makeHandler({ store: s, now: fixed });
+  await h(supReq('POST', '/teams/t/coaching', { agentId: 'a1', note: 'private', action: 'Use the checklist' }));
+  s.items.push({ pk: 'TEAMITEMS#t', sk: 'CO#2026-09-10T00:00:00.000Z#x2', id: 'x2', agentId: 'a2', agentName: 'Marcus', note: 'n', action: 'a', status: 'open', createdAt: '2026-09-10T00:00:00.000Z' });
+  const mine = JSON.parse((await h(agentReq('GET', '/teams/t/coaching', null, 'a1'))).body).coaching;
+  assert.equal(mine.length, 1); assert.equal(mine[0].agentId, 'a1'); assert.equal(mine[0].note, undefined); assert.equal(mine[0].action, 'Use the checklist');
+  const none = JSON.parse((await h(req('GET', '/teams/t/coaching'))).body).coaching;
+  assert.deepEqual(none, [], 'a caller with no agent identity sees nothing');
+  const all = JSON.parse((await h(supReq('GET', '/teams/t/coaching'))).body).coaching;
+  assert.equal(all.length, 2); assert.ok(all.some((c) => c.note === 'private'));
+  const marcus = all.find((c) => c.agentId === 'a2');
+  assert.ok(s.calls.some((x) => x[0] === 'getAgentDays' && x[1] === 'a2' && x[2] === '2026-09-11' && x[3] === '2026-09-15'), 'since starts the day after the plan opened');
+  assert.equal(marcus.since, null, 'no rows since the plan opened');
+});
+
+test('coaching: the agent may acknowledge and nothing else; closing records the result', async () => {
+  const s = historyStore(); const h = makeHandler({ store: s, now: fixed });
+  s.items.push({ pk: 'TEAMITEMS#t', sk: 'CO#2026-09-07T00:00:00.000Z#x1', id: 'x1', agentId: 'a1', agentName: 'Priya', note: 'private', action: 'old', status: 'open', createdAt: '2026-09-07T00:00:00.000Z', baseline: { qa: 71 } });
+  assert.equal((await h(agentReq('PUT', '/teams/t/coaching/x1', { acknowledged: true }, 'someone-else'))).statusCode, 403);
+  const ack = JSON.parse((await h(agentReq('PUT', '/teams/t/coaching/x1', { acknowledged: true, action: 'rewritten by agent', status: 'done' }, 'a1'))).body).coaching;
+  assert.equal(ack.acknowledgedAt, '2026-09-15T14:05:30.000Z'); assert.equal(ack.action, 'old'); assert.equal(ack.status, 'open'); assert.equal(ack.note, undefined);
+  const done = JSON.parse((await h(supReq('PUT', '/teams/t/coaching/x1', { status: 'done', outcome: 'Back on track' }))).body).coaching;
+  assert.equal(done.status, 'done'); assert.equal(done.closedBy, 'Dana'); assert.equal(done.outcome, 'Back on track');
+  assert.equal(done.result.qa, 83, 'averages the days after the plan opened: 70, 88, 90');
+  assert.equal(done.since.qa, 83); assert.equal(done.note, 'private');
+  assert.equal((await h(supReq('PUT', '/teams/t/coaching/missing', { status: 'done' }))).statusCode, 404);
+});
+
+test('metrics: a supervisor records a survey score; duplicates and bad input are refused', async () => {
+  const s = historyStore(); const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(agentReq('POST', '/teams/t/metrics', { agentId: 'a1', metric: 'csat', score: 5 }, 'a1'))).statusCode, 403);
+  assert.equal((await h(supReq('POST', '/teams/t/metrics', { agentId: 'a1', metric: 'csat', score: 9 }))).statusCode, 400);
+  assert.equal((await h(supReq('POST', '/teams/t/metrics', { agentId: 'a1', metric: 'nps', score: 9 }))).statusCode, 400);
+  assert.equal((await h(supReq('POST', '/teams/t/metrics', { agentId: 'a1', metric: 'sentiment', score: '' }))).statusCode, 400);
+  const r = await h(supReq('POST', '/teams/t/metrics', { agentId: 'a1', metric: 'csat', score: 5, contactId: 'c-1' }));
+  assert.equal(r.statusCode, 201); assert.equal(JSON.parse(r.body).points, 10);
+  const writes = s.calls.find((c) => c[0] === 'apply')[1];
+  assert.equal(writes[0].item.sk, 'SEEN#CSAT#c-1');
+  const ledger = writes.find((w) => w.op === 'put' && w.item.sk.startsWith('EV#'));
+  assert.equal(ledger.item.Team, 'Billing team', 'team comes from the agent, not the URL'); assert.equal(ledger.item.Score, 5); assert.equal(ledger.item.RecordedBy, 'Dana');
+  s.applyResult = false;
+  const dup = await h(supReq('POST', '/teams/t/metrics', { agentId: 'a1', metric: 'csat', score: 5, contactId: 'c-1' }));
+  assert.equal(dup.statusCode, 200); assert.equal(JSON.parse(dup.body).duplicate, true);
+});
+
+test('new routes resolve', () => {
+  assert.equal(route('GET', '/teams/Billing%20team/history').name, 'history');
+  assert.equal(route('PUT', '/teams/t/coaching/abc').id, 'abc');
+  assert.equal(route('POST', '/teams/t/metrics').name, 'recordMetric');
+  assert.equal(route('GET', '/kiosk/tok/coaching'), null, 'coaching is never served to a wallboard token');
+});

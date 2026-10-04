@@ -11,10 +11,10 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const engine = Arena.seedTeam(Arena.createEngine());
 engine.agents.forEach((a) => { a.team = 'Billing team'; });
 const ledger = {};
-engine.on((r) => { (ledger[r.agent.id] = ledger[r.agent.id] || []).unshift({ type: r.event.EventType, at: r.event.EventTimestamp || new Date().toISOString(), points: r.points, queue: r.event.Queue, score: r.event.Score, autoFail: r.event.AutoFail, from: r.event.From, note: r.event.Note, handleTime: r.event.HandleTime }); ledger[r.agent.id].length = Math.min(ledger[r.agent.id].length, 50); });
+engine.on((r) => { (ledger[r.agent.id] = ledger[r.agent.id] || []).unshift({ type: r.event.EventType, at: r.event.EventTimestamp || new Date().toISOString(), points: r.points, queue: r.event.Queue, score: r.event.Score, autoFail: r.event.AutoFail, from: r.event.From, note: r.event.Note, handleTime: r.event.HandleTime, sentiment: r.event.Sentiment, day: r.event.Day }); ledger[r.agent.id].length = Math.min(ledger[r.agent.id].length, 50); });
 Arena.createSimulator(engine, { rate: 4, exclude: ['agent-7'] }).start();
 
-function json(res, status, body) { res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET, PUT, POST, OPTIONS' }); res.end(JSON.stringify(body)); }
+function json(res, status, body) { res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET, PUT, POST, DELETE, OPTIONS' }); res.end(JSON.stringify(body)); }
 function body(req) { return new Promise((r) => { let s = ''; req.on('data', (c) => s += c); req.on('end', () => { try { r(JSON.parse(s || '{}')); } catch { r({}); } }); }); }
 
 async function api(req, res, p) {
@@ -34,6 +34,18 @@ async function api(req, res, p) {
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const b = await body(req); return json(res, 201, { reward: await engine.requestReward(b.agentId, b.catalogId, b.by) }); }
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) { const b = await body(req); return json(res, 200, { reward: await engine.decideReward(decodeURIComponent(m[2]), b.status, 'mock supervisor') }); }
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/kudos$/))) { const l = (req.url.split('?')[1] || '').match(/limit=(\d+)/); return json(res, 200, { kudos: await engine.kudosFeed(l ? +l[1] : 10) }); }
+    // History, coaching and metrics: the local engine implements the same calls the real API serves.
+    const query = new URLSearchParams(req.url.split('?')[1] || '');
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/history$/))) return json(res, 200, { report: await engine.history([7, 14, 30, 90].includes(+query.get('days')) ? +query.get('days') : 30) });
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/coaching$/))) return json(res, 200, { coaching: await engine.coaching({ status: query.get('status') || undefined, agentId: query.get('agent') || undefined }) });
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/coaching$/))) return json(res, 201, { coaching: await engine.createCoaching(Object.assign(await body(req), { createdBy: 'mock supervisor' })) });
+    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/coaching\/([^/]+)$/))) return json(res, 200, { coaching: await engine.updateCoaching(decodeURIComponent(m[2]), await body(req)) });
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/metrics$/))) {
+      const b = await body(req); const a = engine.byId(b.agentId);
+      if (!a || !['csat', 'sentiment'].includes(b.metric) || !Number.isFinite(+b.score)) return json(res, 400, { error: 'agentId, metric (csat or sentiment) and a numeric score are required' });
+      const r = engine.ingest(b.metric === 'csat' ? { EventType: 'CSAT_RECEIVED', AgentARN: a.id, Score: +b.score } : { EventType: 'SENTIMENT_SCORED', AgentARN: a.id, Sentiment: +b.score });
+      return json(res, 201, { ok: true, points: r.points });
+    }
     // Kiosk: any token that starts with "demo" works against the mock.
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/kiosk$/))) return json(res, 201, { kiosk: { token: 'demo-' + Math.random().toString(36).slice(2, 10), team: 'Billing team', label: 'Wallboard', expiresAt: new Date(Date.now() + 90 * 86400000).toISOString() } });
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/kiosk$/))) return json(res, 200, { kiosks: [] });

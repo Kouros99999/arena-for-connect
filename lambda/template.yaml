@@ -32,6 +32,18 @@ Parameters:
     Type: String
     Default: Evaluations/
     Description: Key prefix Connect uses for evaluation output in that bucket.
+  AnalysisBucket:
+    Type: String
+    Default: ''
+    Description: Name of the existing S3 bucket Connect writes Contact Lens conversational analytics to (usually the call recordings bucket). Enable "Send notifications to Amazon EventBridge" on it. Each analysed contact then scores customer sentiment. Leave empty to skip.
+  AnalysisPrefix:
+    Type: String
+    Default: Analysis/
+    Description: Key prefix Connect uses for Contact Lens analysis output in that bucket.
+  CsatAttribute:
+    Type: String
+    Default: csat
+    Description: Contact attribute your post-contact survey flow writes the customer's score to. Used only if you also send Connect contact records to the Arena stream. Scores on 1-5, 0-10 or 0-100 scales are accepted.
   ConnectInstanceUrl:
     Type: String
     Default: ''
@@ -64,6 +76,7 @@ Parameters:
 Conditions:
   UseCognito: !Equals [!Ref AuthMode, cognito]
   UseEvaluations: !Not [!Equals [!Ref EvaluationsBucket, '']]
+  UseAnalysis: !Not [!Equals [!Ref AnalysisBucket, '']]
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
   OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
@@ -119,6 +132,9 @@ Resources:
       CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
       Handler: ingest.handler
       Timeout: 30
+      Environment:
+        Variables:
+          CSAT_ATTRIBUTE: !Ref CsatAttribute
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - KinesisStreamReadPolicy: { StreamName: !Ref AgentEventStream }
@@ -159,6 +175,29 @@ Resources:
                 bucket: { name: [!Ref EvaluationsBucket] }
                 object: { key: [{ prefix: !Ref EvaluationsPrefix }] }
             RetryPolicy: { MaximumRetryAttempts: 3, MaximumEventAgeInSeconds: 3600 }
+
+  SentimentFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseAnalysis
+    Properties:
+      FunctionName: !Sub arena-sentiment-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: sentiment.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - S3ReadPolicy: { BucketName: !Ref AnalysisBucket }
+      Events:
+        ObjectCreated:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source: [aws.s3]
+              detail-type: [Object Created]
+              detail:
+                bucket: { name: [!Ref AnalysisBucket] }
+                object: { key: [{ prefix: !Ref AnalysisPrefix }] }
+            # The analysis can land before the agent event that says who handled the contact; retries cover that gap.
+            RetryPolicy: { MaximumRetryAttempts: 5, MaximumEventAgeInSeconds: 3600 }
 
   MeteringFunction:
     Type: AWS::Serverless::Function

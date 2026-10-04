@@ -55,3 +55,32 @@ test('decode reads a base64 Kinesis record', () => {
   const rec = { kinesis: { data: Buffer.from(JSON.stringify(raw)).toString('base64') } };
   assert.equal(decode(rec).AgentARN, ARN);
 });
+
+const { translateContactRecord, normalizeCsat, isContactRecord } = require('./ingest.js');
+
+const ctr = (over) => Object.assign({
+  AWSContactTraceRecordFormatVersion: '2017-03-10', ContactId: 'c-9', Channel: 'VOICE', DisconnectTimestamp: '2026-09-15T14:09:00Z',
+  Agent: { ARN: ARN, Username: 'priya', RoutingProfile: { Name: 'Billing team' } }, Queue: { Name: 'Billing' }, Attributes: { csat: '4' },
+}, over);
+
+test('a contact record with the survey attribute becomes a CSAT event for its agent', () => {
+  assert.equal(isContactRecord(ctr()), true); assert.equal(isContactRecord(base()), false);
+  const out = translateContactRecord(ctr(), 'csat');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].EventType, 'CSAT_RECEIVED'); assert.equal(out[0].AgentARN, ARN); assert.equal(out[0].Score, 4);
+  assert.equal(out[0].Team, 'Billing team'); assert.equal(out[0].DedupKey, 'CSAT#c-9'); assert.equal(out[0].EventTimestamp, '2026-09-15T14:09:00Z');
+});
+
+test('contact records without a score, or without an agent, are ignored', () => {
+  assert.deepEqual(translateContactRecord(ctr({ Attributes: {} }), 'csat'), []);
+  assert.deepEqual(translateContactRecord(ctr({ Attributes: { csat: 'n/a' } }), 'csat'), []);
+  assert.deepEqual(translateContactRecord(ctr({ Agent: null }), 'csat'), []);
+  assert.equal(translateContactRecord(ctr({ Attributes: { survey_score: '5' } }), 'survey_score')[0].Score, 5);
+});
+
+test('survey scores on other scales are brought to 1-5', () => {
+  assert.equal(normalizeCsat('5'), 5); assert.equal(normalizeCsat(3.5), 3.5);
+  assert.equal(normalizeCsat('9'), 4.5); assert.equal(normalizeCsat(10), 5);
+  assert.equal(normalizeCsat('80'), 4); assert.equal(normalizeCsat(0), 1);
+  assert.equal(normalizeCsat(''), null); assert.equal(normalizeCsat(-1), null);
+});

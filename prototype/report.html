@@ -1,0 +1,302 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arena Results Report</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EEF0F3; --panel:#FFFFFF; --sub:#F5F6F8; --ink:#15181E; --ink-2:#4A5362; --muted:#7C8697; --line:#DCE0E6;
+  --accent:#0F766E; --accent-soft:#DDF1EE; --grid:#E6E9EE; --ref:#8A94A4;
+  --good:#2E7D4F; --good-bg:#E6F3EB; --warn:#9A6A12; --warn-bg:#FBF1DC; --bad:#A83A3A; --bad-bg:#F8E5E5;
+  --chrome:#232F3E; --chrome-ink:#E9EDF2; --chrome-muted:#9AA6B6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1216; --panel:#171B21; --sub:#1E232B; --ink:#E8EBF0; --ink-2:#B3BBC7; --muted:#7F8998; --line:#2A303A;
+    --accent:#3FB8AD; --accent-soft:#143432; --grid:#242A33; --ref:#6F7A8A;
+    --good:#7BC998; --good-bg:#16291E; --warn:#E0B45C; --warn-bg:#2E2412; --bad:#E38B8B; --bad-bg:#331A1A;
+    --chrome:#0B0E12; --chrome-ink:#E9EDF2; --chrome-muted:#8791A0;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1216; --panel:#171B21; --sub:#1E232B; --ink:#E8EBF0; --ink-2:#B3BBC7; --muted:#7F8998; --line:#2A303A;
+  --accent:#3FB8AD; --accent-soft:#143432; --grid:#242A33; --ref:#6F7A8A;
+  --good:#7BC998; --good-bg:#16291E; --warn:#E0B45C; --warn-bg:#2E2412; --bad:#E38B8B; --bad-bg:#331A1A;
+  --chrome:#0B0E12; --chrome-ink:#E9EDF2; --chrome-muted:#8791A0;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",system-ui,Segoe UI,sans-serif;font-size:14px;line-height:1.45}
+button,select,input{font:inherit}
+button{cursor:pointer}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.num{font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0}
+
+.chrome{background:var(--chrome);color:var(--chrome-ink);min-height:44px;display:flex;align-items:center;gap:14px;padding:6px 20px;font-size:13px;flex-wrap:wrap}
+.chrome .brand{font-family:Manrope,sans-serif;font-weight:800;letter-spacing:-.01em;font-size:15px}
+.chrome .crumb{color:var(--chrome-muted)}
+.chrome .spacer{flex:1}
+.chrome select{background:transparent;color:var(--chrome-ink);border:1px solid #3B4757;border-radius:4px;padding:3px 8px}
+.chrome select option{color:#15181E}
+.chrome .link{color:var(--chrome-muted);text-decoration:none}
+.chrome .link:hover{color:var(--chrome-ink)}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:5px 10px;border-radius:4px;font-size:12.5px;font-weight:600}
+.btn:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.wrap{padding:20px;max-width:1160px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.lede h1{font-size:22px;letter-spacing:-.015em;line-height:1.25;max-width:46rem}
+.lede p{margin:6px 0 0;color:var(--ink-2)}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:8px 12px;font-size:13px}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .v{font-family:Manrope,sans-serif;font-weight:800;font-size:26px;line-height:1.15;letter-spacing:-.02em;margin-top:2px}
+.kpi .c{font-size:12.5px;margin-top:3px;color:var(--muted)}
+.kpi .c.good{color:var(--good)} .kpi .c.bad{color:var(--bad)}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.card-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h h2{font-size:14px;font-weight:700}
+.card-h .sub{font-size:12px;color:var(--muted)}
+.card-h .r{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+.card-b{padding:12px 14px}
+.seg button{border:1px solid var(--line);background:var(--panel);color:var(--ink-2);padding:4px 10px;font-size:12.5px;border-radius:4px}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:600}
+
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:260px;overflow:visible}
+.chart .axis{font-size:11.5px;fill:var(--muted)}
+.chart .gridline{stroke:var(--grid);stroke-width:1}
+.chart .series{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .dot{fill:var(--accent)}
+.chart .ref{stroke:var(--ref);stroke-width:1.5;stroke-dasharray:5 4}
+.chart .reflabel{font-size:11.5px;fill:var(--ink-2)}
+.chart .cross{stroke:var(--muted);stroke-width:1}
+.chart .hover{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:5px;padding:6px 9px;font-size:12.5px;white-space:nowrap;transform:translate(-50%,-100%);margin-top:-12px}
+.tip b{font-family:Manrope,sans-serif;font-size:14px}
+.legend{font-size:12.5px;color:var(--ink-2);display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
+.legend i{display:inline-block;width:18px;height:0;border-top:2px solid var(--accent);vertical-align:middle;margin-right:6px}
+.legend i.r{border-top:2px dashed var(--ref)}
+
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.r,td.r{text-align:right}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;padding:2px 7px;border-radius:3px;white-space:nowrap}
+.pill.good{background:var(--good-bg);color:var(--good)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.mute{background:var(--sub);color:var(--muted)}
+.empty{color:var(--muted);font-size:13px;padding:6px 0}
+details summary{cursor:pointer;color:var(--ink-2);font-size:13px;padding:10px 14px}
+.foot{font-size:12px;color:var(--muted)}
+@media print{
+  body{background:#fff} .chrome .link,.chrome button,.chrome select,.seg,.tip{display:none!important}
+  .chrome{background:#fff;color:#000;border-bottom:1px solid #999} .chrome .crumb{color:#333}
+  .card,.kpi{break-inside:avoid}
+}
+</style>
+
+<div class="chrome">
+  <span class="brand">Arena</span>
+  <span class="crumb">Results report</span>
+  <span class="crumb" id="teamName"></span>
+  <select id="period" aria-label="Period">
+    <option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option>
+  </select>
+  <span class="spacer"></span>
+  <button class="btn" id="csvBtn">Download CSV</button>
+  <button class="btn" id="printBtn">Print</button>
+  <a class="link" href="supervisor-console.html">Back to console</a>
+</div>
+
+<div class="wrap">
+  <div class="note" id="demoNote" hidden>Demo: this history is simulated in your browser so the report has something to show. A live deployment reads the days Arena has recorded.</div>
+  <div class="lede"><h1 id="headline">Loading the report…</h1><p id="range"></p></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="card-h"><h2 id="chartTitle">Average evaluation, by day</h2><span class="sub" id="chartSub"></span>
+      <div class="r seg" id="metricSeg" role="group" aria-label="Measure shown in the chart"></div></div>
+    <div class="card-b">
+      <div class="chart" id="chart"><svg role="img" aria-labelledby="chartTitle"></svg><div class="tip" id="tip" hidden></div></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <details><summary>Daily figures as a table</summary><div class="tw"><table id="dayTbl"></table></div></details>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><h2>Agents</h2><span class="sub">this period, with evaluation average against the period before</span></div>
+    <div class="tw"><table id="agentTbl"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><h2>Coaching</h2><span class="sub" id="coachSub"></span></div>
+    <div class="tw"><table id="coachTbl"></table></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script src="config.js"></script>
+<script src="arena-auth.js"></script>
+<script src="arena-engine.js"></script>
+<script>
+(function(){
+  const conn = Arena.connect();
+  const engine = conn.engine;
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const signed = v => (v > 0 ? '+' : '') + v.toFixed(1);
+  const mmss = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  const dayLabel = iso => new Date(iso + 'T12:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+  // One definition per measure: how to print it, which direction is good, and how to word a change.
+  const M = {
+    qa:        { label: 'Average evaluation', fmt: v => v + '%', up: true, unit: v => Math.abs(v) + ' point' + (Math.abs(v) === 1 ? '' : 's') },
+    sentiment: { label: 'Customer sentiment', fmt: signed, up: true, unit: v => Math.abs(v).toFixed(1) },
+    csat:      { label: 'Survey score', fmt: v => v.toFixed(1) + ' of 5', up: true, unit: v => Math.abs(v).toFixed(1) },
+    autofails: { label: 'Evaluation auto-fails', fmt: v => String(v), up: false, unit: v => String(Math.abs(v)) },
+    escalationRate: { label: 'Escalation rate', fmt: v => v.toFixed(1) + '%', up: false, unit: v => Math.abs(v).toFixed(1) + ' points' },
+    aht:       { label: 'Average handle time', fmt: mmss, up: null, unit: v => mmss(Math.abs(Math.round(v))) },
+    handled:   { label: 'Contacts handled', fmt: v => v.toLocaleString(), up: null, unit: v => Math.abs(v).toLocaleString() },
+    points:    { label: 'Points earned', fmt: v => v.toLocaleString(), up: null, unit: v => Math.abs(v).toLocaleString() },
+  };
+  const CHARTABLE = ['qa', 'sentiment', 'csat', 'handled', 'points'];
+  let report = null, coaching = [], metric = 'qa';
+
+  function headline(r){
+    const c = r.current, ch = r.change.qa;
+    if (c.qa === null) return `No evaluations were scored in the last ${r.period} days.`;
+    if (ch === null) return `Average evaluation score was ${c.qa}% over the last ${r.period} days.`;
+    if (ch === 0) return `Average evaluation score held at ${c.qa}% across the last ${r.period} days.`;
+    return `Average evaluation score ${ch > 0 ? 'rose' : 'fell'} ${M.qa.unit(ch)} to ${c.qa}% compared with the previous ${r.period} days.`;
+  }
+
+  function renderKpis(r){
+    $('#kpis').innerHTML = Object.keys(M).map(k => {
+      const m = M[k], v = r.current[k], ch = r.change[k];
+      let cls = '', text = r.previous ? 'no earlier figure' : 'no earlier period yet';
+      if (ch !== null && ch !== undefined) {
+        if (ch === 0) text = 'no change';
+        else { text = `${ch > 0 ? '▲ up' : '▼ down'} ${m.unit(ch)}`; if (m.up !== null) cls = (ch > 0) === m.up ? 'good' : 'bad'; }
+      }
+      return `<div class="kpi"><div class="l">${m.label}</div><div class="v num">${v === null || v === undefined ? '—' : m.fmt(v)}</div><div class="c ${cls}">${text}</div></div>`;
+    }).join('');
+  }
+
+  // ---- chart: one measure at a time, one axis, a dashed line for the previous period's average ----
+  function renderChart(){
+    const r = report, m = M[metric], svg = $('#chart svg'), tip = $('#tip');
+    const W = Math.max(320, $('#chart').clientWidth), H = 260, pad = { l: 46, r: 16, t: 14, b: 26 };
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const pts = r.series.map((d, i) => ({ i, date: d.date, v: d[metric] })), have = pts.filter(p => p.v !== null && p.v !== undefined);
+    const ref = r.previous ? r.previous[metric] : null;
+    const perDayRef = (metric === 'handled' || metric === 'points') && ref !== null ? Math.round(ref / r.period) : ref;   // totals compare per day
+    $('#chartTitle').textContent = m.label + ', by day';
+    $('#chartSub').textContent = have.length ? '' : 'nothing recorded in this period';
+    if (!have.length) { svg.innerHTML = ''; $('#legend').innerHTML = ''; return; }
+    const vals = have.map(p => p.v).concat(perDayRef !== null && perDayRef !== undefined ? [perDayRef] : []);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const span = (hi - lo) || Math.max(1, Math.abs(hi) * 0.1);
+    lo = metric === 'handled' || metric === 'points' ? 0 : lo - span * 0.15; hi = hi + span * 0.15;
+    if (metric === 'qa') hi = Math.min(100, hi); if (metric === 'csat') { hi = Math.min(5, hi); lo = Math.max(1, lo); }
+    const x = i => pad.l + (pts.length === 1 ? (W - pad.l - pad.r) / 2 : (i / (pts.length - 1)) * (W - pad.l - pad.r));
+    const y = v => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+    const tick = v => metric === 'qa' ? Math.round(v) + '%' : metric === 'sentiment' ? signed(v) : metric === 'csat' ? v.toFixed(1) : Math.round(v).toLocaleString();
+    let g = '';
+    for (let k = 0; k <= 4; k++) { const v = lo + (k / 4) * (hi - lo); g += `<line class="gridline" x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${pad.l - 8}" y="${y(v) + 4}" text-anchor="end">${tick(v)}</text>`; }
+    const every = Math.max(1, Math.ceil(pts.length / 7));
+    pts.forEach(p => { if (p.i % every === 0 || p.i === pts.length - 1) { if (p.i !== pts.length - 1 && pts.length - 1 - p.i < every / 2) return; g += `<text class="axis" x="${x(p.i)}" y="${H - 6}" text-anchor="${p.i === 0 ? 'start' : p.i === pts.length - 1 ? 'end' : 'middle'}">${dayLabel(p.date)}</text>`; } });
+    // The line breaks where a day has no value, so a gap is never drawn as a trend.
+    let d = '', pen = false, dots = '';
+    pts.forEach((p, i) => {
+      const ok = p.v !== null && p.v !== undefined;
+      if (ok) { d += (pen ? 'L' : 'M') + x(i) + ' ' + y(p.v) + ' '; pen = true;
+        const alone = !(pts[i - 1] && pts[i - 1].v != null) && !(pts[i + 1] && pts[i + 1].v != null);
+        if (alone) dots += `<circle class="dot" cx="${x(i)}" cy="${y(p.v)}" r="3"/>`; }
+      else pen = false;
+    });
+    let refEl = '';
+    if (perDayRef !== null && perDayRef !== undefined) refEl = `<line class="ref" x1="${pad.l}" x2="${W - pad.r}" y1="${y(perDayRef)}" y2="${y(perDayRef)}"/>`;
+    svg.innerHTML = g + refEl + `<path class="series" d="${d}"/>` + dots + `<line class="cross" id="cross" y1="${pad.t}" y2="${H - pad.b}" visibility="hidden"/><circle class="hover" id="hov" r="5" visibility="hidden"/><rect id="hit" x="${pad.l}" y="${pad.t}" width="${W - pad.l - pad.r}" height="${H - pad.t - pad.b}" fill="transparent"/>`;
+    $('#legend').innerHTML = `<span><i></i>${m.label}, each day</span>` + (refEl ? `<span><i class="r"></i>Previous ${r.period} days, ${metric === 'handled' || metric === 'points' ? 'daily average' : 'average'}: ${m.fmt(perDayRef)}</span>` : '');
+    const hit = svg.querySelector('#hit'), cross = svg.querySelector('#cross'), hov = svg.querySelector('#hov');
+    function move(e){
+      const box = svg.getBoundingClientRect(), px = ((e.touches ? e.touches[0].clientX : e.clientX) - box.left) * (W / box.width);
+      let best = null; for (const p of have) if (best === null || Math.abs(x(p.i) - px) < Math.abs(x(best.i) - px)) best = p;
+      if (!best) return;
+      cross.setAttribute('x1', x(best.i)); cross.setAttribute('x2', x(best.i)); cross.setAttribute('visibility', 'visible');
+      hov.setAttribute('cx', x(best.i)); hov.setAttribute('cy', y(best.v)); hov.setAttribute('visibility', 'visible');
+      tip.hidden = false; tip.innerHTML = `${dayLabel(best.date)}<br><b>${m.fmt(best.v)}</b>`;
+      const left = Math.min(Math.max(x(best.i) * (box.width / W), 50), box.width - 50);
+      tip.style.left = left + 'px'; tip.style.top = (y(best.v) * (box.height / H)) + 'px';
+    }
+    function leave(){ cross.setAttribute('visibility', 'hidden'); hov.setAttribute('visibility', 'hidden'); tip.hidden = true; }
+    hit.addEventListener('mousemove', move); hit.addEventListener('touchstart', move, { passive: true }); hit.addEventListener('touchmove', move, { passive: true });
+    hit.addEventListener('mouseleave', leave); hit.addEventListener('touchend', leave);
+  }
+
+  function renderTables(r){
+    const cell = (k, v) => v === null || v === undefined ? '<span style="color:var(--muted)">—</span>' : esc(M[k].fmt(v));
+    $('#dayTbl').innerHTML = '<thead><tr><th>Day</th>' + ['qa', 'sentiment', 'csat', 'handled', 'aht', 'autofails', 'points'].map(k => `<th class="r">${M[k].label}</th>`).join('') + '<th class="r">Active agents</th></tr></thead><tbody>'
+      + r.series.map(d => `<tr><td>${dayLabel(d.date)}</td>` + ['qa', 'sentiment', 'csat', 'handled', 'aht', 'autofails', 'points'].map(k => `<td class="r num">${cell(k, d[k])}</td>`).join('') + `<td class="r num">${d.activeAgents}</td></tr>`).join('') + '</tbody>';
+    $('#agentTbl').innerHTML = r.agents.length ? '<thead><tr><th>Agent</th><th class="r">Points</th><th class="r">Contacts</th><th class="r">Evaluation avg</th><th class="r">Before</th><th class="r">Change</th><th class="r">Sentiment</th><th class="r">Survey</th><th class="r">Auto-fails</th><th class="r">Days active</th></tr></thead><tbody>'
+      + r.agents.map(a => { const ch = a.qaChange;
+        const pill = ch === null ? '<span class="pill mute">no comparison</span>' : `<span class="pill ${ch > 0 ? 'good' : ch < 0 ? 'bad' : 'mute'}">${ch > 0 ? '▲ +' : ch < 0 ? '▼ ' : ''}${ch}</span>`;
+        return `<tr><td>${esc(a.name)}</td><td class="r num">${a.points.toLocaleString()}</td><td class="r num">${a.handled.toLocaleString()}</td><td class="r num">${cell('qa', a.qa)}</td><td class="r num">${cell('qa', a.qaPrev)}</td><td class="r">${pill}</td><td class="r num">${cell('sentiment', a.sentiment)}</td><td class="r num">${a.csat === null ? cell('csat', null) : a.csat.toFixed(1)}</td><td class="r num">${a.autofails}</td><td class="r num">${a.daysActive}</td></tr>`; }).join('') + '</tbody>'
+      : '<tbody><tr><td class="empty">No agent activity in this period.</td></tr></tbody>';
+  }
+
+  function renderCoaching(){
+    const done = coaching.filter(c => c.status === 'done'), open = coaching.filter(c => c.status !== 'done');
+    const moved = done.filter(c => c.baseline && c.result && c.baseline.qa != null && c.result.qa != null).map(c => c.result.qa - c.baseline.qa);
+    const avg = moved.length ? Math.round(moved.reduce((a, b) => a + b, 0) / moved.length) : null;
+    $('#coachSub').textContent = `${open.length} open · ${done.length} closed` + (avg !== null ? ` · evaluation average ${avg >= 0 ? 'up' : 'down'} ${Math.abs(avg)} points after coaching, on average` : '');
+    const q = v => v && v.qa != null ? v.qa + '%' : '—';
+    $('#coachTbl').innerHTML = coaching.length ? '<thead><tr><th>Agent</th><th>Opened</th><th>Why</th><th>Agreed action</th><th class="r">Evaluation before</th><th class="r">After</th><th>Status</th></tr></thead><tbody>'
+      + coaching.map(c => `<tr><td>${esc(c.agentName)}</td><td>${dayLabel(c.createdAt.slice(0, 10))}</td><td>${esc(c.reason)}</td><td>${esc(c.action)}</td><td class="r num">${q(c.baseline)}</td><td class="r num">${q(c.status === 'done' ? c.result : c.since)}</td><td><span class="pill ${c.status === 'done' ? 'good' : 'warn'}">${c.status === 'done' ? 'closed' : 'open'}</span></td></tr>`).join('') + '</tbody>'
+      : '<tbody><tr><td class="empty">No coaching plans yet. Open one from a flag in the supervisor console.</td></tr></tbody>';
+  }
+
+  function render(){
+    const r = report;
+    $('#headline').textContent = headline(r);
+    $('#range').textContent = r.from ? `${dayLabel(r.from)} to ${dayLabel(r.to)} · ${r.current.activeAgents} active agents · ${r.current.evaluations} evaluations` + (r.previous ? ` · compared with the ${r.period} days before` : ' · no earlier period recorded yet') : '';
+    $('#teamName').textContent = engine.team ? '· ' + engine.team : '';
+    renderKpis(r); renderChart(); renderTables(r); renderCoaching();
+    $('#foot').textContent = 'Evaluation averages leave out auto-fails, which are counted separately. Days are in UTC. Customer sentiment is the Contact Lens overall score for the customer, from -5 to +5.';
+  }
+
+  async function load(){
+    const days = +$('#period').value;
+    $('#headline').textContent = 'Loading the report…';
+    try {
+      [report, coaching] = await Promise.all([engine.history(days), engine.coaching().catch(() => [])]);
+      render();
+    } catch (e) { $('#headline').textContent = /supervisors/.test(e.message) ? 'This report is for supervisors.' : 'The report could not be loaded: ' + e.message; $('#range').textContent = ''; }
+  }
+
+  function csv(){
+    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const lines = [['Arena results report', engine.team || '', `${report.from} to ${report.to}`].map(q).join(','), '',
+      ['Day', 'Average evaluation', 'Customer sentiment', 'Survey score', 'Contacts handled', 'Average handle time (s)', 'Auto-fails', 'Escalations', 'Points', 'Active agents'].map(q).join(',')]
+      .concat(report.series.map(d => [d.date, d.qa, d.sentiment, d.csat, d.handled, d.aht, d.autofails, d.escalations, d.points, d.activeAgents].map(q).join(',')))
+      .concat(['', ['Agent', 'Points', 'Contacts', 'Evaluation average', 'Evaluation average before', 'Change', 'Customer sentiment', 'Survey score', 'Auto-fails', 'Days active'].map(q).join(',')])
+      .concat(report.agents.map(a => [a.name, a.points, a.handled, a.qa, a.qaPrev, a.qaChange, a.sentiment, a.csat, a.autofails, a.daysActive].map(q).join(',')));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv' })); a.download = `arena-report-${report.to}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  $('#metricSeg').innerHTML = CHARTABLE.map(k => `<button type="button" data-m="${k}" aria-pressed="${k === metric}">${M[k].label}</button>`).join('');
+  $('#metricSeg').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; metric = b.dataset.m; document.querySelectorAll('#metricSeg button').forEach(x => x.setAttribute('aria-pressed', x === b)); renderChart(); });
+  $('#period').addEventListener('change', load);
+  $('#csvBtn').addEventListener('click', () => report && csv());
+  $('#printBtn').addEventListener('click', () => window.print());
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => report && renderChart(), 120); });
+  $('#demoNote').hidden = !!conn.remote;
+  load();
+})();
+</script>

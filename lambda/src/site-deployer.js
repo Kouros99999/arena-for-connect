@@ -53,7 +53,7 @@ function configJs(p) {
 function indexHtml() {
   return '<!doctype html><meta charset="utf-8"><title>Arena for Amazon Connect</title>'
     + '<style>body{font-family:system-ui;max-width:40rem;margin:4rem auto;padding:0 1rem;line-height:1.5}a{display:block;margin:.4rem 0}</style>'
-    + '<h1>Arena for Amazon Connect</h1><a href="agent-panel.html">Agent panel</a><a href="supervisor-console.html">Supervisor console</a><a href="wallboard.html">Wallboard</a>\n';
+    + '<h1>Arena for Amazon Connect</h1><a href="agent-panel.html">Agent panel</a><a href="supervisor-console.html">Supervisor console</a><a href="report.html">Results report</a><a href="wallboard.html">Wallboard</a>\n';
 }
 
 async function install(p, clients) {
@@ -64,7 +64,7 @@ async function install(p, clients) {
   for (const o of puts) await clients.s3.send(new clients.PutObjectCommand(Object.assign({ Bucket: p.Bucket }, o)));
   if (p.UserPoolId && p.ClientId) {
     const cur = (await clients.cognito.send(new clients.DescribeUserPoolClientCommand({ UserPoolId: p.UserPoolId, ClientId: p.ClientId }))).UserPoolClient || {};
-    const pages = ['agent-panel.html', 'supervisor-console.html', 'wallboard.html'].map((x) => p.SiteUrl + '/' + x);
+    const pages = ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'report.html'].map((x) => p.SiteUrl + '/' + x);
     const cb = Array.from(new Set([...(cur.CallbackURLs || []), ...pages])), lo = Array.from(new Set([...(cur.LogoutURLs || []), p.SiteUrl + '/']));
     await clients.cognito.send(new clients.UpdateUserPoolClientCommand({ UserPoolId: p.UserPoolId, ClientId: p.ClientId, CallbackURLs: cb, LogoutURLs: lo,
       AllowedOAuthFlows: cur.AllowedOAuthFlows || ['code'], AllowedOAuthScopes: cur.AllowedOAuthScopes || ['openid', 'email', 'profile'], AllowedOAuthFlowsUserPoolClient: true,

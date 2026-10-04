@@ -3,7 +3,10 @@
  *
  * Table: arena (single table, on-demand)
  *   pk=AGENT#<arn>  sk=LIVE               agentState, lastEvent, username, team, streak
- *   pk=AGENT#<arn>  sk=DAY#2026-09-15     points, handled, ahtSum, evals[], autofails, kudosReceived, escalations
+ *   pk=AGENT#<arn>  sk=DAY#2026-09-15     points, handled, ahtSum, evals[], autofails, kudosReceived, escalations,
+ *                                          sentSum, sentCount (customer sentiment), csatSum, csatCount (survey scores)
+ *   pk=CONTACT#<id> sk=AGENT              who handled a contact; lets Contact Lens analysis find the agent. ttl 14 days
+ *   pk=TEAMITEMS#<team> sk=CH#|RW#|KD#|CO# challenges, rewards, kudos feed, coaching plans
  *   pk=AGENT#<arn>  sk=WEEK#2026-W38      same shape, weekly
  *   pk=AGENT#<arn>  sk=EV#<ts>#<type>     ledger row, ttl 90 days
  *   pk=CONFIG       sk=MIX                scoring mix
@@ -45,6 +48,7 @@ function planWrites(ev, points, now) {
   now = now || Date.now();
   const pk = keys.agent(ev.AgentARN), ts = ev.EventTimestamp, team = ev.Team || 'unassigned';
   const isContact = ev.EventType === 'CONTACT_HANDLED', isEval = ev.EventType === 'EVALUATION_SUBMITTED';
+  const isSent = ev.EventType === 'SENTIMENT_SCORED', isCsat = ev.EventType === 'CSAT_RECEIVED';
   const writes = [];
 
   // Optional idempotency marker. A conditional put that fails aborts the rest of the plan.
@@ -62,18 +66,21 @@ function planWrites(ev, points, now) {
   // Kudos also land on a team feed so the console and wallboard can list them without scanning agents.
   if (ev.EventType === 'KUDOS') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Note, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
 
-  if (points !== 0 || isContact || isEval || ev.EventType === 'KUDOS') {
+  if (points !== 0 || isContact || isEval || isSent || isCsat || ev.EventType === 'KUDOS') {
     for (const [kind, period] of [['DAY', dayKey(ts)], ['WEEK', weekKey(ts)]]) {
       const values = { ':p': points, ':h': isContact ? 1 : 0, ':aht': isContact ? ev.HandleTime || 0 : 0,
         ':esc': isContact && ev.Escalated ? 1 : 0, ':af': isEval && ev.AutoFail ? 1 : 0, ':k': ev.EventType === 'KUDOS' ? 1 : 0,
+        ':ss': isSent ? ev.Sentiment : 0, ':sc': isSent ? 1 : 0, ':cs': isCsat ? ev.Score : 0, ':cc': isCsat ? 1 : 0,
         ':g1': keys.team(team, kind, period), ':g2': pk, ':user': ev.Username || ev.AgentARN, ':empty': [] };
       let expr = 'SET gsi1pk = :g1, gsi1sk = :g2, username = if_not_exists(username, :user)';
       if (isEval) { expr += ', evals = list_append(if_not_exists(evals, :empty), :ev)'; values[':ev'] = [ev.AutoFail ? 0 : ev.Score]; }
       else expr += ', evals = if_not_exists(evals, :empty)';
-      expr += ' ADD points :p, handled :h, ahtSum :aht, escalations :esc, autofails :af, kudosReceived :k';
+      expr += ' ADD points :p, handled :h, ahtSum :aht, escalations :esc, autofails :af, kudosReceived :k, sentSum :ss, sentCount :sc, csatSum :cs, csatCount :cc';
       writes.push({ op: 'update', key: { pk, sk: `${kind}#${period}` }, expr, values });
     }
   }
+  // Remember who handled the contact so analysis that arrives later (and names only the contact) can be scored for the right agent.
+  if (isContact && ev.ContactId) writes.push({ op: 'put', item: { pk: 'CONTACT#' + ev.ContactId, sk: 'AGENT', agent: ev.AgentARN, team, username: ev.Username, name: ev.Name, at: ts, ttl: Math.floor(now / 1000) + 14 * 86400 } });
   return writes;
 }
 
@@ -109,7 +116,8 @@ function mergeTeam(live, day, week) {
   const byArn = new Map();
   const get = (pk) => { if (!byArn.has(pk)) byArn.set(pk, { id: pk.replace(/^AGENT#/, ''), today: 0, week: 0, handled: 0, ahtSum: 0, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Offline', lastEvent: 0 }); return byArn.get(pk); };
   for (const r of live) { const a = get(r.pk); a.name = r.displayName || r.username; a.username = r.username; a.state = r.agentState || 'Offline'; a.lastEvent = r.lastEvent ? Date.parse(r.lastEvent) : 0; a.streak = r.streak || 0; a.team = r.team; }
-  for (const r of day) { const a = get(r.pk); Object.assign(a, { today: r.points || 0, handled: r.handled || 0, ahtSum: r.ahtSum || 0, evals: r.evals || [], autofails: r.autofails || 0, kudosReceived: r.kudosReceived || 0, escalations: r.escalations || 0 }); a.name = a.name || r.username; }
+  for (const r of day) { const a = get(r.pk); Object.assign(a, { today: r.points || 0, handled: r.handled || 0, ahtSum: r.ahtSum || 0, evals: r.evals || [], autofails: r.autofails || 0, kudosReceived: r.kudosReceived || 0, escalations: r.escalations || 0,
+    sentSum: r.sentSum || 0, sentCount: r.sentCount || 0, csatSum: r.csatSum || 0, csatCount: r.csatCount || 0 }); a.name = a.name || r.username; }
   for (const r of week) { const a = get(r.pk); a.week = r.points || 0; a.name = a.name || r.username; }
   return [...byArn.values()].map((a) => { a.name = a.name || a.id.split('/').pop(); return a; });
 }
@@ -119,6 +127,26 @@ async function getTeam(team, iso) {
     queryGsi(keys.team(team, 'LIVE')), queryGsi(keys.team(team, 'DAY', dayKey(iso))), queryGsi(keys.team(team, 'WEEK', weekKey(iso))),
   ]);
   return mergeTeam(live, day, week);
+}
+
+/** Who handled a contact, or null if the agent event stream has not reported it (yet). */
+async function getContact(contactId) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONTACT#' + contactId, sk: 'AGENT' } }));
+  return r.Item || null;
+}
+const getTeamLive = (team) => queryGsi(keys.team(team, 'LIVE'));
+/** Day rows for a team on each of the given dates: { 'YYYY-MM-DD': [rows] }. One small query per day, twenty at a time. */
+async function getTeamDays(team, dates) {
+  const out = {};
+  for (let i = 0; i < dates.length; i += 20)
+    await Promise.all(dates.slice(i, i + 20).map(async (d) => { out[d] = await queryGsi(keys.team(team, 'DAY', d)); }));
+  return out;
+}
+/** One agent's day rows between two dates, inclusive. A single query on the agent's partition. */
+async function getAgentDays(arn, fromDay, toDay) {
+  const r = await db().send(new cmds.QueryCommand({ TableName: TABLE, KeyConditionExpression: 'pk = :pk AND sk BETWEEN :a AND :b',
+    ExpressionAttributeValues: { ':pk': keys.agent(arn), ':a': 'DAY#' + fromDay, ':b': 'DAY#' + toDay } }));
+  return r.Items || [];
 }
 
 async function listEvents(arn, limit) {
@@ -158,7 +186,7 @@ async function spendPoints(arn, iso, cost) {
 }
 
 // ---------- agent data deletion ----------
-/** Every row in an agent's partition, plus their reward requests and kudos addressed to them on the team feed. Returns the keys. */
+/** Every row in an agent's partition, plus their reward requests, coaching plans and kudos addressed to them on the team feed. Returns the keys. */
 async function agentRowKeys(arn, team) {
   const d = db(); const keysOut = []; let ExclusiveStartKey;
   do {
@@ -168,6 +196,7 @@ async function agentRowKeys(arn, team) {
   if (team) {
     for (const item of await listTeamItems(team, 'RW#', 500)) if (item.agentId === arn) keysOut.push({ pk: item.pk, sk: item.sk });
     for (const item of await listTeamItems(team, 'KD#', 500)) if (item.to === arn) keysOut.push({ pk: item.pk, sk: item.sk });
+    for (const item of await listTeamItems(team, 'CO#', 500)) if (item.agentId === arn) keysOut.push({ pk: item.pk, sk: item.sk });
   }
   return keysOut;
 }
@@ -238,5 +267,6 @@ async function putMix(mix) {
 }
 
 module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
+  getContact, getTeamLive, getTeamDays, getAgentDays,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

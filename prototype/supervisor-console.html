@@ -39,9 +39,7 @@ h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0}
 .chrome .link:hover{color:var(--chrome-ink)}
 
 .wrap{padding:20px;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
-.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
-@media (max-width:980px){.stats{grid-template-columns:repeat(3,1fr)}}
-@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
 .stat .v{font-family:Manrope,sans-serif;font-weight:800;font-size:24px;line-height:1.1;letter-spacing:-.02em}
 .stat .l{font-size:12px;color:var(--muted);margin-top:3px}
@@ -117,6 +115,24 @@ tr.flash td{background:var(--flash)}
 .rw .acts{display:flex;gap:4px}
 .empty{color:var(--muted);font-size:13px;padding:6px 0}
 
+.co{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;display:flex;flex-direction:column;gap:4px}
+.co:last-child{border-bottom:0}
+.co .h{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.co .why{color:var(--ink-2);font-size:12.5px}
+.co .ev{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-2);background:var(--sub);border-radius:4px;padding:4px 7px}
+.co .acts{display:flex;gap:4px;margin-top:2px}
+dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;width:min(520px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(10,14,20,.55)}
+.dlg{display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+.dlg h2{font-size:16px}
+.dlg .ctx{font-size:12.5px;color:var(--ink-2);background:var(--sub);border-radius:5px;padding:7px 10px}
+.dlg label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.dlg label[hidden]{display:none}
+.dlg input,.dlg textarea{border:1px solid var(--line);border-radius:4px;padding:7px 9px;background:var(--panel);color:var(--ink);font:inherit;font-size:13.5px}
+.dlg textarea{min-height:70px;resize:vertical}
+.dlg .act{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.dlg .err{color:var(--bad);font-size:12.5px;margin-right:auto}
+
 .demo{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted);padding:0 2px}
 .demo .l{font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s}
@@ -129,6 +145,7 @@ tr.flash td{background:var(--flash)}
   <span class="crumb">Supervisor console</span>
   <select aria-label="Team"><option>Billing team · 12 agents</option><option>Support team · 18 agents</option><option>Retention · 9 agents</option></select>
   <span class="spacer"></span>
+  <a class="link" href="report.html" id="reportLink">Results report</a>
   <a class="link" href="wallboard.html" target="_blank" rel="noopener" id="wallLink">Open wallboard</a>
   <button class="btn sm" id="kioskBtn" title="Create a sign-in-free link for a floor TV">TV link</button>
   <span class="crumb" id="clock">09:41</span>
@@ -139,6 +156,7 @@ tr.flash td{background:var(--flash)}
     <div class="stat"><div class="v num" id="sAgents">12</div><div class="l">agents online</div></div>
     <div class="stat"><div class="v num" id="sPts">0</div><div class="l">team points today</div></div>
     <div class="stat"><div class="v num" id="sQa">—</div><div class="l">avg evaluation today</div></div>
+    <div class="stat"><div class="v num" id="sSent">—</div><div class="l" id="sSentL">customer sentiment today</div></div>
     <div class="stat" id="sEscStat"><div class="v num" id="sEsc">3.8%</div><div class="l">escalation rate today</div></div>
     <div class="stat warn"><div class="v num" id="sAtt">0</div><div class="l">need attention</div></div>
     <div class="stat"><div class="v num" id="sRew">0</div><div class="l">rewards awaiting approval</div></div>
@@ -152,7 +170,7 @@ tr.flash td{background:var(--flash)}
         <div class="tw"><table id="tbl">
           <thead><tr>
             <th data-k="rank" class="sorted">#</th><th data-k="name">Agent</th><th data-k="today" class="r">Points</th>
-            <th data-k="handled" class="r">Contacts</th><th data-k="aht" class="r">AHT</th><th data-k="qa" class="r">QA avg</th>
+            <th data-k="handled" class="r">Contacts</th><th data-k="aht" class="r">AHT</th><th data-k="qa" class="r">QA avg</th><th data-k="sent" class="r" title="Contact Lens overall customer sentiment, -5 to +5">Sentiment</th><th data-k="csat" class="r" title="Post-contact survey score, 1 to 5">Survey</th>
             <th data-k="quiet" class="r">Last event</th><th>Flag</th>
           </tr></thead><tbody></tbody></table></div>
       </div>
@@ -198,6 +216,11 @@ tr.flash td{background:var(--flash)}
       </div>
 
       <div class="card">
+        <div class="card-h"><h2>Coaching</h2><span class="sub" id="coachCount"></span></div>
+        <div class="card-b" id="coach"></div>
+      </div>
+
+      <div class="card">
         <div class="card-h"><h2>Reward approvals</h2></div>
         <div class="card-b" id="rewards"></div>
       </div>
@@ -211,6 +234,18 @@ tr.flash td{background:var(--flash)}
 
   <div class="demo"><span class="l">Demo</span> Simulated event stream · <span id="evCount">0</span> events since load · <label>speed <input type="range" id="speed" min="1" max="10" value="4" style="vertical-align:middle;width:100px"></label></div>
 </div>
+<dialog id="coachDlg" aria-labelledby="coachTitle">
+  <form class="dlg" id="coachForm" method="dialog">
+    <h2 id="coachTitle">Coaching plan</h2>
+    <div class="ctx" id="coachCtx"></div>
+    <label>Why this plan<input id="cReason" maxlength="200" placeholder="Auto-fail on verification"></label>
+    <label>Agreed action, shown to the agent<input id="cAction" maxlength="500" placeholder="Use the verification checklist on every call this week"></label>
+    <label>Follow up on<input id="cDue" type="date"></label>
+    <label>Private note, supervisors only<textarea id="cNote" maxlength="2000" placeholder="What you heard on the calls, what you discussed"></textarea></label>
+    <label id="cOutcomeRow" hidden>Outcome<input id="cOutcome" maxlength="500" placeholder="Back on track: two clean evaluations since"></label>
+    <div class="act"><span class="err" id="cErr"></span><button type="button" class="btn" id="cCancel">Cancel</button><button type="submit" class="btn pri" id="cSave">Open plan</button></div>
+  </form>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script src="config.js"></script>
@@ -221,7 +256,7 @@ tr.flash td{background:var(--flash)}
   const conn = Arena.connect();
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4, exclude: ['agent-7'], fullNames: true }); // Liam stays quiet so the console has something to show
-  let chals = [], rewards = [], kudos = [];
+  let chals = [], rewards = [], kudos = [], coach = [];
   let sortKey = 'rank', sortDir = 1, evCount = 0;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
@@ -229,20 +264,22 @@ tr.flash td{background:var(--flash)}
   const hm = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getHours())+':'+pad(d.getMinutes()); };
   const mins = ms => Math.round(ms/60000);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtS = v => (v > 0 ? '+' : '') + v.toFixed(1);
+  const today = () => new Date().toISOString().slice(0, 10);
   function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2200); }
 
   // Challenges, pending rewards and the kudos feed come from the engine: in-memory in the demo, the API when live.
   async function loadSide(){
-    try { [chals, rewards, kudos] = await Promise.all([engine.challenges(), engine.rewards('pending'), engine.kudosFeed(6)]); }
+    try { [chals, rewards, kudos, coach] = await Promise.all([engine.challenges(), engine.rewards('pending'), engine.kudosFeed(6), engine.coaching({ status: 'open' })]); }
     catch (e) { toast('API error: ' + e.message); }
-    renderSide();
+    render();   // flags depend on which agents already have a plan open
   }
 
   engine.on(r => { evCount++; render(r.agent); if (r.event.EventType === 'KUDOS') loadSide(); });
 
   function render(changed){
     const rows = engine.leaderboard('today');
-    const val = r => ({rank:r.rank, name:r.agent.name, today:r.points, handled:r.agent.handled, aht:r.aht, qa:r.qa ?? -1, quiet:r.agent.lastEvent})[sortKey];
+    const val = r => ({rank:r.rank, name:r.agent.name, today:r.points, handled:r.agent.handled, aht:r.aht, qa:r.qa ?? -1, sent:r.sentiment ?? -9, csat:r.csat ?? -1, quiet:r.agent.lastEvent})[sortKey];
     const view = [...rows].sort((a,b) => { const x=val(a), y=val(b); return (x>y?1:x<y?-1:0)*sortDir; });
     $('#tbl tbody').innerHTML = view.map(r => {
       const a = r.agent, f = engine.flags(a), q = r.qa;
@@ -254,6 +291,8 @@ tr.flash td{background:var(--flash)}
         <td class="r num">${a.handled}</td>
         <td class="r num mono">${Math.floor(r.aht/60)}:${pad(r.aht%60)}</td>
         <td class="r">${qpill}</td>
+        <td class="r">${r.sentiment===null ? '<span class="pill mute">—</span>' : `<span class="pill ${r.sentiment>=1?'good':r.sentiment>-1?'mute':'bad'}">${fmtS(r.sentiment)}</span>`}</td>
+        <td class="r">${r.csat===null ? '<span class="pill mute">—</span>' : `<span class="pill ${r.csat>=4.2?'good':r.csat>=3.5?'warn':'bad'}">${r.csat.toFixed(1)}</span>`}</td>
         <td class="r num" style="color:var(--muted)">${a.lastEvent ? mins(Date.now()-a.lastEvent) + ' min ago' : 'never'}</td>
         <td>${f.map(x => `<span class="pill ${x.level==='quiet'?'mute':x.level}">${x.label}</span>`).join(' ')}</td></tr>`;
     }).join('');
@@ -262,12 +301,14 @@ tr.flash td{background:var(--flash)}
 
     const order = {bad:0, warn:1, quiet:2};
     const att = engine.agents.flatMap(a => engine.flags(a).map(f => ({a,f}))).sort((x,y) => order[x.f.level]-order[y.f.level]);
-    $('#att').innerHTML = att.length ? att.map(({a,f}) => `<div class="ai"><span class="stripe ${f.level==='quiet'?'mute':f.level}"></span><div class="w"><b>${esc(a.name)}</b> · ${f.label}<small>${f.why}</small></div><button class="btn sm" data-review="${a.id}">Review</button></div>`).join('') : '<div class="empty">Nothing flagged.</div>';
+    $('#att').innerHTML = att.length ? att.map(({a,f}) => `<div class="ai"><span class="stripe ${f.level==='quiet'?'mute':f.level}"></span><div class="w"><b>${esc(a.name)}</b> · ${f.label}<small>${f.why}</small></div>${coach.some(c => c.agentId === a.id) ? '<span class="pill good">plan open</span>' : `<button class="btn sm" data-review="${a.id}" data-flag="${esc(f.label)}">Coach</button>`}</div>`).join('') : '<div class="empty">Nothing flagged.</div>';
 
     const s = engine.stats();
     if (conn.remote) { const sel = document.querySelector('.chrome select'); sel.innerHTML = `<option>${esc(engine.team || 'Team')} · ${s.agents} agents</option>`; }
     $('#sAgents').textContent = s.online; $('#sPts').textContent = s.points.toLocaleString();
     $('#sQa').textContent = s.qa !== null ? s.qa + '%' : '—';
+    $('#sSent').textContent = s.sentiment !== null ? fmtS(s.sentiment) : '—';
+    $('#sSentL').textContent = 'customer sentiment today' + (s.csat !== null ? ` · survey ${s.csat.toFixed(1)} of 5` : '');
     const escCh = chals.find(c => c.template === 'esc' && c.state === 'active');
     $('#sEsc').textContent = s.escalationRate === null ? '—' : s.escalationRate.toFixed(1) + '%';
     $('#sEscStat').querySelector('.l').textContent = escCh ? `escalation rate, challenge target ${escCh.target}%` : 'escalation rate today';
@@ -287,7 +328,54 @@ tr.flash td{background:var(--flash)}
     $('#rewards').innerHTML = rewards.length ? rewards.map(r => `<div class="rw"><div><b>${esc(r.agentName)}</b> · ${esc(r.what)}<small>${r.cost.toLocaleString()} pts · requested ${hm(r.requestedAt)}</small></div><div class="acts"><button class="btn sm pri" data-approve="${r.id}">Approve</button><button class="btn sm" data-decline="${r.id}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
     $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b>${esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
     $('#sRew').textContent = rewards.length;
+    const canEdit = conn.isSupervisor !== false;
+    const overdue = coach.filter(c => c.dueAt && c.dueAt < today()).length;
+    $('#coachCount').textContent = coach.length ? `${coach.length} open` + (overdue ? ` · ${overdue} past follow-up` : '') : '';
+    $('#coach').innerHTML = coach.length ? coach.map(c => {
+      const due = !c.dueAt ? '<span class="pill mute">no follow-up date</span>' : c.dueAt < today() ? `<span class="pill bad">follow-up was ${c.dueAt}</span>` : `<span class="pill warn">follow up ${c.dueAt}</span>`;
+      return `<div class="co"><div class="h"><b>${esc(c.agentName)}</b>${due}<span class="pill ${c.acknowledgedAt ? 'good' : 'mute'}">${c.acknowledgedAt ? 'seen by agent' : 'not yet seen'}</span></div>
+        <div class="why">${esc(c.reason)}</div>${c.action ? `<div><b>Action:</b> ${esc(c.action)}</div>` : ''}
+        <div class="ev">${esc(evidence(c.baseline, c.since))}</div>
+        ${canEdit ? `<div class="acts"><button class="btn sm" data-coach-edit="${c.id}">Update</button><button class="btn sm pri" data-coach-close="${c.id}">Close plan</button></div>` : ''}</div>`; }).join('')
+      : '<div class="empty">No open plans. Use Coach on a flag to start one.</div>';
   }
+
+  // Before and after, side by side: the numbers when the plan opened against the numbers since.
+  function evidence(b, s){
+    if (!b && !s) return 'No figures yet for this agent.';
+    const pair = (label, k, f) => { const x = b && b[k] != null ? f(b[k]) : '—', y = s && s[k] != null ? f(s[k]) : '—'; return x === '—' && y === '—' ? null : `${label} ${x} → ${y}`; };
+    const parts = [pair('Evaluation', 'qa', v => v + '%'), pair('Sentiment', 'sentiment', fmtS), pair('Survey', 'csat', v => v.toFixed(1)), pair('Auto-fails', 'autofails', v => String(v))].filter(Boolean);
+    return (parts.join(' · ') || 'No figures yet') + (s ? '' : ' · nothing recorded since the plan opened');
+  }
+
+  // Coaching dialog: one form for opening, updating and closing a plan.
+  let dlgMode = null, dlgItem = null, dlgAgent = null;
+  function openCoach(mode, agent, item, flag){
+    dlgMode = mode; dlgItem = item || null; dlgAgent = agent;
+    const a = agent && engine.byId(agent.id) || agent, q = a && engine.qaAvg && a.evals ? engine.qaAvg(a) : null, sv = a && a.sentCount ? engine.sentimentAvg(a) : null;
+    $('#coachTitle').textContent = (mode === 'create' ? 'Open a coaching plan · ' : mode === 'close' ? 'Close the plan · ' : 'Coaching plan · ') + (item ? item.agentName : a.name);
+    $('#coachCtx').textContent = mode === 'create' ? `Today: ${a.handled} contacts · evaluation ${q === null ? 'none yet' : q + '%'} · sentiment ${sv === null ? 'none yet' : fmtS(sv)} · ${a.autofails || 0} auto-fail${a.autofails === 1 ? '' : 's'}. Arena records a 14-day baseline when the plan opens.`
+      : evidence(item.baseline, item.since);
+    $('#cReason').value = item ? item.reason || '' : flag || ''; $('#cReason').disabled = mode !== 'create';
+    $('#cAction').value = item ? item.action || '' : ''; $('#cNote').value = item ? item.note || '' : '';
+    const d = new Date(); d.setDate(d.getDate() + 7); $('#cDue').value = item ? item.dueAt || '' : d.toISOString().slice(0, 10);
+    $('#cOutcomeRow').hidden = mode !== 'close'; $('#cOutcome').value = item && item.outcome || '';
+    $('#cSave').textContent = mode === 'create' ? 'Open plan' : mode === 'close' ? 'Close plan' : 'Save';
+    $('#cErr').textContent = '';
+    $('#coachDlg').showModal(); (mode === 'close' ? $('#cOutcome') : $('#cAction')).focus();
+  }
+  $('#cCancel').addEventListener('click', () => $('#coachDlg').close());
+  $('#coachForm').addEventListener('submit', async e => { e.preventDefault();
+    const f = { reason: $('#cReason').value.trim(), action: $('#cAction').value.trim(), dueAt: $('#cDue').value, note: $('#cNote').value.trim() };
+    if (dlgMode !== 'close' && !f.action) { $('#cErr').textContent = 'Write the action you agreed.'; return; }
+    if (dlgMode === 'close' && !$('#cOutcome').value.trim()) { $('#cErr').textContent = 'Say how it turned out.'; return; }
+    try {
+      if (dlgMode === 'create') { await engine.createCoaching(Object.assign({ agentId: dlgAgent.id }, f)); toast('Coaching plan opened for ' + dlgAgent.name); }
+      else if (dlgMode === 'close') { await engine.updateCoaching(dlgItem.id, { action: f.action, note: f.note, dueAt: f.dueAt, outcome: $('#cOutcome').value.trim(), status: 'done' }); toast('Plan closed for ' + dlgItem.agentName); }
+      else { await engine.updateCoaching(dlgItem.id, { action: f.action, note: f.note, dueAt: f.dueAt }); toast('Plan updated'); }
+      $('#coachDlg').close(); await loadSide(); render();
+    } catch (err) { $('#cErr').textContent = 'Not saved: ' + err.message; }
+  });
 
   function readMix(){ return { quality:+$('#mQ').value, productivity:+$('#mP').value, adherence:+$('#mA').value }; }
   function renderMix(){
@@ -295,7 +383,7 @@ tr.flash td{background:var(--flash)}
     $('#mQv').textContent = m.quality+'%'; $('#mPv').textContent = m.productivity+'%'; $('#mAv').textContent = m.adherence+'%';
     const v = Arena.validateMix(m); $('#mixWarn').textContent = v.message;
     const p = engine.preview(m);
-    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Hour in adherence <small style="color:var(--muted)">(needs a WFM feed, not yet scored)</small></span><b>+${p.adherenceHour} pts</b>`;
+    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Customer sentiment strongly positive</span><b>+${p.sentimentGood} pts</b><span>Survey answer 5 of 5</span><b>+${p.csat5} pts</b><span>Hour in adherence <small style="color:var(--muted)">(needs a WFM feed, not yet scored)</small></span><b>+${p.adherenceHour} pts</b>`;
     return v.ok;
   }
 
@@ -326,10 +414,12 @@ tr.flash td{background:var(--flash)}
     } catch (err) { toast('Not saved: ' + err.message); } });
   document.addEventListener('click', async e => {
     const ap = e.target.closest('[data-approve]'), dc = e.target.closest('[data-decline]'), rv = e.target.closest('[data-review]'), en = e.target.closest('[data-end]');
+    const ce = e.target.closest('[data-coach-edit]'), cc = e.target.closest('[data-coach-close]');
     try {
       if (ap || dc) { const id = (ap || dc).dataset[ap ? 'approve' : 'decline']; const r = await engine.decideReward(id, ap ? 'approved' : 'declined'); toast(`${ap ? 'Approved' : 'Declined'} ${r.what} for ${r.agentName}`); if (engine.remote) await engine.refresh(); render(); loadSide(); }
       if (en) { await engine.endChallenge(en.dataset.end); toast('Challenge ended'); loadSide(); }
-      if (rv) { toast(`Opening contact sample for ${engine.byId(rv.dataset.review).name} in Contact Lens`); }
+      if (rv) { if (conn.isSupervisor === false) return toast('Supervisors only'); openCoach('create', engine.byId(rv.dataset.review), null, rv.dataset.flag); }
+      if (ce || cc) { const item = coach.find(c => c.id === (ce || cc).dataset[ce ? 'coachEdit' : 'coachClose']); if (item) openCoach(ce ? 'edit' : 'close', { id: item.agentId, name: item.agentName }, item); }
     } catch (err) { toast('Failed: ' + err.message); }
   });
   // TV link: a kiosk token lets the wallboard run on a floor display with no sign-in. Read-only, 90 days, revocable.

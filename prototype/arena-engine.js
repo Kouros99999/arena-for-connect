@@ -8,6 +8,8 @@
  *   CONTACT_HANDLED        from a contact record        { HandleTime, Queue }
  *   EVALUATION_SUBMITTED   from Contact Lens evaluation { Score, AutoFail }
  *   AGENT_STATE_CHANGE     from the agent event stream  { State }
+ *   SENTIMENT_SCORED       from Contact Lens analysis   { Sentiment }  customer overall sentiment, -5..5
+ *   CSAT_RECEIVED          from a post-contact survey   { Score }      1..5
  *   KUDOS                  app-native                   { From, Note }
  */
 (function (root, factory) {
@@ -26,6 +28,9 @@
     evaluation: (pct) => (pct >= 95 ? 30 : pct >= 85 ? 20 : pct >= 70 ? 10 : 0),
     adherenceHour: 5,
     autofail: -40, // never scaled: a fail is a fail
+    // Customer signals count as quality. A bad call never deducts: customers are sometimes unhappy for reasons no agent controls.
+    sentiment: (s) => (s >= 2.5 ? 8 : s >= 1 ? 5 : s > -1 ? 2 : 0),
+    csat: (n) => (n >= 5 ? 10 : n >= 4 ? 6 : n >= 3 ? 2 : 0),
     kudos: 8,
     streakDay: 25,
   };
@@ -47,6 +52,8 @@
     quietMinutes: 40,
     volumeRatio: 1.6, // contacts handled vs team mean
     lowQa: 75,
+    lowSentiment: -1,   // average customer sentiment at or below this...
+    sentimentMin: 5,    // ...across at least this many analysed contacts
   };
 
   // Challenge templates. Progress is always computed from agent data, never self-reported.
@@ -95,6 +102,7 @@
       id: 'agent-' + i, name, hue, initials: initials(name),
       today: 0, week: 0, handled: 0, ahtSum: 0, evals: [], autofails: 0,
       kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0,
+      sentSum: 0, sentCount: 0, csatSum: 0, csatCount: 0,
       lastEvent: Date.now(), state: 'Available',
     }, seed || {});
   }
@@ -107,6 +115,8 @@
       case 'CONTACT_HANDLED': return Math.round(BASE.contact(data.HandleTime) * p);
       case 'EVALUATION_SUBMITTED': return data.AutoFail ? BASE.autofail : Math.round(BASE.evaluation(data.Score) * q);
       case 'ADHERENCE_HOUR': return Math.round(BASE.adherenceHour * a);
+      case 'SENTIMENT_SCORED': return Math.round(BASE.sentiment(data.Sentiment) * q);
+      case 'CSAT_RECEIVED': return Math.round(BASE.csat(data.Score) * q);
       case 'KUDOS': return BASE.kudos;
       case 'STREAK_DAY': return BASE.streakDay;
       default: return 0;
@@ -134,6 +144,85 @@
 
   const qaAvg = (agent) => { const e = agent.evals.filter((x) => x > 0); return e.length ? Math.round(mean(e)) : null; };
   const aht = (agent) => (agent.handled ? Math.round(agent.ahtSum / agent.handled) : 0);
+  const round1 = (x) => Math.round(x * 10) / 10;
+  const sentimentAvg = (agent) => (agent.sentCount ? round1(agent.sentSum / agent.sentCount) : null);
+  const csatAvg = (agent) => (agent.csatCount ? round1(agent.csatSum / agent.csatCount) : null);
+
+  // ---------- History: the same aggregation runs in the browser demo and in the API ----------
+  /** Roll any set of per-agent day rows up into one summary. Pure. Auto-fails are stored as a 0 evaluation and excluded from the average. */
+  function summarizeRows(rows) {
+    let points = 0, handled = 0, ahtSum = 0, evalSum = 0, evalCount = 0, autofails = 0, escalations = 0, kudos = 0, sentSum = 0, sentCount = 0, csatSum = 0, csatCount = 0;
+    const active = new Set();
+    for (const r of rows) {
+      points += r.points || 0; handled += r.handled || 0; ahtSum += r.ahtSum || 0; autofails += r.autofails || 0; escalations += r.escalations || 0; kudos += r.kudosReceived || 0;
+      for (const e of r.evals || []) if (e > 0) { evalSum += e; evalCount++; }
+      sentSum += r.sentSum || 0; sentCount += r.sentCount || 0; csatSum += r.csatSum || 0; csatCount += r.csatCount || 0;
+      if ((r.handled || 0) > 0 || (r.points || 0) !== 0) active.add(r.id);
+    }
+    return { points, handled, evaluations: evalCount, autofails, escalations, kudos, activeAgents: active.size,
+      qa: evalCount ? Math.round(evalSum / evalCount) : null, aht: handled ? Math.round(ahtSum / handled) : null,
+      escalationRate: handled ? round1((escalations / handled) * 100) : null,
+      sentiment: sentCount ? round1(sentSum / sentCount) : null, csat: csatCount ? round1(csatSum / csatCount) : null };
+  }
+
+  /**
+   * Results report. `days` is [{ date, rows: [{ id, name, points, handled, ahtSum, evals, ... }] }] covering up to
+   * 2 x period days; the newest `period` days are the current period and the `period` before them the comparison. Pure.
+   */
+  function historyReport(days, period) {
+    const sorted = [...days].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const cur = sorted.slice(-period), prev = sorted.slice(-2 * period, -period);
+    const flat = (ds) => ds.flatMap((d) => d.rows);
+    const prevHasData = flat(prev).length > 0;
+    const current = summarizeRows(flat(cur)), previous = prevHasData ? summarizeRows(flat(prev)) : null;
+    const change = {};
+    for (const k of ['qa', 'sentiment', 'csat', 'aht', 'escalationRate', 'points', 'handled', 'autofails'])
+      change[k] = previous && current[k] !== null && previous[k] !== null ? round1(current[k] - previous[k]) : null;
+    const series = cur.map((d) => Object.assign({ date: d.date }, summarizeRows(d.rows)));
+    const names = new Map();
+    for (const d of [...prev, ...cur]) for (const r of d.rows) names.set(r.id, r.name || names.get(r.id) || r.id);
+    const agents = [...names].map(([id, name]) => {
+      const mine = (ds) => flat(ds).filter((r) => r.id === id);
+      const c = summarizeRows(mine(cur)), pv = prevHasData ? summarizeRows(mine(prev)) : null;
+      return { id, name, points: c.points, handled: c.handled, qa: c.qa, qaPrev: pv ? pv.qa : null,
+        qaChange: pv && c.qa !== null && pv.qa !== null ? c.qa - pv.qa : null, sentiment: c.sentiment, csat: c.csat, aht: c.aht, autofails: c.autofails,
+        daysActive: cur.filter((d) => d.rows.some((r) => r.id === id && (r.handled || 0) > 0)).length };
+    }).filter((a) => a.points || a.handled || a.qa !== null).sort((a, b) => b.points - a.points);
+    return { period, from: cur.length ? cur[0].date : null, to: cur.length ? cur[cur.length - 1].date : null, current, previous, change, series, agents };
+  }
+
+  /** Believable history for the browser demo: quality drifts upward so the report has a story. Deterministic for a given team and day. */
+  function syntheticHistory(agents, count, now) {
+    now = now || Date.now();
+    let seed = 20260915;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const out = [];
+    for (let d = count - 1; d >= 0; d--) {
+      const date = new Date(now - d * 86400000).toISOString().slice(0, 10);
+      const t = 1 - d / Math.max(1, count - 1);                 // 0 at the oldest day, 1 today
+      const weekend = [0, 6].includes(new Date(date + 'T12:00:00Z').getUTCDay());
+      const rows = [];
+      agents.forEach((a, i) => {
+        if (weekend && rnd() < 0.7) return;
+        if (rnd() < 0.08) return;                               // a day off
+        const handled = Math.round(((weekend ? 6 : 13) + rnd() * 9) * (0.86 + 0.26 * t));
+        const ahtEach = Math.round(455 - 55 * t + (i % 5) * 12 + rnd() * 40);
+        const evals = [];
+        const nEval = rnd() < 0.55 ? 1 : rnd() < 0.5 ? 2 : 0;
+        for (let k = 0; k < nEval; k++) evals.push(Math.max(55, Math.min(100, Math.round(77 + 9 * t + ((i * 7) % 9) - 4 + (rnd() - 0.5) * 14))));
+        const autofails = rnd() < 0.035 * (1.4 - t) ? 1 : 0;
+        if (autofails) evals.push(0);
+        const sentCount = Math.round(handled * 0.6), csatCount = Math.round(handled * 0.18);
+        const sentEach = 0.5 + 1.1 * t + ((i % 4) - 1.5) * 0.25 + (rnd() - 0.5) * 0.6;
+        const csatEach = Math.max(1, Math.min(5, 3.9 + 0.5 * t + ((i % 3) - 1) * 0.15 + (rnd() - 0.5) * 0.4));
+        const points = handled * 10 + evals.reduce((s, e) => s + BASE.evaluation(e), 0) + autofails * BASE.autofail + sentCount * 4 + csatCount * 6;
+        rows.push({ id: a.id, name: a.name, points, handled, ahtSum: handled * ahtEach, evals, autofails, escalations: rnd() < 0.3 ? 1 : 0, kudosReceived: rnd() < 0.2 ? 1 : 0,
+          sentSum: round1(sentCount * sentEach), sentCount, csatSum: round1(csatCount * csatEach), csatCount });
+      });
+      out.push({ date, rows });
+    }
+    return out;
+  }
   const badgesFor = (agent) => BADGES.map((b) => ({ id: b.id, name: b.name, earned: !!b.test(agent) }));
 
   function flagsFor(agent, team, now) {
@@ -146,6 +235,9 @@
       out.push({ level: 'quiet', label: `Quiet ${Math.round(quietMs / 60000)} min`, why: `No agent events for ${FLAGS.quietMinutes}+ minutes while in Available state.` });
     if (agent.handled > teamMean * FLAGS.volumeRatio && q !== null && q < FLAGS.lowQa)
       out.push({ level: 'warn', label: 'Volume high, QA low', why: `${agent.handled} contacts at ${aht(agent)}s AHT with ${q}% QA. Possible rushing. Review a sample.` });
+    const sAvg = sentimentAvg(agent);
+    if (sAvg !== null && agent.sentCount >= FLAGS.sentimentMin && sAvg <= FLAGS.lowSentiment)
+      out.push({ level: 'warn', label: 'Customer sentiment low', why: `Average customer sentiment ${sAvg} across ${agent.sentCount} analysed contacts. Listen to a sample together.` });
     if (agent.autofails > 0)
       out.push({ level: 'bad', label: 'Auto-fail today', why: `${agent.autofails} evaluation auto-fail${agent.autofails > 1 ? 's' : ''}. ${-BASE.autofail} pts removed each. Coaching note suggested.` });
     return out;
@@ -159,7 +251,7 @@
     const listeners = [];
     const byId = (id) => agents.find((a) => a.id === id);
     // In-memory challenges, rewards and kudos feed. The remote engine replaces these with API calls.
-    const local = { challenges: [], rewards: [], kudos: [] };
+    const local = { challenges: [], rewards: [], kudos: [], coaching: [] };
     const newId = () => Math.random().toString(36).slice(2, 10);
     const withProgress = (ch) => Object.assign({}, ch, { progress: challengeProgress(ch, agents) });
 
@@ -173,6 +265,8 @@
       if (type === 'EVALUATION_SUBMITTED') { if (ev.AutoFail) { agent.autofails++; agent.evals.push(0); } else agent.evals.push(ev.Score); }
       if (type === 'KUDOS') { agent.kudosReceived++; local.kudos.unshift({ at: ev.EventTimestamp || new Date().toISOString(), from: ev.From, to: agent.id, toName: agent.name, note: ev.Note }); local.kudos.length = Math.min(local.kudos.length, 50); }
       if (type === 'ADHERENCE_HOUR') agent.adherenceHours++;
+      if (type === 'SENTIMENT_SCORED') { agent.sentSum = round1((agent.sentSum || 0) + ev.Sentiment); agent.sentCount = (agent.sentCount || 0) + 1; }
+      if (type === 'CSAT_RECEIVED') { agent.csatSum = round1((agent.csatSum || 0) + ev.Score); agent.csatCount = (agent.csatCount || 0) + 1; }
       if (type === 'AGENT_STATE_CHANGE') agent.state = ev.State;
       agent.today += pts; agent.week += pts;
       const result = { event: ev, agent, points: pts, words: describe(type, ev) };
@@ -186,12 +280,14 @@
       if (type === 'KUDOS') return `Kudos from <b>${ev.From}</b>: “${ev.Note}”`;
       if (type === 'ADHERENCE_HOUR') return 'Hour in adherence';
       if (type === 'STREAK_DAY') return `Streak bonus, day ${ev.Day}`;
+      if (type === 'SENTIMENT_SCORED') return `Customer sentiment <b>${ev.Sentiment > 0 ? '+' : ''}${ev.Sentiment}</b> on a contact`;
+      if (type === 'CSAT_RECEIVED') return `Customer survey: <b>${ev.Score} of 5</b>`;
       return type;
     }
 
     function leaderboard(range) {
       const key = range === 'week' ? 'week' : 'today';
-      return [...agents].sort((a, b) => b[key] - a[key]).map((a, i) => Object.assign({ rank: i + 1, points: a[key], qa: qaAvg(a), aht: aht(a) }, { agent: a }));
+      return [...agents].sort((a, b) => b[key] - a[key]).map((a, i) => Object.assign({ rank: i + 1, points: a[key], qa: qaAvg(a), aht: aht(a), sentiment: sentimentAvg(a), csat: csatAvg(a) }, { agent: a }));
     }
 
     function stats() {
@@ -204,6 +300,8 @@
         handled, escalations: esc,
         escalationRate: handled ? (esc / handled) * 100 : null,   // percent, null until a contact exists
         qa: qs.length ? Math.round(mean(qs)) : null,
+        sentiment: sentimentAvg({ sentSum: agents.reduce((s, a) => s + (a.sentSum || 0), 0), sentCount: agents.reduce((s, a) => s + (a.sentCount || 0), 0) }),
+        csat: csatAvg({ csatSum: agents.reduce((s, a) => s + (a.csatSum || 0), 0), csatCount: agents.reduce((s, a) => s + (a.csatCount || 0), 0) }),
         flagged: agents.flatMap((a) => flagsFor(a, agents)).length,
       };
     }
@@ -230,12 +328,36 @@
     const decideReward = async (id, status, by) => { const r = local.rewards.find((x) => x.id === id); if (!r) throw new Error('unknown reward'); r.status = status; r.decidedAt = new Date().toISOString(); r.decidedBy = by || 'supervisor'; if (status === 'approved') { const a = byId(r.agentId); if (a) a.week -= r.cost; } return r; };
     const kudosFeed = async (limit) => local.kudos.slice(0, limit || 10);
 
+    // ---- coaching: a flag becomes a plan with an owner, an action and a follow-up date ----
+    // `baseline` is the agent's numbers when the plan was opened and `since` their numbers after it, so the loop can be closed on evidence.
+    const snapshot = (a) => ({ qa: qaAvg(a), sentiment: sentimentAvg(a), csat: csatAvg(a), handled: a.handled, aht: aht(a) || null, autofails: a.autofails });
+    const withSince = (c) => { const a = byId(c.agentId); return Object.assign({}, c, { since: c.status === 'done' ? c.result || null : a ? snapshot(a) : null }); };
+    const coaching = async (filter) => local.coaching.filter((c) => (!filter || !filter.status || c.status === filter.status) && (!filter || !filter.agentId || c.agentId === filter.agentId)).map(withSince);
+    const createCoaching = async (c) => {
+      const a = byId(c.agentId);
+      if (!a) throw new Error('unknown agent');
+      const item = { id: newId(), agentId: a.id, agentName: a.name, reason: c.reason || '', note: c.note || '', action: c.action || '', dueAt: c.dueAt || '', status: 'open',
+        createdAt: new Date().toISOString(), createdBy: c.createdBy || 'supervisor', baseline: snapshot(a) };
+      local.coaching.unshift(item); return withSince(item);
+    };
+    const updateCoaching = async (id, fields) => {
+      const c = local.coaching.find((x) => x.id === id);
+      if (!c) throw new Error('unknown coaching plan');
+      for (const k of ['note', 'action', 'dueAt', 'outcome']) if (fields[k] !== undefined) c[k] = fields[k];
+      if (fields.acknowledged && !c.acknowledgedAt) c.acknowledgedAt = new Date().toISOString();
+      if (fields.status === 'done' && c.status !== 'done') { const a = byId(c.agentId); c.status = 'done'; c.closedAt = new Date().toISOString(); c.result = a ? snapshot(a) : null; }
+      return withSince(c);
+    };
+    const history = async (days) => historyReport(syntheticHistory(agents, 2 * (days || 30)), days || 30);
+
     function preview(m) {
       return {
         eval90: scoreEvent('EVALUATION_SUBMITTED', { Score: 90 }, m),
         contact7min: scoreEvent('CONTACT_HANDLED', { HandleTime: 420 }, m),
         autofail: BASE.autofail,
         adherenceHour: scoreEvent('ADHERENCE_HOUR', {}, m),
+        sentimentGood: scoreEvent('SENTIMENT_SCORED', { Sentiment: 3 }, m),
+        csat5: scoreEvent('CSAT_RECEIVED', { Score: 5 }, m),
       };
     }
 
@@ -246,8 +368,9 @@
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) mix = Object.assign({}, m); return v; },
       flags: (a) => flagsFor(a, agents),
-      badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht,
+      badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed,
+      coaching, createCoaching, updateCoaching, history,
       kudos: async (to, note, from) => { const a = byId(to); if (!a) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
     };
@@ -267,10 +390,12 @@
       if (type === 'contact') return engine.ingest(Object.assign(base, { EventType: 'CONTACT_HANDLED', Queue: pick(queues), HandleTime: 200 + Math.floor(Math.random() * 500), Escalated: Math.random() < 0.04 }));
       if (type === 'eval') return engine.ingest(Object.assign(base, { EventType: 'EVALUATION_SUBMITTED', Score: 70 + Math.floor(Math.random() * 30) }));
       if (type === 'autofail') return engine.ingest(Object.assign(base, { EventType: 'EVALUATION_SUBMITTED', AutoFail: true, Reason: 'missed verification' }));
+      if (type === 'sentiment') return engine.ingest(Object.assign(base, { EventType: 'SENTIMENT_SCORED', Sentiment: Math.round((Math.random() * 5.5 - 1.2) * 10) / 10 }));
+      if (type === 'csat') return engine.ingest(Object.assign(base, { EventType: 'CSAT_RECEIVED', Score: pick([5, 5, 5, 4, 4, 4, 3, 2]) }));
       if (type === 'kudos') { const from = pick(engine.agents.filter((a) => a.id !== agent.id)); return engine.ingest(Object.assign(base, { EventType: 'KUDOS', From: opts.fullNames ? from.name : from.name.split(' ')[0], Note: pick(notes) })); }
       return null;
     }
-    function tick() { const r = Math.random(); fire(r < 0.6 ? 'contact' : r < 0.85 ? 'eval' : r < 0.96 ? 'kudos' : 'autofail'); }
+    function tick() { const r = Math.random(); fire(r < 0.48 ? 'contact' : r < 0.66 ? 'eval' : r < 0.82 ? 'sentiment' : r < 0.89 ? 'csat' : r < 0.97 ? 'kudos' : 'autofail'); }
     function start() { stop(); timer = setInterval(tick, 10000 / perTenSeconds); }
     function stop() { if (timer) clearInterval(timer); timer = null; }
     return { fire, start, stop, setRate: (r) => { perTenSeconds = r; if (timer) start(); }, get running() { return !!timer; } };
@@ -283,10 +408,12 @@
       a.today = 60 + ((i * 37) % 120); a.week = 700 + ((i * 131) % 500);
       a.handled = 4 + (i % 6); a.ahtSum = a.handled * (300 + (i * 23) % 200); a.evals = [80 + (i * 7) % 15];
       a.lastEvent = now - ((i * 5) % 20) * 60000; a.streak = 3 + (i % 5);
+      a.sentCount = 3 + (i % 4); a.sentSum = round1(a.sentCount * (0.8 + ((i * 37) % 22) / 10));
+      a.csatCount = 1 + (i % 3); a.csatSum = round1(a.csatCount * (4 + (i % 3) * 0.4));
     });
     const you = engine.agents[0]; you.today = 118; you.evals = [92]; you.streak = 7; you.kudosReceived = 1;
     const liam = engine.agents[7]; liam.lastEvent = now - 52 * 60000;
-    const kenji = engine.agents[9]; kenji.handled = 19; kenji.ahtSum = 19 * 170; kenji.evals = [68, 71]; kenji.today = 190;
+    const kenji = engine.agents[9]; kenji.handled = 19; kenji.ahtSum = 19 * 170; kenji.evals = [68, 71]; kenji.today = 190; kenji.sentCount = 9; kenji.sentSum = -12.6; kenji.csatCount = 3; kenji.csatSum = 8;
     const hannah = engine.agents[4]; hannah.autofails = 1; hannah.evals = [0, 88];
     // Demo challenges, rewards and kudos so every page opens with something to show.
     const today = new Date(now).toISOString().slice(0, 10), fri = new Date(now + 4 * 86400000).toISOString().slice(0, 10), mon = new Date(now + 6 * 86400000).toISOString().slice(0, 10);
@@ -301,6 +428,10 @@
     engine._local.kudos.push(
       { at: new Date(now - 1200000).toISOString(), from: 'Marcus Bell', to: engine.agents[6].id, toName: engine.agents[6].name, note: 'took my overflow call' },
       { at: new Date(now - 2400000).toISOString(), from: 'Supervisor Dana', to: you.id, toName: you.name, note: 'calm under pressure' });
+    // One coaching plan already under way, so the loop is visible: opened on an auto-fail, action agreed, follow-up due.
+    engine._local.coaching.push({ id: 'co-1', agentId: hannah.id, agentName: hannah.name, reason: 'Auto-fail: missed verification', note: 'Second miss this month. Walked through the verification script on two recorded calls.',
+      action: 'Use the verification checklist on every billing call this week', dueAt: fri, status: 'open', createdAt: new Date(now - 2 * 86400000).toISOString(), createdBy: 'Supervisor Dana',
+      baseline: { qa: 74, sentiment: 0.4, csat: 3.8, handled: 41, aht: 402, autofails: 2 }, acknowledgedAt: new Date(now - 86400000).toISOString() });
     return engine;
   }
 
@@ -371,6 +502,11 @@
     const createKiosk = async (label, days) => (await call('POST', `${teamPath()}/kiosk`, { label, days })).kiosk;
     const revokeKiosk = async (token) => call('DELETE', `${teamPath()}/kiosk/${encodeURIComponent(token)}`);
     const deleteAgent = async (id) => call('DELETE', `${base}/agents/${encodeURIComponent(id)}`);
+    const coaching = async (filter) => { const q = new URLSearchParams(); if (filter && filter.status) q.set('status', filter.status); if (filter && filter.agentId) q.set('agent', filter.agentId); const qs = q.toString(); return (await call('GET', `${teamPath()}/coaching${qs ? '?' + qs : ''}`)).coaching; };
+    const createCoaching = async (c) => (await call('POST', `${teamPath()}/coaching`, c)).coaching;
+    const updateCoaching = async (id, fields) => (await call('PUT', `${teamPath()}/coaching/${encodeURIComponent(id)}`, fields)).coaching;
+    const history = async (days) => (await call('GET', `${teamPath()}/history?days=${days || 30}`)).report;
+    const recordMetric = async (m) => call('POST', `${teamPath()}/metrics`, m);
     async function start(seconds) { stop(); if (opts.ready) await opts.ready(); timer = setInterval(() => refresh().catch(console.error), (seconds || 5) * 1000); return refresh(); }
     function stop() { if (timer) clearInterval(timer); timer = null; }
 
@@ -378,6 +514,7 @@
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      coaching, createCoaching, updateCoaching, history, recordMetric,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) saveMix(m); return v; },
@@ -413,6 +550,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, CATALOG, NAMES, HUES };
 });

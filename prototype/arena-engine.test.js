@@ -55,7 +55,7 @@ test('flags: quiet, rushing, auto-fail', () => {
   const at = 1000000000;
   const liam = e.agents[7], kenji = e.agents[9], hannah = e.agents[4], priya = e.agents[0];
   assert.deepEqual(Arena.flagsFor(liam, e.agents, at).map((f) => f.level), ['quiet']);
-  assert.deepEqual(Arena.flagsFor(kenji, e.agents, at).map((f) => f.level), ['warn']);
+  assert.deepEqual(Arena.flagsFor(kenji, e.agents, at).map((f) => f.label), ['Volume high, QA low', 'Customer sentiment low']);
   assert.deepEqual(Arena.flagsFor(hannah, e.agents, at).map((f) => f.level), ['bad']);
   assert.deepEqual(Arena.flagsFor(priya, e.agents, at), []);
 });
@@ -112,4 +112,84 @@ test('simulator fires typed events through the engine', () => {
   assert.equal(r.points, -40); assert.equal(e.agents[1].autofails, 1);
   assert.equal(s.fire('kudos', e.agents[1]).event.EventType, 'KUDOS');
   assert.equal(s.running, false);
+});
+
+test('customer sentiment and survey scores count as quality and never deduct', () => {
+  const m = Arena.DEFAULT_MIX;
+  assert.equal(Arena.scoreEvent('SENTIMENT_SCORED', { Sentiment: 3.2 }, m), 8);
+  assert.equal(Arena.scoreEvent('SENTIMENT_SCORED', { Sentiment: 1 }, m), 5);
+  assert.equal(Arena.scoreEvent('SENTIMENT_SCORED', { Sentiment: -4 }, m), 0);
+  assert.equal(Arena.scoreEvent('CSAT_RECEIVED', { Score: 5 }, m), 10);
+  assert.equal(Arena.scoreEvent('CSAT_RECEIVED', { Score: 1 }, m), 0);
+  const heavy = { quality: 80, productivity: 10, adherence: 10 };
+  assert.equal(Arena.scoreEvent('CSAT_RECEIVED', { Score: 5 }, heavy), 16, 'scales with the quality weight');
+  assert.equal(Arena.scoreEvent('CONTACT_HANDLED', { HandleTime: 200 }, heavy), 3, 'productivity is scaled separately');
+});
+
+test('engine tracks sentiment and survey averages per agent and for the team', () => {
+  const e = Arena.createEngine();
+  const a = e.agents[0];
+  e.ingest({ EventType: 'SENTIMENT_SCORED', AgentARN: a.id, Sentiment: 2 });
+  e.ingest({ EventType: 'SENTIMENT_SCORED', AgentARN: a.id, Sentiment: -1 });
+  e.ingest({ EventType: 'CSAT_RECEIVED', AgentARN: a.id, Score: 4 });
+  assert.equal(e.sentimentAvg(a), 0.5); assert.equal(e.csatAvg(a), 4);
+  assert.equal(a.today, 5 + 0 + 6);
+  const row = e.leaderboard('today').find((r) => r.agent === a);
+  assert.equal(row.sentiment, 0.5); assert.equal(row.csat, 4);
+  assert.equal(e.stats().sentiment, 0.5); assert.equal(e.stats().csat, 4);
+  assert.equal(e.sentimentAvg(e.agents[1]), null);
+});
+
+test('low sentiment flags only with enough analysed contacts', () => {
+  const e = Arena.createEngine();
+  const a = e.agents[0];
+  a.sentCount = 4; a.sentSum = -8;
+  assert.deepEqual(Arena.flagsFor(a, e.agents, Date.now()), []);
+  a.sentCount = 5; a.sentSum = -6;
+  assert.deepEqual(Arena.flagsFor(a, e.agents, Date.now()).map((f) => f.label), ['Customer sentiment low']);
+});
+
+test('summarizeRows averages evaluations without auto-fail zeros', () => {
+  const s = Arena.summarizeRows([
+    { id: 'a', points: 100, handled: 10, ahtSum: 4000, evals: [80, 0, 90], autofails: 1, escalations: 1, sentSum: 6, sentCount: 4, csatSum: 9, csatCount: 2 },
+    { id: 'b', points: 50, handled: 0, evals: [] }]);
+  assert.equal(s.qa, 85); assert.equal(s.evaluations, 2); assert.equal(s.aht, 400); assert.equal(s.escalationRate, 10);
+  assert.equal(s.sentiment, 1.5); assert.equal(s.csat, 4.5); assert.equal(s.activeAgents, 2); assert.equal(s.autofails, 1);
+  const empty = Arena.summarizeRows([]);
+  assert.equal(empty.qa, null); assert.equal(empty.aht, null); assert.equal(empty.sentiment, null);
+});
+
+test('historyReport compares the newest period with the one before it', () => {
+  const day = (date, qa, handled) => ({ date, rows: [{ id: 'a', name: 'Priya', points: handled * 10, handled, ahtSum: handled * 300, evals: [qa] }, { id: 'b', name: 'Marcus', points: 5, handled: 1, ahtSum: 500, evals: [] }] });
+  const days = [day('2026-09-01', 70, 5), day('2026-09-02', 74, 5), day('2026-09-03', 84, 8), day('2026-09-04', 88, 8)];
+  const r = Arena.historyReport(days.slice().reverse(), 2);
+  assert.equal(r.from, '2026-09-03'); assert.equal(r.to, '2026-09-04'); assert.equal(r.series.length, 2);
+  assert.equal(r.current.qa, 86); assert.equal(r.previous.qa, 72); assert.equal(r.change.qa, 14);
+  assert.equal(r.change.handled, 6);
+  const priya = r.agents[0];
+  assert.equal(priya.name, 'Priya'); assert.equal(priya.qaChange, 14); assert.equal(priya.daysActive, 2);
+  assert.equal(r.agents[1].qa, null); assert.equal(r.agents[1].qaChange, null);
+});
+
+test('historyReport with no earlier period reports no change rather than a false one', () => {
+  const r = Arena.historyReport([{ date: '2026-09-04', rows: [{ id: 'a', points: 10, handled: 1, evals: [90] }] }], 7);
+  assert.equal(r.previous, null); assert.equal(r.change.qa, null); assert.equal(r.current.qa, 90);
+});
+
+test('local engine: demo history is stable and coaching closes the loop', async () => {
+  const e = Arena.seedTeam(Arena.createEngine());
+  const r1 = await e.history(14), r2 = await e.history(14);
+  assert.deepEqual(r1.current, r2.current); assert.equal(r1.series.length, 14); assert.ok(r1.previous);
+  const open = await e.coaching({ status: 'open' });
+  assert.equal(open.length, 1); assert.equal(open[0].baseline.qa, 74); assert.ok(open[0].since);
+  const kenji = e.agents[9];
+  const c = await e.createCoaching({ agentId: kenji.id, reason: 'Volume high, QA low', action: 'Slow down on verification', dueAt: '2026-10-10' });
+  assert.equal(c.status, 'open'); assert.equal(c.baseline.qa, 70); assert.equal(c.agentName, kenji.name);
+  assert.equal((await e.coaching({ agentId: kenji.id })).length, 1);
+  await e.updateCoaching(c.id, { acknowledged: true });
+  e.ingest({ EventType: 'EVALUATION_SUBMITTED', AgentARN: kenji.id, Score: 96 });
+  const done = await e.updateCoaching(c.id, { status: 'done', outcome: 'Back on track' });
+  assert.equal(done.status, 'done'); assert.ok(done.acknowledgedAt); assert.equal(done.result.qa, 78); assert.equal(done.since.qa, 78);
+  assert.equal((await e.coaching({ status: 'open' })).length, 1);
+  await assert.rejects(() => e.createCoaching({ agentId: 'nobody' }), /unknown agent/);
 });

@@ -31,7 +31,7 @@ zip(stage, path.join(out, 'arena.zip'));
 
 // 2. Pages.
 const site = fs.mkdtempSync(path.join(os.tmpdir(), 'arena-site-'));
-for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'arena-engine.js', 'arena-auth.js']) fs.copyFileSync(path.join(root, 'prototype', f), path.join(site, f));
+for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'report.html', 'arena-engine.js', 'arena-auth.js']) fs.copyFileSync(path.join(root, 'prototype', f), path.join(site, f));
 zip(site, path.join(out, 'site.zip'));
 
 // 3. Template with every CodeUri pointing at the published archive.
