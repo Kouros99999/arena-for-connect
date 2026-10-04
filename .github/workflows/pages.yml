@@ -1,4 +1,4 @@
-name: Deploy demo to GitHub Pages
+﻿name: Deploy demo to GitHub Pages
 on:
   push:
     branches: [main]
@@ -27,7 +27,7 @@ jobs:
           mkdir -p site
           cp prototype/*.html prototype/arena-engine.js prototype/arena-auth.js site/
           echo 'window.ARENA_CONFIG = {};' > site/config.js
-          cp web/* site/ && rm -f site/make-logo.py
+          cp web/* site/ && rm -f site/make-logo.py site/make-video.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
