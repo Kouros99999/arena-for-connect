@@ -2,6 +2,10 @@
 
 ## Challenges
 
+### Suggested challenges
+
+Above the challenge list the console shows up to three suggestions drawn from the team's own numbers: an escalation challenge when the rate is over 5% across 20 or more contacts, an evaluation floor when the average is under 85, a quality-and-sentiment race when customer sentiment is low, an adherence race when adherence is under 90%, a kudos challenge when kudos are rare, and a team points target when everything looks healthy. Hover a suggestion to see why; click it and the form opens filled in. Suggestions for a template that is already running are not shown.
+
 A challenge sets a target for a period and measures progress from Connect data over the whole of that period. Agents cannot report their own progress. Supervisors create challenges from the console with **New challenge**, choosing a template:
 
 - **Keep escalations under target**: the team's escalation rate stays at or below a percentage.
@@ -45,6 +49,10 @@ What an agent can spend is the points they earned in the current period minus th
 Each team can carry a monthly budget in points, set from the **Budget** button on the console's reward approvals card. Approvals add to the month's total; an approval that would take the team over the budget is refused with a message, and the request stays pending until the budget is raised or the month turns. The card shows how much of the month's budget is used. Set the budget to 0 to remove the cap. When notifications are on, the team channel hears when 25%, 50%, 75% and 100% of the budget are used. Months follow the stack's `Timezone` setting.
 
 ## Kudos
+
+### Spotlights
+
+Some moments deserve a mention without waiting for a teammate to notice. Arena posts a **spotlight** to the team's kudos feed, the wallboard ticker and the team's channels when an agent scores 95% or better on an evaluation, reaches day 5, 10, 20 or 50 of a clean-quality streak, or has their best day on record (which needs at least three earlier active days). Spotlights carry no points, so nothing can be farmed, and they can be switched off per team under **spotlights** in the notifications card.
 
 Agents send kudos to a teammate from their panel with a short note. The recipient earns 8 points and the note appears on the team feed in the console and on wallboards.
 

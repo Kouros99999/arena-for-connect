@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.13.0",
+    "date": "2026-10-10",
+    "title": "Suggested challenges and spotlights",
+    "summary": "The console suggests the next challenge from the team's own numbers, and Arena spotlights notable moments itself.",
+    "changes": [
+      "Suggested challenges: up to three chips above the challenge list, each with the reason on hover. Escalations over 5%, evaluation average under 85, low customer sentiment, adherence under 90%, scarce kudos, or a team points target when all is well. Click one and the form opens filled in.",
+      "Spotlights: a 95%+ evaluation, day 5, 10, 20 or 50 of a quality streak, or a personal best day is posted to the team's kudos feed, the wallboard ticker and the team's Slack or Teams channel as a spotlight from Arena. No points attached. A spotlights switch in the notifications card turns them off per team."
+    ],
+    "upgrade": [
+      "No action is needed. Spotlights are on by default for teams with a channel; switch them off in the notifications card if you prefer."
+    ],
+    "docs": [
+      "challenges-rewards-kudos",
+      "notifications"
+    ]
+  },
+  {
     "version": "0.12.0",
     "date": "2026-10-10",
     "title": "People from the console, and your data in your warehouse",

@@ -111,6 +111,12 @@ tr.flash td{background:var(--flash)}
 
 .rw{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .rw:last-child{border-bottom:0}
+.suggest{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 0;font-size:12px}
+.suggest:empty{display:none}
+.suggest .lab{color:var(--muted);align-self:center}
+.suggest button{background:var(--bg);border:1px dashed var(--line);color:var(--ink);border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer}
+.suggest button:hover{border-color:var(--accent)}
+.auto{color:var(--gold);font-weight:600}
 .scope{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px}
 .scope select{margin-left:6px}
 .scope a{margin-left:auto;color:var(--accent)}
@@ -218,6 +224,7 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
       <div class="card">
         <div class="card-h"><h2>Challenges</h2><span class="sub" id="chalCount"></span>
           <div class="r"><button class="btn sm pri" id="newChal">New challenge</button></div></div>
+        <div class="suggest" id="suggest"></div>
         <div class="card-b" id="chals"></div>
         <form class="form" id="chalForm" hidden>
           <label>Template<select id="fTemplate">
@@ -279,7 +286,7 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
           <label>Teams webhook<input id="nTeams" type="url" placeholder="https://….webhook.office.com/…"></label>
           <label>Digest email<input id="nEmail" type="email" placeholder="team-lead@example.com"></label>
           <label>Digest at<select id="nHour"></select></label>
-          <div class="sw"><label><input type="checkbox" id="nKudos"> kudos</label><label><input type="checkbox" id="nRewards"> reward requests</label><label><input type="checkbox" id="nChal"> challenges</label><label><input type="checkbox" id="nDigest"> daily digest</label></div>
+          <div class="sw"><label><input type="checkbox" id="nKudos"> kudos</label><label><input type="checkbox" id="nRewards"> reward requests</label><label><input type="checkbox" id="nChal"> challenges</label><label><input type="checkbox" id="nDigest"> daily digest</label><label><input type="checkbox" id="nSpot" title="Arena posts notable moments itself: a 95%+ evaluation, a streak milestone, a personal best day"> spotlights</label></div>
           <div class="acts"><button class="btn sm pri" id="nSave">Save</button><button class="btn sm" id="nTest">Send a test</button><span class="ok" id="nStatus"></span></div>
         </div>
       </div>
@@ -431,7 +438,8 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
       <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round((p.progress || 0)*100)}%"></i></div><span>${esc(p.measured === false ? '' : p.label)}${p.measured === false ? '' : ' · '}${rewardText(c)}</span></div>${standings(c)}</div>`; }).join('')
       : '<div class="empty">No challenges yet. Schedule one below.</div>';
     $('#rewards').innerHTML = rewards.length ? rewards.map(r => `<div class="rw"><div><b>${esc(r.agentName)}</b> · ${esc(r.what)}<small>${r.cost.toLocaleString()} pts · requested ${hm(r.requestedAt)}</small></div><div class="acts"><button class="btn sm pri" data-approve="${r.id}">Approve</button><button class="btn sm" data-decline="${r.id}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
-    $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b>${esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
+    $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b class="${k.auto ? 'auto' : ''}">${k.auto ? '✦ Spotlight' : esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
+    renderSuggestions();
     $('#sRew').textContent = rewards.length;
     renderBudget();
     const canEdit = conn.isSupervisor !== false;
@@ -542,6 +550,24 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
     catch (e) { $('#dkErr').textContent = e.message; } });
   $('#dataKeys').addEventListener('click', async e => { const r = e.target.closest('[data-revoke]'); if (!r) return; try { await engine.revokeDataKey(r.dataset.revoke); await loadDataKeys(); toast('Data key revoked'); } catch (err) { $('#dkErr').textContent = err.message; } });
 
+  // Suggested challenges: what the team's own numbers say to run next. Clicking one prefills the form.
+  function renderSuggestions(){
+    const el = $('#suggest'); if (!el) return;
+    const active = new Set(chals.filter(c => c.state === 'active').map(c => c.template));
+    const sugs = (engine.suggestions ? engine.suggestions() : []).filter(s => !active.has(s.template));
+    el.innerHTML = sugs.length ? '<span class="lab">Suggested:</span>' + sugs.map((s, i) => `<button type="button" data-sug="${i}" title="${esc(s.reason)}">${esc(s.title)}</button>`).join('') : '';
+    el.onclick = e => { const b = e.target.closest('[data-sug]'); if (!b) return; applySuggestion(sugs[+b.dataset.sug]); };
+  }
+  function applySuggestion(s){
+    if (!conn.isSupervisor && engine.remote) return toast('Supervisors only');
+    $('#fTemplate').value = s.template; fillTemplateDefaults(); $('#chalForm').hidden = false;
+    const f = s.fields || {};
+    if (f.target !== undefined) $('#fTarget').value = f.target;
+    if (f.metrics) { $('#fMetric').value = f.metrics[0].key; $('#fWeight1').value = f.metrics[0].weight || 1; $('#fMetric2').value = f.metrics[1] ? f.metrics[1].key : ''; $('#fWeight2').value = f.metrics[1] ? f.metrics[1].weight || 1 : 1; }
+    if (f.minContacts !== undefined) $('#fMinContacts').value = f.minContacts;
+    toast(s.reason); $('#chalForm').scrollIntoView({ block: 'nearest' });
+  }
+
   // Reward catalog editor: what is on offer, what it costs, and how often balances reset. Saved per team.
   let catItems = [];
   function renderCatRows(){ $('#catRows').innerHTML = catItems.map((it, i) => `<div class="cat-row"><input data-i="${i}" data-k="name" value="${esc(it.name)}" maxlength="60" placeholder="Reward" aria-label="Reward name"><input data-i="${i}" data-k="cost" type="number" min="1" step="1" value="${it.cost}" aria-label="Cost in points"><button type="button" class="btn sm" data-del="${i}" aria-label="Remove">×</button></div>`).join('') || '<div class="empty">No rewards. Add one.</div>'; }
@@ -568,11 +594,11 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
   // Notifications card
   async function loadNotif(){
     try { hourOptions(); const n = await engine.notifications(); $('#nSlack').value = n.slackUrl || ''; $('#nTeams').value = n.teamsUrl || ''; $('#nEmail').value = n.email || ''; $('#nHour').value = String(n.digestHour);
-      $('#nKudos').checked = !!n.events.kudos; $('#nRewards').checked = !!n.events.rewards; $('#nChal').checked = !!n.events.challenges; $('#nDigest').checked = !!n.events.digest;
+      $('#nKudos').checked = !!n.events.kudos; $('#nRewards').checked = !!n.events.rewards; $('#nChal').checked = !!n.events.challenges; $('#nDigest').checked = !!n.events.digest; $('#nSpot').checked = n.events.spotlights !== false;
       $('#nStatus').textContent = (n.slackSet ? 'Slack on' : '') + (n.slackSet && n.teamsSet ? ', ' : '') + (n.teamsSet ? 'Teams on' : '') || 'No channel yet';
     } catch (e) { $('#nStatus').textContent = ''; }
   }
-  const readNotif = () => ({ slackUrl: $('#nSlack').value.trim(), teamsUrl: $('#nTeams').value.trim(), email: $('#nEmail').value.trim(), digestHour: +$('#nHour').value, events: { kudos: $('#nKudos').checked, rewards: $('#nRewards').checked, challenges: $('#nChal').checked, digest: $('#nDigest').checked } });
+  const readNotif = () => ({ slackUrl: $('#nSlack').value.trim(), teamsUrl: $('#nTeams').value.trim(), email: $('#nEmail').value.trim(), digestHour: +$('#nHour').value, events: { kudos: $('#nKudos').checked, rewards: $('#nRewards').checked, challenges: $('#nChal').checked, digest: $('#nDigest').checked, spotlights: $('#nSpot').checked } });
   // Digest hours are in the stack's Timezone setting (UTC unless set). When that differs from this browser, show the local time beside each hour.
   function hourOptions(){
     const tz = engine.timezone || 'UTC', here = Intl.DateTimeFormat().resolvedOptions().timeZone;

@@ -91,6 +91,46 @@
     { id: 'parking', name: 'Prime parking spot, one week', cost: 1500 },
   ];
 
+  // ---------- spotlights: recognition Arena writes itself, no points attached ----------
+  const SPOTLIGHTS = { evalScore: 95, streakDays: [5, 10, 20, 50], minPriorDays: 3 };
+  /** Pure: the line a spotlight carries, or null when the moment does not qualify. */
+  function spotlightText(kind, d) {
+    if (kind === 'evaluation') return (d.score || 0) >= SPOTLIGHTS.evalScore ? `Scored ${Math.round(d.score)}% on an evaluation` : null;
+    if (kind === 'streak') return SPOTLIGHTS.streakDays.includes(d.days) ? `Day ${d.days} of a clean-quality streak` : null;
+    if (kind === 'bestDay') return d.points > 0 ? `Best day on record: ${Math.round(d.points).toLocaleString()} pts` : null;
+    return null;
+  }
+  /** Pure: did yesterday beat every earlier day on record? rows: [{ day, points }] including yesterday. */
+  function isBestDay(rows, yesterday) {
+    const mine = (rows || []).find((r) => r.day === yesterday);
+    if (!mine || !(mine.points > 0)) return false;
+    const prior = (rows || []).filter((r) => r.day < yesterday && (r.points || 0) > 0);
+    return prior.length >= SPOTLIGHTS.minPriorDays && prior.every((r) => r.points < mine.points);
+  }
+
+  // ---------- recommended challenges: what the team's own numbers say to run next ----------
+  /** Pure: up to three suggestions from the agents' current figures, each with the form fields to start it. */
+  function recommendChallenges(agents, opts) {
+    opts = opts || {};
+    const out = [], n = agents.length;
+    if (!n) return out;
+    const sum = (f) => agents.reduce((s, a) => s + (f(a) || 0), 0);
+    const handled = sum((a) => a.handled), esc = sum((a) => a.escalations);
+    const escRate = handled ? (esc / handled) * 100 : null;
+    if (handled >= 20 && escRate > 5) out.push({ template: 'esc', title: 'Keep escalations under 5%', reason: `Escalation rate is ${round1(escRate)}% across ${handled} contacts.`, fields: { target: '5%' } });
+    const evalAgents = agents.filter((a) => (a.evals || []).some((e) => e > 0));
+    const qa = evalAgents.length ? mean(evalAgents.map((a) => mean(a.evals.filter((e) => e > 0)))) : null;
+    if (evalAgents.length >= 2 && qa !== null && qa < 85) out.push({ template: 'qa', title: 'Every evaluation at or above 85', reason: `Evaluation average is ${Math.round(qa)}% over ${evalAgents.length} agents.`, fields: { target: '85' } });
+    const sentCount = sum((a) => a.sentCount), sentAvg = sentCount ? sum((a) => a.sentSum) / sentCount : null;
+    if (sentCount >= 10 && sentAvg !== null && sentAvg < 1) out.push({ template: 'race', title: 'Race: evaluation and customer sentiment', reason: `Customer sentiment averages ${(sentAvg > 0 ? '+' : '') + round1(sentAvg)} over ${sentCount} analysed contacts.`, fields: { metrics: [{ key: 'qa', weight: 2 }, { key: 'sentiment', weight: 1 }], minContacts: 3 } });
+    const adhCount = sum((a) => a.adhCount), adhAvg = adhCount ? sum((a) => a.adhSum) / adhCount : null;
+    if (adhCount >= Math.ceil(n / 2) && adhAvg !== null && adhAvg < 90) out.push({ template: 'race', title: 'Race: schedule adherence', reason: `Adherence averages ${Math.round(adhAvg)}%.`, fields: { metrics: [{ key: 'adherence', weight: 1 }], minContacts: 0 } });
+    const kudos = sum((a) => a.kudosReceived);
+    if (n >= 4 && handled >= 10 && kudos / n < 0.5) out.push({ template: 'kudos', title: 'Kudos: two per agent', reason: `Only ${kudos} kudos across ${n} agents so far.`, fields: { target: '2' } });
+    if (!out.length && handled > 0) { const pts = sum((a) => a.today); out.push({ template: 'contest', title: 'Team points target', reason: `Numbers look healthy. A team target of ${Math.round(pts * 1.15 / 50) * 50} pts keeps everyone pulling together.`, fields: { target: String(Math.max(100, Math.round(pts * 1.15 / 50) * 50)) } }); }
+    return out.slice(0, opts.max || 3);
+  }
+
   // ---------- rewards: an editable catalog and a balance that resets by period ----------
   const BALANCE_PERIODS = ['week', 'month', 'quarter'];
   const REWARD_DEFAULTS = { balancePeriod: 'week', items: CATALOG };
@@ -496,7 +536,7 @@
       const pts = scoreEvent(type, ev, mix);
       agent.lastEvent = ev.EventTimestamp ? Date.parse(ev.EventTimestamp) : Date.now();
       if (type === 'CONTACT_HANDLED') { agent.handled++; agent.ahtSum += ev.HandleTime || 0; if (ev.Escalated) agent.escalations++; }
-      if (type === 'EVALUATION_SUBMITTED') { if (ev.AutoFail) { agent.autofails++; agent.evals.push(0); } else agent.evals.push(ev.Score); }
+      if (type === 'EVALUATION_SUBMITTED') { if (ev.AutoFail) { agent.autofails++; agent.evals.push(0); } else { agent.evals.push(ev.Score); const sp = spotlightText('evaluation', { score: ev.Score }); if (sp) { local.kudos.unshift({ at: new Date().toISOString(), from: 'Arena', auto: true, to: agent.id, toName: agent.name, note: sp }); local.kudos.length = Math.min(local.kudos.length, 50); } } }
       if (type === 'KUDOS') { agent.kudosReceived++; local.kudos.unshift({ at: ev.EventTimestamp || new Date().toISOString(), from: ev.From, to: agent.id, toName: agent.name, note: ev.Note }); local.kudos.length = Math.min(local.kudos.length, 50); }
       if (type === 'ADHERENCE_HOUR') agent.adherenceHours++;
       if (type === 'ADHERENCE_SCORED') { agent.adherenceHours = round1((agent.adherenceHours || 0) + (ev.AdherentHours || 0)); agent.adhSum = (agent.adhSum || 0) + (ev.Adherence || 0); agent.adhCount = (agent.adhCount || 0) + 1; }
@@ -563,7 +603,7 @@
     const endChallenge = async (id) => { const c = local.challenges.find((x) => x.id === id); if (c) { c.state = 'ended'; c.results = Object.assign({ endedAt: new Date().toISOString() }, challengeProgress(c, agents)); } return c; };
     const updateChallenge = async (id, fields) => { const c = local.challenges.find((x) => x.id === id); if (!c) throw new Error('unknown challenge'); if (fields.state === 'ended') return endChallenge(id); if (Array.isArray(fields.excluded)) c.excluded = fields.excluded; return withProgress(c); };
     // Notifications: where the team hears about kudos, rewards, challenges and the daily digest. The demo keeps them in memory.
-    local.notifications = { slackUrl: '', teamsUrl: '', email: '', digestHour: 17, events: { kudos: true, rewards: true, challenges: true, digest: true } };
+    local.notifications = { slackUrl: '', teamsUrl: '', email: '', digestHour: 17, events: { kudos: true, rewards: true, challenges: true, digest: true, spotlights: true } };
     const notifications = async () => Object.assign({}, local.notifications, { slackUrl: local.notifications.slackUrl ? '…' + local.notifications.slackUrl.slice(-6) : '', teamsUrl: local.notifications.teamsUrl ? '…' + local.notifications.teamsUrl.slice(-6) : '', slackSet: !!local.notifications.slackUrl, teamsSet: !!local.notifications.teamsUrl });
     const saveNotifications = async (n) => { for (const k of ['slackUrl', 'teamsUrl', 'email']) if (typeof n[k] === 'string' && !n[k].startsWith('…')) local.notifications[k] = n[k]; if (n.digestHour !== undefined) local.notifications.digestHour = +n.digestHour; if (n.events) Object.assign(local.notifications.events, n.events); return notifications(); };
     const testNotification = async () => ({ ok: true, sent: ['slackUrl', 'teamsUrl'].filter((k) => local.notifications[k]).map((k) => k.replace('Url', '')), note: 'demo: nothing is posted' });
@@ -652,6 +692,7 @@
       prefs: async (agentId) => Object.assign({ personalBest: false }, local.prefs[agentId] || {}),
       savePrefs: async (agentId, p) => { local.prefs[agentId] = Object.assign({}, local.prefs[agentId] || {}, p); return local.prefs[agentId]; },
       flags: (a) => flagsFor(a, agents),
+      suggestions: () => recommendChallenges(agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance,
       users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase,
@@ -840,6 +881,7 @@
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
+      suggestions: () => recommendChallenges(engine.agents),
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) saveMix(m); return v; },
       ingest: () => { throw new Error('remote engine is read-only; events arrive from the stream'); },
@@ -874,6 +916,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

@@ -21,6 +21,7 @@ Webhook URLs are secrets. Arena stores them in your account's table and never sh
 | Kudos | Each time an agent sends kudos: who, to whom, and the note |
 | Reward requested | An agent asks for a reward, with a reminder to approve it |
 | Reward approved or declined | A supervisor decides |
+| Spotlight | Arena's own recognition: a 95%+ evaluation, a streak milestone, a personal best day. Its own switch. |
 | Reward budget | 25%, 50%, 75% and 100% of the team's monthly reward budget has been approved (part of the reward requests switch) |
 | New challenge | A challenge starts |
 | Challenge over | A challenge ends, with the result and who won what |

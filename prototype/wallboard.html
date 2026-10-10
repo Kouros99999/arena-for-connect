@@ -165,7 +165,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
     $('#updated').textContent = 'updated ' + now();
     renderGoal();
   }
-  function renderTicker(){ $('#track').innerHTML = kudos.length ? kudos.map(k => `<span><b>${esc(k.from)}</b> → <b>${esc(k.toName || k.to)}</b>: “${esc(k.note)}”</span>`).join('') : '<span>Kudos sent by teammates scroll here</span>'; }
+  function renderTicker(){ $('#track').innerHTML = kudos.length ? kudos.map(k => `<span><b>${k.auto ? '✦ Spotlight' : esc(k.from)}</b> → <b>${esc(k.toName || k.to)}</b>: “${esc(k.note)}”</span>`).join('') : '<span>Kudos sent by teammates scroll here</span>'; }
 
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
   setInterval(loadSide, 30000);

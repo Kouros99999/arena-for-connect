@@ -22,7 +22,8 @@ async function readObject(bucket, key) {
   return JSON.parse(await r.Body.transformToString());
 }
 
-const { mixFor } = require('./mix.js');   // the team's scoring profile, or the default
+const { mixFor } = require('./mix.js');
+const { spotlight } = require('./spotlight.js');   // the team's scoring profile, or the default
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -77,6 +78,7 @@ exports.handler = async (event) => {
     const points = Arena.scoreEvent('EVALUATION_SUBMITTED', ev, await mixFor(store, ev.Team));
     const applied = await store.apply(store.planWrites(ev, points));
     if (applied) scored++; else { skipped++; console.info('duplicate evaluation', doc.evaluationId); }
+    if (applied && !ev.AutoFail && ev.Score >= Arena.SPOTLIGHTS.evalScore) await spotlight(store, ev.Team, { kind: 'evaluation', score: ev.Score, agent: ev.AgentARN, name: ev.Name || ev.Username, at: ev.EventTimestamp });
     // The agent has not seen it yet: the acknowledgements job asks Connect later and pays the acknowledgement points.
     if (applied && !ev.AutoFail) await store.putAck({ evaluationId: ev.EvaluationId, agent: ev.AgentARN, team: ev.Team, username: ev.Username, name: ev.Name, contactId: ev.ContactId, score: ev.Score, submittedAt: ev.EventTimestamp });
   }

@@ -359,7 +359,7 @@ test('notifications: supervisors set channels, URLs come back masked, a test mes
 
 test('kudos and reward events reach the team channels; a dead webhook never fails the request', async () => {
   const s = fakeStore(); const sent = [];
-  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true } };
+  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true, spotlights: true } };
   const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev.kind); if (ev.kind === 'rewardRequested') throw new Error('boom'); return ['slack']; } });
   assert.equal((await h(Object.assign(anon('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'nice' }) }), agentOn('t', 'a1', 'POST')))).statusCode, 201);
   s.getAgentDays = async () => [{ sk: 'DAY#2026-09-15', points: 3000 }];
@@ -369,7 +369,7 @@ test('kudos and reward events reach the team channels; a dead webhook never fail
 
 test('a race ranks agents over its period with qualifiers, tiers and anonymity; ending it freezes results and pays prizes', async () => {
   const s = fakeStore(); const sent = [];
-  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true } };
+  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true, spotlights: true } };
   const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev); return ['slack']; } });
   const bad = await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'race', metrics: [{ key: 'nope', weight: 1 }] }) }));
   assert.equal(bad.statusCode, 400);

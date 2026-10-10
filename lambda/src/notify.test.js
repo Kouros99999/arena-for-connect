@@ -4,7 +4,7 @@ const notify = require('./notify.js');
 
 test('settings: defaults, masking and merging keep secrets whole and out of responses', () => {
   const d = notify.withDefaults(null);
-  assert.equal(d.digestHour, 17); assert.deepEqual(d.events, { kudos: true, rewards: true, challenges: true, digest: true });
+  assert.equal(d.digestHour, 17); assert.deepEqual(d.events, { kudos: true, rewards: true, challenges: true, digest: true, spotlights: true });
   const m = notify.merge(null, { slackUrl: 'https://hooks.slack.com/services/T/B/secret12', teamsUrl: '', digestHour: '26', events: { digest: false } });
   assert.equal(m.digestHour, 23); assert.equal(m.events.digest, false); assert.equal(m.events.kudos, true);
   const shown = notify.masked(m);
@@ -44,4 +44,11 @@ test('budget alerts render and sit under the rewards switch', () => {
   assert.equal(m.title, 'Reward budget 75% used'); assert.match(m.lines[0], /7,600 of 10,000 pts/);
   assert.match(notify.message({ kind: 'budgetAlert', pct: 100, spent: 10000, monthly: 10000, month: '2026-10' }).lines[0], /blocked until/);
   assert.equal(notify.eventKey('budgetAlert'), 'rewards');
+});
+
+test('spotlights have their own switch and message', () => {
+  const m = notify.message({ kind: 'spotlight', who: 'Priya N', what: 'Scored 97% on an evaluation' });
+  assert.equal(m.title, 'Spotlight'); assert.equal(m.lines[0], 'Priya N: Scored 97% on an evaluation');
+  assert.equal(notify.eventKey('spotlight'), 'spotlights'); assert.equal(notify.withDefaults({}).events.spotlights, true);
+  assert.equal(notify.merge({}, { events: { spotlights: false } }).events.spotlights, false);
 });

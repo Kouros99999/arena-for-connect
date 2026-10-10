@@ -16,6 +16,7 @@
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 const clock = require('./clock.js');
+const { spotlight } = require('./spotlight.js');
 
 const STREAK_QA = +(process.env.STREAK_QA || 85);
 
@@ -47,6 +48,7 @@ async function runFor(now, deps) {
       await s.apply(store.planWrites(ev, Arena.scoreEvent('STREAK_DAY', ev, Arena.DEFAULT_MIX), nowMs));
       bonuses++;
     }
+    if (r.clean && Arena.SPOTLIGHTS.streakDays.includes(r.streak)) await spotlight(s, live.team, { kind: 'streak', days: r.streak, agent: arn, name: live.displayName || live.username, at: new Date(nowMs).toISOString() }, deps);
   }
   return { day: yesterday, assessed, extended, reset, held, bonuses };
 }

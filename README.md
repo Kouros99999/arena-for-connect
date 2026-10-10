@@ -44,7 +44,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/admin.test.js lambda/src/export.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/admin.test.js lambda/src/export.test.js lambda/src/spotlight.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -131,6 +131,8 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 ## Operations
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
+
+**Spotlights and suggestions.** `Arena.recommendChallenges(agents)` is pure and runs in the console from the live agents. `lambda/src/spotlight.js` writes a `KD#` feed item from "Arena" (`auto: true`) and a `spotlight` notification (switch `events.spotlights`) when the evaluations handler sees a score at or above `SPOTLIGHTS.evalScore`, the streak job hits one of `SPOTLIGHTS.streakDays`, or the digest job's first run after local midnight finds a personal best day (`Arena.isBestDay`, marked per team and day).
 
 **People.** `lambda/src/admin.js` wraps the stack's Cognito pool (`USER_POOL_ID`): `GET/POST /admin/users`, `PUT/DELETE /admin/users/{username}`, `POST /admin/users/{username}/password`. Supervisors only; 409 when `AuthMode` is external. Invitations go by email when one is given, otherwise a temporary password is returned once. Every action logs an audit line.
 

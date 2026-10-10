@@ -2,12 +2,12 @@
  * Where a team hears about Arena: Slack and Microsoft Teams incoming webhooks, and email through SNS.
  *
  * Settings live per team in the table (CONFIG / NOTIFY#<team>): slackUrl, teamsUrl, email, digestHour (UTC),
- * events { kudos, rewards, challenges, digest }. Webhook URLs are secrets; the API never returns them whole.
+ * events { kudos, rewards, challenges, digest, spotlights }. Webhook URLs are secrets; the API never returns them whole.
  * Every message is built once as { title, lines } and rendered per channel.
  */
 'use strict';
 
-const DEFAULTS = { slackUrl: '', teamsUrl: '', email: '', digestHour: 17, events: { kudos: true, rewards: true, challenges: true, digest: true } };
+const DEFAULTS = { slackUrl: '', teamsUrl: '', email: '', digestHour: 17, events: { kudos: true, rewards: true, challenges: true, digest: true, spotlights: true } };
 const TOPIC = process.env.DIGEST_TOPIC_ARN || '';
 
 let snsClient;
@@ -47,6 +47,7 @@ const fmtS = (v) => (v > 0 ? '+' : '') + v.toFixed(1);
 function message(ev) {
   switch (ev.kind) {
     case 'kudos': return { title: 'Kudos', lines: [`${ev.from} → ${ev.to}: “${ev.note}”`] };
+    case 'spotlight': return { title: 'Spotlight', lines: [`${ev.who}: ${ev.what}`] };
     case 'rewardRequested': return { title: 'Reward requested', lines: [`${ev.agentName} asked for ${ev.what} (${ev.cost.toLocaleString()} pts). Approve it in the console.`] };
     case 'budgetAlert': return { title: ev.pct >= 100 ? 'Reward budget used up' : `Reward budget ${ev.pct}% used`, lines: [`${ev.spent.toLocaleString()} of ${ev.monthly.toLocaleString()} pts approved so far in ${ev.month}.` + (ev.pct >= 100 ? ' Further approvals are blocked until the budget is raised or the month turns.' : '')] };
     case 'rewardDecided': return { title: ev.status === 'approved' ? 'Reward approved' : 'Reward declined', lines: [`${ev.agentName}: ${ev.what}${ev.status === 'approved' ? '. Time to make it happen.' : '.'}`] };
@@ -71,7 +72,7 @@ function message(ev) {
   }
 }
 /** Which event switch covers an event kind. Pure. */
-const eventKey = (kind) => ({ kudos: 'kudos', rewardRequested: 'rewards', rewardDecided: 'rewards', budgetAlert: 'rewards', challengeStarted: 'challenges', challengeEnded: 'challenges', digest: 'digest', test: null })[kind];
+const eventKey = (kind) => ({ kudos: 'kudos', rewardRequested: 'rewards', rewardDecided: 'rewards', budgetAlert: 'rewards', spotlight: 'spotlights', challengeStarted: 'challenges', challengeEnded: 'challenges', digest: 'digest', test: null })[kind];
 
 // ---------- channels ----------
 const renderSlack = (m) => ({ text: `*${m.title}*\n` + m.lines.join('\n') });

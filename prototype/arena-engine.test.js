@@ -260,3 +260,32 @@ test('reward settings validate and normalise; periods key and bound correctly', 
   assert.deepEqual(Arena.periodBounds('quarter', '2026-11-05'), { start: '2026-10-01', resetsOn: '2027-01-01' });
   assert.deepEqual(Arena.balanceSummary('week', '2026-09-15', 900, 2500), { period: 'week', periodStart: '2026-09-14', resetsOn: '2026-09-21', earned: 900, spent: 2500, balance: 0 });
 });
+
+test('spotlights fire only for notable moments; a best day needs history', () => {
+  assert.equal(Arena.spotlightText('evaluation', { score: 97 }), 'Scored 97% on an evaluation');
+  assert.equal(Arena.spotlightText('evaluation', { score: 90 }), null);
+  assert.equal(Arena.spotlightText('streak', { days: 10 }), 'Day 10 of a clean-quality streak');
+  assert.equal(Arena.spotlightText('streak', { days: 7 }), null);
+  assert.equal(Arena.spotlightText('bestDay', { points: 1234 }), 'Best day on record: 1,234 pts');
+  const rows = [{ day: '2026-09-10', points: 100 }, { day: '2026-09-11', points: 120 }, { day: '2026-09-12', points: 90 }, { day: '2026-09-15', points: 130 }];
+  assert.equal(Arena.isBestDay(rows, '2026-09-15'), true);
+  assert.equal(Arena.isBestDay(rows.map((r) => (r.day === '2026-09-15' ? { day: r.day, points: 110 } : r)), '2026-09-15'), false);
+  assert.equal(Arena.isBestDay(rows.slice(2), '2026-09-15'), false, 'too little history');
+});
+
+test('recommended challenges follow the team numbers and prefill the form', () => {
+  const a = (o) => Object.assign({ handled: 10, escalations: 0, evals: [], kudosReceived: 1, sentSum: 0, sentCount: 0, adhSum: 0, adhCount: 0, today: 100 }, o);
+  const escalating = [a({ escalations: 2 }), a({ escalations: 1 }), a({}), a({})];
+  const s1 = Arena.recommendChallenges(escalating);
+  assert.equal(s1[0].template, 'esc'); assert.match(s1[0].reason, /7\.5%/); assert.equal(s1[0].fields.target, '5%');
+  const lowQa = [a({ evals: [70, 80] }), a({ evals: [82] }), a({}), a({})];
+  assert.equal(Arena.recommendChallenges(lowQa)[0].template, 'qa');
+  const grumpy = [a({ sentSum: -4, sentCount: 6 }), a({ sentSum: 2, sentCount: 6 }), a({}), a({})];
+  const r = Arena.recommendChallenges(grumpy)[0]; assert.equal(r.template, 'race'); assert.deepEqual(r.fields.metrics.map((m) => m.key), ['qa', 'sentiment']);
+  const quiet = [a({ kudosReceived: 0 }), a({ kudosReceived: 0 }), a({ kudosReceived: 0 }), a({ kudosReceived: 1 })];
+  assert.equal(Arena.recommendChallenges(quiet)[0].template, 'kudos');
+  const fine = [a({ kudosReceived: 2 }), a({ kudosReceived: 2 })];
+  const f = Arena.recommendChallenges(fine); assert.equal(f.length, 1); assert.equal(f[0].template, 'contest'); assert.equal(f[0].fields.target, '250');
+  assert.deepEqual(Arena.recommendChallenges([]), []);
+  assert.ok(Arena.recommendChallenges([...escalating, ...lowQa, ...quiet]).length <= 3);
+});

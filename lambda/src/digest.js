@@ -10,6 +10,7 @@
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 const clock = require('./clock.js');
+const { spotlight } = require('./spotlight.js');
 const notify = require('./notify.js');
 const challenges = require('./challenges.js');
 
@@ -28,7 +29,8 @@ async function runFor(now, deps) {
   const nowDate = typeof now === 'number' ? new Date(now) : now;
   const today = clock.dayKey(nowDate), hour = clock.hourOf(nowDate);   // the team's digest hour is local time
   const teams = await s.listTeams();
-  const out = { teams: teams.length, digests: 0, finalized: 0, prizes: 0 };
+  const out = { teams: teams.length, digests: 0, finalized: 0, prizes: 0, bestDays: 0 };
+  const yesterday = clock.addDays(today, -1);
   for (const team of teams) {
     const cfg = notify.withDefaults(await s.getNotify(team));
     const notifyTeam = async (t, ev) => sendFn(cfg, ev, deps);
@@ -38,6 +40,19 @@ async function runFor(now, deps) {
       if (c.results || c.endsAt >= today) continue;
       const r = await challenges.finalize(s, team, c, nowDate, { notify: notifyTeam });
       if (r) { out.finalized++; out.prizes += (r.prizes || []).length; }
+    }
+    // 2. Personal bests: once per team per day, the first run after local midnight looks at yesterday against each agent's record.
+    if (!(await s.getDigestMark(team + '#best', yesterday))) {
+      try {
+        const rows = (await s.getTeamDays(team, [yesterday]))[yesterday] || [];
+        const names = {}; for (const l of await s.getTeamLive(team)) names[l.pk.replace(/^AGENT#/, '')] = l.displayName || l.username;
+        for (const row of rows) {
+          const arn = row.pk.replace(/^AGENT#/, '');
+          const hist = (await s.getAgentDays(arn, clock.addDays(yesterday, -89), yesterday)).map((r) => ({ day: r.sk.slice(4), points: r.points || 0 }));
+          if (Arena.isBestDay(hist, yesterday) && await spotlight(s, team, { kind: 'bestDay', points: row.points, agent: arn, name: names[arn] || row.username, at: nowDate.toISOString() }, deps)) out.bestDays++;
+        }
+        await s.putDigestMark(team + '#best', yesterday, ['checked']);
+      } catch (e) { console.warn('best-day check failed for', team, e.message); }
     }
     // 2. The daily digest, once, at the team's hour.
     if (!cfg.events.digest || cfg.digestHour !== hour || !(cfg.slackUrl || cfg.teamsUrl || cfg.email)) continue;
