@@ -60,7 +60,7 @@ node lambda/sync-users.js <stack name> --instance <connect instance id> --dry-ru
 node lambda/sync-users.js <stack name> --instance <connect instance id>
 ```
 
-Users whose Connect security profile name contains "supervisor" or "admin" land in the supervisors group. To use the customer's own identity provider instead, either add it as a federated provider on the pool, or deploy with `AuthMode=external` and their OIDC issuer and audience. The API always requires a token; there is no open mode.
+Users whose Connect security profile name contains "supervisor" or "admin" land in the supervisors group. Supervisors may read and act on any team. Everyone else is scoped to the team on their token and to their own points ledger, so an agent cannot browse another team's leaderboard or another agent's feed. With `AuthMode=external`, the customer's identity provider must issue the same two claims, `custom:team` and `custom:agentArn`, or agents will be refused. To use the customer's own identity provider instead, either add it as a federated provider on the pool, or deploy with `AuthMode=external` and their OIDC issuer and audience. The API always requires a token; there is no open mode.
 
 For quality scoring, pass `EvaluationsBucket` at deploy time (the bucket Connect writes Contact Lens evaluations to) and turn on "Send notifications to Amazon EventBridge" in that bucket's properties. Each submitted evaluation is scored once; a re-submitted evaluation is ignored.
 
@@ -89,7 +89,7 @@ A flag is only useful if something happens next. **Coach** on any flag opens a p
 
 ## Challenges, rewards, kudos
 
-Challenges come from templates (escalation rate, evaluation floor, team points target, kudos per agent) and their progress is always computed from agent data by the same function in the browser and the API, never self-reported. Supervisors create and end them from the console. Agents redeem weekly points against a catalog; each request waits for supervisor approval, which deducts the points. Kudos are sent from the agent panel, score 8 points for the recipient, and land on a team feed that the console and wallboard show. All of it lives in the same DynamoDB table as team items, with routes under `/teams/{team}/challenges`, `/rewards` and `/kudos`.
+Challenges come from templates (escalation rate, evaluation floor, team points target, kudos per agent) and their progress is always computed from agent data by the same function in the browser and the API, never self-reported. Supervisors create and end them from the console. Agents redeem weekly points against a catalog; each request waits for supervisor approval, which deducts the points. Kudos are sent from the agent panel, score 8 points for the recipient, and land on a team feed that the console and wallboard show. They are capped per sender per day (`KudosDailyLimit`, default 5), cannot be sent to oneself, and must go to someone on the sender's team. An agent receiving far more kudos than the team average is flagged in the console, so a trading ring stands out. All of it lives in the same DynamoDB table as team items, with routes under `/teams/{team}/challenges`, `/rewards` and `/kudos`.
 
 ## Marketplace: metering and releases
 
@@ -123,7 +123,7 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 
 **Streaks.** A nightly job at 00:30 UTC assesses each agent's previous day: at least one contact, no auto-fail, every evaluation at or above 85 extends the quality streak; a miss resets it; a day with no contacts holds it. From day two each clean day pays the streak bonus into the new day. Adherence remains in the scoring mix but is not scored until a workforce-management feed exists, and the console says so.
 
-**Wallboard on a TV.** A supervisor clicks "TV link" in the console. That mints a kiosk token, valid 90 days, and copies a wallboard URL that needs no sign-in. Kiosk routes are read-only and served under `/kiosk/{token}/…` with the token as the only credential; a supervisor can list and revoke tokens through the API.
+**Wallboard on a TV.** A supervisor clicks "TV link" in the console. That mints a kiosk token, valid 90 days, and copies a wallboard URL that needs no sign-in. Kiosk routes are read-only and served under `/kiosk/{token}/…` with the token as the only credential; a supervisor can list and revoke tokens through the API. Because anyone walking past can read a TV, `WallboardNames` controls how people appear there: `full` (as in Connect), `first` (first name and last initial) or `initials`. Signed-in pages always show full names. The DynamoDB table keeps 35 days of point-in-time backups.
 
 **Deleting an agent's data.** `DELETE /agents/{arn}` (supervisors) or, with admin credentials:
 

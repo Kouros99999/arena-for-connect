@@ -11,14 +11,18 @@ function fakeStore() {
     putTeamItem: async (team, sk, item) => { items.push(Object.assign({ pk: 'TEAMITEMS#' + team, sk }, item)); return item; },
     updateTeamItem: async (team, sk, fields) => { const i = items.find((x) => x.pk === 'TEAMITEMS#' + team && x.sk === sk); if (!i) return null; Object.assign(i, fields); return i; },
     spendPoints: async (arn, iso, cost) => { calls.push(['spendPoints', arn, cost]); },
-    getTeam: async (team, iso) => { calls.push(['getTeam', team, iso]); return [{ id: 'a1', name: 'priya', today: 118, week: 900, handled: 4, ahtSum: 1200, evals: [92], autofails: 0, kudosReceived: 1, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 }]; },
+    getTeam: async (team, iso) => { calls.push(['getTeam', team, iso]); return [{ id: 'a1', name: 'priya', username: 'priya', today: 118, week: 900, handled: 4, ahtSum: 1200, evals: [92], autofails: 0, kudosReceived: 1, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 },
+      { id: 'a2', name: 'Marcus Bell', username: 'marcus', today: 50, week: 300, handled: 2, ahtSum: 600, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 }]; },
+    kudosCounts: {},
+    bumpKudosCount: async function (sender, day, limit) { const k = sender + '#' + day; if ((this.kudosCounts[k] || 0) >= limit) return false; this.kudosCounts[k] = (this.kudosCounts[k] || 0) + 1; return true; },
     listEvents: async (arn, limit) => { calls.push(['listEvents', arn, limit]); return [{ EventType: 'KUDOS', EventTimestamp: 'x', points: 8, From: 'm', Note: 'n' }]; },
     getMix: async () => null,
     putMix: async (m) => { calls.push(['putMix', m]); },
     apply: async (w) => { calls.push(['apply', w]); },
   };
 }
-const req = (method, path, extra) => Object.assign({ rawPath: path, requestContext: { http: { method } } }, extra || {});
+const req = (method, path, extra) => Object.assign({ rawPath: path, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['supervisors'], name: 'Dana' } } } } }, extra || {});
+const anon = (method, path, extra) => Object.assign({ rawPath: path, requestContext: { http: { method } } }, extra || {});
 const sup = { requestContext: { http: { method: 'PUT' }, authorizer: { jwt: { claims: { 'cognito:groups': ['supervisors'], name: 'Dana' } } } } };
 
 test('routes', () => {
@@ -51,7 +55,7 @@ test('agent events are flattened and capped at 100', async () => {
 test('mix: default when unset, validated on put, supervisors only', async () => {
   const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
   assert.equal(JSON.parse((await h(req('GET', '/config/mix'))).body).mix.quality, 50);
-  const denied = await h(req('PUT', '/config/mix', { body: JSON.stringify({ quality: 50, productivity: 35, adherence: 15 }) }));
+  const denied = await h(Object.assign(anon('PUT', '/config/mix', { body: JSON.stringify({ quality: 50, productivity: 35, adherence: 15 }) }), agentTokFor('PUT')));
   assert.equal(denied.statusCode, 403);
   const bad = await h(Object.assign(req('PUT', '/config/mix', { body: JSON.stringify({ quality: 50, productivity: 40, adherence: 15 }) }), sup));
   assert.equal(bad.statusCode, 400);
@@ -61,14 +65,17 @@ test('mix: default when unset, validated on put, supervisors only', async () => 
 
 test('kudos scores, stores and takes the sender from the token', async () => {
   const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
-  const r = await h(Object.assign(req('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'great save', from: 'spoofed', team: 't' }) }), { requestContext: { http: { method: 'POST' }, authorizer: { jwt: { claims: { name: 'Marcus' } } } } }));
-  assert.equal(r.statusCode, 201); assert.equal(JSON.parse(r.body).points, 8);
-  const writes = s.calls[0][1];
-  assert.equal(writes[0].item.From, 'Marcus'); assert.equal(writes[0].item.AgentARN, 'a2'); assert.equal(writes.length, 5, 'ledger, live, team feed, day, week');
+  const r = await h(Object.assign(anon('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'great save', from: 'spoofed', team: 'someone-elses-team' }) }), { requestContext: { http: { method: 'POST' }, authorizer: { jwt: { claims: { name: 'Marcus', sub: 'sub-m', 'custom:agentArn': 'a1', 'custom:team': 't' } } } } }));
+  assert.equal(r.statusCode, 403, 'an agent cannot send kudos on another team');
+  const ok = await h(Object.assign(anon('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'great save', from: 'spoofed' }) }), { requestContext: { http: { method: 'POST' }, authorizer: { jwt: { claims: { name: 'Marcus', sub: 'sub-m', 'custom:agentArn': 'a1', 'custom:team': 't' } } } } }));
+  assert.equal(ok.statusCode, 201); assert.equal(JSON.parse(ok.body).points, 8);
+  const writes = s.calls.find((c) => c[0] === 'apply')[1];
+  assert.equal(writes[0].item.From, 'Marcus'); assert.equal(writes[0].item.FromId, 'sub-m'); assert.equal(writes[0].item.AgentARN, 'a2'); assert.equal(writes[0].item.Team, 't'); assert.equal(writes[0].item.ToName, 'Marcus Bell');
+  assert.equal(writes.length, 5, 'ledger, live, team feed, day, week');
   assert.equal((await h(req('POST', '/kudos', { body: '{}' }))).statusCode, 400);
 });
 
-const agentTokFor = (method) => ({ requestContext: { http: { method }, authorizer: { jwt: { claims: { name: 'Priya', 'custom:agentArn': 'a1', 'cognito:groups': ['agents'] } } } } });
+const agentTokFor = (method) => ({ requestContext: { http: { method }, authorizer: { jwt: { claims: { name: 'Priya', 'custom:agentArn': 'a1', 'custom:team': 't', 'cognito:groups': ['agents'] } } } } });
 const agentTok = agentTokFor('POST');
 const supTok = (method) => ({ requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['supervisors'], name: 'Dana' } } } } });
 
@@ -157,7 +164,7 @@ test('unknown route is 404, OPTIONS is 204', async () => {
 const supReq = (method, path, body, qs) => ({ rawPath: path, queryStringParameters: qs, body: body ? JSON.stringify(body) : undefined,
   requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['supervisors'], name: 'Dana' } } } } });
 const agentReq = (method, path, body, arn) => ({ rawPath: path, body: body ? JSON.stringify(body) : undefined,
-  requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['agents'], 'custom:agentArn': arn, name: 'Priya' } } } } });
+  requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['agents'], 'custom:agentArn': arn, 'custom:team': 't', name: 'Priya' } } } } });
 
 function historyStore() {
   const s = fakeStore();
@@ -210,8 +217,9 @@ test('coaching: agents see only their own plans, without the private note; super
   s.items.push({ pk: 'TEAMITEMS#t', sk: 'CO#2026-09-10T00:00:00.000Z#x2', id: 'x2', agentId: 'a2', agentName: 'Marcus', note: 'n', action: 'a', status: 'open', createdAt: '2026-09-10T00:00:00.000Z' });
   const mine = JSON.parse((await h(agentReq('GET', '/teams/t/coaching', null, 'a1'))).body).coaching;
   assert.equal(mine.length, 1); assert.equal(mine[0].agentId, 'a1'); assert.equal(mine[0].note, undefined); assert.equal(mine[0].action, 'Use the checklist');
-  const none = JSON.parse((await h(req('GET', '/teams/t/coaching'))).body).coaching;
-  assert.deepEqual(none, [], 'a caller with no agent identity sees nothing');
+  const noTeam = await h(Object.assign(anon('GET', '/teams/t/coaching'), { requestContext: { http: { method: 'GET' }, authorizer: { jwt: { claims: { 'cognito:groups': ['agents'], 'custom:team': 't', name: 'No Arn' } } } } }));
+  assert.deepEqual(JSON.parse(noTeam.body).coaching, [], 'a team member with no agent identity sees nothing');
+  assert.equal((await h(anon('GET', '/teams/t/coaching'))).statusCode, 403, 'no token, no team');
   const all = JSON.parse((await h(supReq('GET', '/teams/t/coaching'))).body).coaching;
   assert.equal(all.length, 2); assert.ok(all.some((c) => c.note === 'private'));
   const marcus = all.find((c) => c.agentId === 'a2');
@@ -254,4 +262,60 @@ test('new routes resolve', () => {
   assert.equal(route('PUT', '/teams/t/coaching/abc').id, 'abc');
   assert.equal(route('POST', '/teams/t/metrics').name, 'recordMetric');
   assert.equal(route('GET', '/kiosk/tok/coaching'), null, 'coaching is never served to a wallboard token');
+});
+
+// ---------- scoping, kudos limits, wallboard names ----------
+const agentOn = (team, arn, method) => ({ requestContext: { http: { method }, authorizer: { jwt: { claims: { 'cognito:groups': ['agents'], 'custom:agentArn': arn, 'custom:team': team, name: 'Priya', sub: 'sub-' + arn } } } } });
+
+test('agents read only their own team; supervisors read any team; no token reads nothing', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  for (const path of ['/teams/t/agents', '/teams/t/challenges', '/teams/t/rewards', '/teams/t/kudos', '/teams/t/coaching']) {
+    assert.equal((await h(Object.assign(anon('GET', path), agentOn('t', 'a1', 'GET')))).statusCode, 200, path + ' own team');
+    assert.equal((await h(Object.assign(anon('GET', path), agentOn('other', 'a1', 'GET')))).statusCode, 403, path + ' other team');
+    assert.equal((await h(anon('GET', path))).statusCode, 403, path + ' without a team claim');
+    assert.equal((await h(req('GET', path))).statusCode, 200, path + ' supervisor');
+  }
+  assert.equal((await h(Object.assign(anon('POST', '/teams/other/rewards', { body: JSON.stringify({ catalogId: 'gift25' }) }), agentOn('t', 'a1', 'POST')))).statusCode, 403);
+});
+
+test('an agent reads only their own ledger', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(Object.assign(anon('GET', '/agents/a1/events'), agentOn('t', 'a1', 'GET')))).statusCode, 200);
+  assert.equal((await h(Object.assign(anon('GET', '/agents/a2/events'), agentOn('t', 'a1', 'GET')))).statusCode, 403);
+  assert.equal((await h(anon('GET', '/agents/a2/events'))).statusCode, 403);
+  assert.equal((await h(req('GET', '/agents/a2/events'))).statusCode, 200, 'supervisors may review any ledger');
+});
+
+test('kudos: not to yourself, only to a teammate, and no more than the daily limit', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  const send = (to) => h(Object.assign(anon('POST', '/kudos', { body: JSON.stringify({ to, note: 'nice' }) }), agentOn('t', 'a1', 'POST')));
+  assert.equal((await send('a1')).statusCode, 400, 'self');
+  assert.equal((await send('ghost')).statusCode, 404, 'not on the team');
+  for (let i = 0; i < 5; i++) assert.equal((await send('a2')).statusCode, 201, 'kudos ' + (i + 1));
+  const sixth = await send('a2');
+  assert.equal(sixth.statusCode, 429); assert.match(JSON.parse(sixth.body).error, /limit of 5/);
+  assert.equal(s.calls.filter((c) => c[0] === 'apply').length, 5, 'the refused kudos was not stored');
+  // a supervisor sending on a team they name is fine, but still not to the recipient as themselves
+  assert.equal((await h(req('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'well done', team: 't' }) }))).statusCode, 201);
+});
+
+test('wallboards get shortened names and no usernames when DISPLAY_NAMES is set', async () => {
+  process.env.DISPLAY_NAMES = 'first';
+  delete require.cache[require.resolve('./api.js')];
+  const api = require('./api.js');
+  const s = fakeStore(); const h = api.makeHandler({ store: s, now: fixed });
+  s.getKiosk = async (t) => (t === 'tok' ? { token: 'tok', team: 't', expiresAt: '2027-01-01T00:00:00Z' } : null);
+  await s.putTeamItem('t', 'KD#2026-09-15T10:00:00Z#a', { at: '2026-09-15T10:00:00Z', from: 'Marcus Bell', to: 'a1', toName: 'Priya Natarajan', note: 'one' });
+  const agents = JSON.parse((await h(anon('GET', '/kiosk/tok/agents'))).body).agents;
+  assert.deepEqual(agents.map((a) => a.name), ['priya', 'Marcus B.']); assert.equal(agents[0].username, undefined);
+  const feed = JSON.parse((await h(anon('GET', '/kiosk/tok/kudos'))).body).kudos;
+  assert.equal(feed[0].from, 'Marcus B.'); assert.equal(feed[0].toName, 'Priya N.');
+  const signedIn = JSON.parse((await h(req('GET', '/teams/t/agents'))).body).agents;
+  assert.equal(signedIn[1].name, 'Marcus Bell', 'signed-in pages keep full names');
+  process.env.DISPLAY_NAMES = 'initials';
+  delete require.cache[require.resolve('./api.js')];
+  const h2 = require('./api.js').makeHandler({ store: s, now: fixed });
+  assert.deepEqual(JSON.parse((await h2(anon('GET', '/kiosk/tok/agents'))).body).agents.map((a) => a.name), ['P', 'MB']);
+  delete process.env.DISPLAY_NAMES;
+  delete require.cache[require.resolve('./api.js')];
 });

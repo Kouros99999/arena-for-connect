@@ -13,13 +13,18 @@
  *   POST /teams/{team}/metrics                  { agentId, metric: csat|sentiment, score, contactId? } for survey tools without a stream (supervisors)
  *
  * Auth: HTTP API JWT authorizer (Cognito or the customer's IdP) is configured in the template.
- * The workspace app sends the agent's token; the API trusts the `sub` claim, never a body field, for identity.
+ * The workspace app sends the agent's token; the API trusts the token's claims, never a body field, for identity.
+ * Supervisors (group "supervisors") may read and act on any team. Everyone else is scoped to the team in their
+ * custom:team claim and to their own ledger (custom:agentArn). Kudos are capped per sender per day and may not
+ * be sent to oneself or outside the sender's team. Wallboard (kiosk) responses shorten names per DISPLAY_NAMES.
  */
 'use strict';
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+const KUDOS_DAILY_LIMIT = Math.max(1, +(process.env.KUDOS_DAILY_LIMIT || 5));
+const DISPLAY_NAMES = process.env.DISPLAY_NAMES || 'full';   // full | first | initials, for sign-in-free wallboards
 const json = (status, body) => ({ statusCode: status, headers: { 'content-type': 'application/json', 'access-control-allow-origin': ORIGIN, 'cache-control': 'no-store' }, body: JSON.stringify(body) });
 
 function route(method, path) {
@@ -62,6 +67,8 @@ function makeHandler(deps) {
     if (method === 'OPTIONS') return json(204, {});
     const r = route(method, path);
     if (!r) return json(404, { error: 'not found' });
+    // Team routes: supervisors see every team, everyone else only the team on their token.
+    if (r.team && !teamAccess(claims, r.team)) return json(403, { error: 'not your team' });
     try {
       switch (r.name) {
         case 'health': return json(200, { ok: true, at: now().toISOString() });
@@ -71,6 +78,7 @@ function makeHandler(deps) {
           return json(200, { team: r.team, date: store.dayKey(iso), week: store.weekKey(iso), agents });
         }
         case 'agentEvents': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
           const limit = Math.min(100, +(qs.limit || 20));
           const items = await s.listEvents(r.arn, limit);
           return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day })) });
@@ -172,8 +180,8 @@ function makeHandler(deps) {
           const k = await s.getKiosk(r.token);
           if (!k || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'kiosk link is invalid or expired' });
           const iso = now().toISOString();
-          if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: await s.getTeam(k.team, iso) });
-          if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip) });
+          if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: (await s.getTeam(k.team, iso)).map(forWallboard) });
+          if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip).map((k2) => Object.assign({}, k2, { from: displayName(k2.from), toName: displayName(k2.toName) })) });
           const [items, agents] = await Promise.all([s.listTeamItems(k.team, 'CH#', 50, true), s.getTeam(k.team, iso)]);
           const today = iso.slice(0, 10);
           return json(200, { team: k.team, challenges: items.map(strip).map((c) => Object.assign({}, c, { state: c.state === 'ended' ? 'ended' : c.startsAt > today ? 'scheduled' : c.endsAt < today ? 'ended' : 'active', progress: Arena.challengeProgress(c, agents) })) });
@@ -261,8 +269,19 @@ function makeHandler(deps) {
         case 'kudos': {
           const body = parse(event);
           if (!body.to || !body.note) return json(400, { error: 'to and note are required' });
-          const from = claims.name || claims.username || claims.sub || body.from || 'A teammate';
-          const ev = { EventType: 'KUDOS', AgentARN: body.to, EventTimestamp: now().toISOString(), From: from, Note: String(body.note).slice(0, 140), Team: body.team, Username: body.toUsername, ToName: body.toName };
+          const sup = isSupervisor(claims), me = claims['custom:agentArn'];
+          if (me && me === body.to) return json(400, { error: 'kudos go to a teammate, not to yourself' });
+          // Agents send within their own team; the recipient must actually be on it.
+          const team = sup ? body.team : claims['custom:team'];
+          if (!team) return json(403, { error: 'no team on your sign-in' });
+          if (!sup && body.team && body.team !== team) return json(403, { error: 'not your team' });
+          const recipient = (await s.getTeam(team, now().toISOString())).find((a) => a.id === body.to);
+          if (!recipient) return json(404, { error: 'recipient is not on this team' });
+          const sender = claims.sub || me || claims['cognito:username'] || 'anonymous';
+          const day = now().toISOString().slice(0, 10);
+          if (!(await s.bumpKudosCount(sender, day, KUDOS_DAILY_LIMIT, now().getTime()))) return json(429, { error: `kudos limit of ${KUDOS_DAILY_LIMIT} a day reached` });
+          const from = claims.name || claims['cognito:username'] || claims.username || claims.sub || 'A teammate';
+          const ev = { EventType: 'KUDOS', AgentARN: body.to, EventTimestamp: now().toISOString(), From: from, FromId: sender, Note: String(body.note).slice(0, 140), Team: team, Username: recipient.username, ToName: recipient.name };
           const points = Arena.scoreEvent('KUDOS', ev, Arena.DEFAULT_MIX);
           await s.apply(store.planWrites(ev, points, now().getTime()));
           return json(201, { ok: true, points });
@@ -294,6 +313,20 @@ async function windowFor(s, arn, from, to) {
 /** What the coached agent may see: everything except the supervisor's private note. */
 const forAgent = (c) => { const { note, ...rest } = c; return rest; };
 const who = (claims) => claims.name || claims['cognito:username'] || claims.username || claims.sub || 'supervisor';
+/** Supervisors reach every team; agents only the team on their token. With AUTH_MODE=none everyone is a supervisor. */
+function teamAccess(claims, team) {
+  if (isSupervisor(claims)) return true;
+  const mine = claims['custom:team'];
+  return !!mine && mine === team;
+}
+/** Shorten a person's name for a screen that anyone walking past can read. */
+function displayName(name) {
+  if (!name || DISPLAY_NAMES === 'full') return name;
+  const parts = String(name).trim().split(/\s+/);
+  if (DISPLAY_NAMES === 'first') return parts.length > 1 ? parts[0] + ' ' + parts[parts.length - 1][0] + '.' : parts[0];
+  return parts.map((p) => p[0]).join('').toUpperCase().slice(0, 3);
+}
+const forWallboard = (a) => { const { username, ...rest } = a; return Object.assign(rest, { name: displayName(a.name) }); };
 function isSupervisor(claims) {
   const groups = claims['cognito:groups'] || claims.groups || [];
   const list = Array.isArray(groups) ? groups : String(groups).replace(/[\[\]]/g, '').split(/[ ,]+/);

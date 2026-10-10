@@ -59,7 +59,7 @@ async function api(req, res, p) {
   } catch (e) { return json(res, 400, { error: e.message }); }
   if (req.method === 'GET' && p === '/config/mix') return json(res, 200, { mix: engine.getMix() });
   if (req.method === 'PUT' && p === '/config/mix') { const b = await body(req); const mix = { quality: +b.quality, productivity: +b.productivity, adherence: +b.adherence }; const v = engine.setMix(mix); return v.ok ? json(res, 200, { mix, warning: v.message || undefined }) : json(res, 400, { error: v.message }); }
-  if (req.method === 'POST' && p === '/kudos') { const b = await body(req); const a = engine.byId(b.to); if (!a || !b.note) return json(res, 400, { error: 'to and note are required' }); const r = engine.ingest({ EventType: 'KUDOS', AgentARN: a.id, EventTimestamp: new Date().toISOString(), From: b.from || 'A teammate', Note: String(b.note).slice(0, 140) }); return json(res, 201, { ok: true, points: r.points }); }
+  if (req.method === 'POST' && p === '/kudos') { const b = await body(req); const a = engine.byId(b.to); if (!a || !b.note) return json(res, 400, { error: 'to and note are required' }); if (b.fromId && b.fromId === b.to) return json(res, 400, { error: 'kudos go to a teammate, not to yourself' }); const r = engine.ingest({ EventType: 'KUDOS', AgentARN: a.id, EventTimestamp: new Date().toISOString(), From: b.from || 'A teammate', Note: String(b.note).slice(0, 140) }); return json(res, 201, { ok: true, points: r.points }); }
   if (req.method === 'GET' && p === '/health') return json(res, 200, { ok: true });
   return json(res, 404, { error: 'not found' });
 }

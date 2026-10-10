@@ -346,7 +346,7 @@ button{font:inherit;cursor:pointer}
   $('#kudosSend').addEventListener('click', async () => {
     const to = $('#kudosTo').value, text = $('#kudosNote').value.trim();
     if (!to || !text) return note('Pick a teammate and write a note.', true);
-    try { const ok = await engine.kudos(to, text, YOU.name); note(ok ? 'Kudos sent.' : 'Could not send kudos.', !ok); if (ok) { $('#kudosNote').value = ''; if (engine.remote) await engine.refresh(); render(); } }
+    try { const ok = await engine.kudos(to, text, YOU.name, YOU.id); note(ok ? 'Kudos sent.' : 'Could not send kudos.', !ok); if (ok) { $('#kudosNote').value = ''; if (engine.remote) await engine.refresh(); render(); } }
     catch (e) { note('Could not send kudos: ' + e.message, true); }
   });
   $('#redeemBtn').addEventListener('click', async () => {

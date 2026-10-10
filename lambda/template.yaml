@@ -44,6 +44,16 @@ Parameters:
     Type: String
     Default: csat
     Description: Contact attribute your post-contact survey flow writes the customer's score to. Used only if you also send Connect contact records to the Arena stream. Scores on 1-5, 0-10 or 0-100 scales are accepted.
+  WallboardNames:
+    Type: String
+    Default: full
+    AllowedValues: [full, first, initials]
+    Description: How agent names appear on sign-in-free wallboards. full shows the name as in Connect, first shows the first name and last initial, initials shows initials only.
+  KudosDailyLimit:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    Description: How many kudos one person may send per day. Keeps kudos meaningful and stops two agents trading points.
   ConnectInstanceUrl:
     Type: String
     Default: ''
@@ -124,6 +134,7 @@ Resources:
             - { AttributeName: gsi1sk, KeyType: RANGE }
           Projection: { ProjectionType: ALL }
       TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }   # 35 days of continuous backup
 
   IngestFunction:
     Type: AWS::Serverless::Function
@@ -431,6 +442,8 @@ Resources:
       Handler: api.handler
       Environment:
         Variables:
+          DISPLAY_NAMES: !Ref WallboardNames
+          KUDOS_DAILY_LIMIT: !Ref KudosDailyLimit
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           AUTH_MODE: jwt
       Policies:

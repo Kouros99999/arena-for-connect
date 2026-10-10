@@ -193,3 +193,16 @@ test('local engine: demo history is stable and coaching closes the loop', async 
   assert.equal((await e.coaching({ status: 'open' })).length, 1);
   await assert.rejects(() => e.createCoaching({ agentId: 'nobody' }), /unknown agent/);
 });
+
+test('kudos: a spike against the team mean is flagged, and the demo refuses self-kudos', async () => {
+  const e = Arena.createEngine();
+  const a = e.agents[0];
+  a.kudosReceived = 5;
+  assert.deepEqual(Arena.flagsFor(a, e.agents, Date.now()), [], 'five is under the threshold');
+  a.kudosReceived = 6;
+  assert.deepEqual(Arena.flagsFor(a, e.agents, Date.now()).map((f) => f.label), ['Kudos volume unusual']);
+  e.agents.forEach((x) => { x.kudosReceived = 6; });
+  assert.deepEqual(Arena.flagsFor(a, e.agents, Date.now()), [], 'not unusual when the whole team is at six');
+  assert.equal(await e.kudos(a.id, 'to myself', a.name, a.id), false);
+  assert.equal(await e.kudos(e.agents[1].id, 'to a teammate', a.name, a.id), true);
+});

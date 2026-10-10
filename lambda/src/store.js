@@ -217,6 +217,17 @@ async function deleteAgent(arn) {
   return deleteKeys(k);
 }
 
+// ---------- kudos limits ----------
+/** Count one more kudos from a sender today, unless they are already at the limit. Atomic: a race cannot slip past the cap. */
+async function bumpKudosCount(sender, day, limit, now) {
+  try {
+    await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: 'KUDOSFROM#' + sender, sk: 'DAY#' + day },
+      UpdateExpression: 'ADD #c :one SET #t = :ttl', ConditionExpression: 'attribute_not_exists(#c) OR #c < :limit',
+      ExpressionAttributeNames: { '#c': 'count', '#t': 'ttl' }, ExpressionAttributeValues: { ':one': 1, ':limit': limit, ':ttl': Math.floor((now || Date.now()) / 1000) + 7 * 86400 } }));
+    return true;
+  } catch (e) { if (e.name === 'ConditionalCheckFailedException') return false; throw e; }
+}
+
 // ---------- kiosk tokens: read-only wallboard access without sign-in ----------
 const KIOSK_PREFIX = 'KIOSK#';
 async function putKiosk(token, team, fields) {
@@ -267,6 +278,6 @@ async function putMix(mix) {
 }
 
 module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
-  getContact, getTeamLive, getTeamDays, getAgentDays,
+  getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

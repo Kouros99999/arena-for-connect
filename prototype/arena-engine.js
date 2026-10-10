@@ -52,6 +52,7 @@
     quietMinutes: 40,
     volumeRatio: 1.6, // contacts handled vs team mean
     lowQa: 75,
+    kudosSpike: 6,      // kudos received today at or above this, and three times the team mean, looks like trading
     lowSentiment: -1,   // average customer sentiment at or below this...
     sentimentMin: 5,    // ...across at least this many analysed contacts
   };
@@ -238,6 +239,9 @@
     const sAvg = sentimentAvg(agent);
     if (sAvg !== null && agent.sentCount >= FLAGS.sentimentMin && sAvg <= FLAGS.lowSentiment)
       out.push({ level: 'warn', label: 'Customer sentiment low', why: `Average customer sentiment ${sAvg} across ${agent.sentCount} analysed contacts. Listen to a sample together.` });
+    const kMean = mean(team.map((t) => t.kudosReceived || 0)) || 0;
+    if ((agent.kudosReceived || 0) >= FLAGS.kudosSpike && agent.kudosReceived >= kMean * 3)
+      out.push({ level: 'warn', label: 'Kudos volume unusual', why: `${agent.kudosReceived} kudos today against a team average of ${kMean.toFixed(1)}. Check they are earned, not traded.` });
     if (agent.autofails > 0)
       out.push({ level: 'bad', label: 'Auto-fail today', why: `${agent.autofails} evaluation auto-fail${agent.autofails > 1 ? 's' : ''}. ${-BASE.autofail} pts removed each. Coaching note suggested.` });
     return out;
@@ -371,7 +375,7 @@
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed,
       coaching, createCoaching, updateCoaching, history,
-      kudos: async (to, note, from) => { const a = byId(to); if (!a) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
+      kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
     };
   }
@@ -483,7 +487,12 @@
       if (r.ok) mix = body.mix;
       return { ok: r.ok, message: body.error || body.warning || '' };
     }
-    async function kudos(to, note) { const a = engine.byId(to); const r = await fetch(`${base}/kudos`, { method: 'POST', headers: await headersFor(), body: JSON.stringify({ to, note, team, toName: a && a.name, toUsername: a && a.username }) }); return r.ok; }
+    async function kudos(to, note, from, fromId) {
+      const a = engine.byId(to);
+      const r = await fetch(`${base}/kudos`, { method: 'POST', headers: await headersFor(), body: JSON.stringify({ to, note, team, fromId, toName: a && a.name, toUsername: a && a.username }) });
+      if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error || ('arena api ' + r.status)); }
+      return true;
+    }
     const teamPath = () => `${base}/teams/${encodeURIComponent(team)}`;
     async function call(method, path, body) {
       const r = await fetch(path, { method, headers: await headersFor(), body: body ? JSON.stringify(body) : undefined });

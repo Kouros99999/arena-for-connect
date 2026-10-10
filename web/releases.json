@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.5.0",
+    "date": "2026-10-09",
+    "title": "Tighter access, honest kudos, and discreet wallboards",
+    "summary": "Agents now see only their own team and their own feed, kudos are capped and cannot be traded, and wallboards can show shortened names.",
+    "changes": [
+      "Agents can read only their own team's leaderboard, challenges, rewards, kudos feed and coaching plans, and only their own points feed. Supervisors keep access to every team.",
+      "Kudos are limited per sender per day (five by default), cannot be sent to yourself, and must go to a teammate. An agent receiving far more kudos than the team average is flagged in the console.",
+      "A new setting, WallboardNames, shows full names, first name and last initial, or initials only on sign-in-free wallboards. Signed-in pages always show full names.",
+      "The database now keeps 35 days of point-in-time backups."
+    ],
+    "upgrade": [
+      "No action is needed; existing settings keep their behaviour.",
+      "If you use your own identity provider (AuthMode external), its tokens must carry the custom:team and custom:agentArn claims, as the sign-in guide already requires. Agents without a team claim are now refused on team pages.",
+      "Set KudosDailyLimit to change the cap, and WallboardNames to first or initials for floor TVs in shared spaces."
+    ]
+  },
+  {
     "version": "0.4.0",
     "date": "2026-10-03",
     "title": "Quality on every contact, a results report, and coaching",
