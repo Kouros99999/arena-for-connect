@@ -4,9 +4,23 @@
     {
       "name": "arena-prototype",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["prototype/serve.js"],
+      "runtimeArgs": [
+        "prototype/serve.js"
+      ],
       "port": 8765,
       "autoPort": true
+    },
+    {
+      "name": "arena-site",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8800",
+        "-d",
+        "web"
+      ],
+      "port": 8800
     }
   ]
 }

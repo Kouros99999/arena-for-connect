@@ -3,41 +3,146 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Arena for Amazon Connect</title>
-<meta name="description" content="Agent engagement for Amazon Connect: a live leaderboard in the agent workspace, a supervisor console with challenges and rewards, and a floor wallboard. Runs in your own AWS account.">
+<meta name="description" content="Agent engagement for Amazon Connect: a live, fair leaderboard inside the agent workspace, a supervisor console with coaching, challenges and rewards, and a results report. Runs in your own AWS account.">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="site.css">
-<header>
-  <a class="mark" href="./"><img src="logo.svg" alt="" width="32" height="32">Arena for Amazon Connect</a>
-  <nav><a href="kb.html">Help</a><a href="releases.html">Release notes</a><a href="support.html">Support</a><a href="privacy.html">Privacy</a></nav>
-</header>
-<main>
-  <h1>A fair, live leaderboard for your Amazon Connect agents</h1>
-  <p class="lede">Arena turns the activity your Connect instance already produces into points, streaks, challenges and rewards. Quality outweighs speed by design, and everything runs inside your own AWS account.</p>
-  <p><a class="btn" href="agent-panel.html">Try the live demo</a><a class="btn ghost" href="support.html">Get in touch</a></p>
-  <div class="cards">
-    <div class="card"><h3>Agent panel</h3><p>Points, level, streak and kudos inside the Connect agent workspace, updated within seconds of each contact.</p><p><a href="agent-panel.html">Open demo</a></p></div>
-    <div class="card"><h3>Supervisor console</h3><p>Team leaderboard, anomaly flags, a tunable scoring mix, challenges and reward approvals.</p><p><a href="supervisor-console.html">Open demo</a></p></div>
-    <div class="card"><h3>Results report</h3><p>Evaluation, sentiment and survey trends against the period before, with a line for every agent and coaching plan.</p><p><a href="report.html">Open demo</a></p></div>
-    <div class="card"><h3>Wallboard</h3><p>A floor display sized for a TV, opened with a sign-in-free link a supervisor creates.</p><p><a href="wallboard.html">Open demo</a></p></div>
+<header class="site"><div class="wrap">
+  <a class="mark" href="./"><img src="logo.svg" alt="">Arena for Amazon Connect</a>
+  <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
+  <nav class="main"><a href="#features">Features</a><a href="#how">How it works</a><a href="#pricing">Pricing</a><a href="kb.html">Help</a><a href="releases.html">Release notes</a><a class="cta" href="agent-panel.html">Try the demo</a></nav>
+</div></header>
+
+<section class="hero"><div class="wrap">
+  <div>
+    <span class="kicker">Built for Amazon Connect</span>
+    <h1>A fair, live leaderboard for your contact center agents</h1>
+    <p class="lede">Arena turns the activity your Connect instance already produces into points, streaks, challenges and rewards. Quality outweighs speed by design, and everything runs inside your own AWS account.</p>
+    <div class="btn-row"><a class="btn" href="agent-panel.html">Try the live demo</a><a class="btn ghost" href="support.html">Talk to us</a></div>
+    <p class="fine">Coming soon to AWS Marketplace. Deploys in about an hour with one CloudFormation launch. <span id="latest"></span></p>
   </div>
-  <h2>How it is delivered</h2>
-  <p>Arena is sold through AWS Marketplace and deploys as one CloudFormation stack into your AWS account. Agent data never leaves that account. Setup is a launch link, two settings in the Connect console, and users synced from your Connect directory.</p>
-  <p class="muted">The demo pages above run on simulated data in your browser.</p>
-  <p class="latest" id="latest" hidden></p>
-</main>
-<footer>
-  <a href="kb.html">Help</a><a href="releases.html">Release notes</a><a href="privacy.html">Privacy policy</a><a href="support.html">Support</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation</a>
-  <p>Arena is a product of EKPK LLC. Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon.</p>
-</footer>
+  <div class="shot frame"><img src="img/console.webp" alt="The Arena supervisor console: team leaderboard, scoring mix, flagged agents and challenges" width="1440" height="900" loading="eager"></div>
+</div></section>
+
+<section id="how" class="alt"><div class="wrap">
+  <div class="section-head"><h2>Up and running in an afternoon</h2><p>No agents to retrain, no spreadsheets to maintain. Arena reads what Connect already records.</p></div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><h3>Subscribe and launch</h3><p>Subscribe on AWS Marketplace. The registration page hands you a one-click CloudFormation launch into your own account.</p></div>
+    <div class="step"><div class="n">2</div><h3>Point Connect at Arena</h3><p>Two settings in the Connect console: send agent events to Arena's stream, and add the panel as a third-party application.</p></div>
+    <div class="step"><div class="n">3</div><h3>Sync your people</h3><p>One command creates agent and supervisor sign-ins from your Connect directory, each tied to the right agent and team.</p></div>
+    <div class="step"><div class="n">4</div><h3>Watch the first points land</h3><p>The first contact an agent handles shows up in their panel within seconds. Evaluations and sentiment follow as Contact Lens produces them.</p></div>
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <div class="section-head"><h2>Everything a floor needs to stay in the game</h2><p>Four screens, one scoring engine, no self-reporting anywhere.</p></div>
+
+  <div class="feature">
+    <div class="text">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M12 20V4M20 20v-7"/></svg></div>
+      <h3>Agent panel, inside the Connect workspace</h3>
+      <p>Points for today and this week, level, quality streak, badges, and the team leaderboard, all in a tab beside the contact. Agents send kudos, redeem points and see their coaching plan without leaving the workspace.</p>
+      <ul><li>Updated within seconds of each contact</li><li>Customer sentiment and survey score beside the evaluation average</li><li>Where you stand in a race and what you would win</li></ul>
+    </div>
+    <div class="shot tall"><img src="img/agent-panel.webp" alt="The Arena agent panel showing points, rank, streak and the team leaderboard" width="865" height="1800" loading="lazy"></div>
+  </div>
+
+  <div class="feature flip">
+    <div class="text">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <h3>Supervisor console</h3>
+      <p>The live leaderboard with quality measured on every contact, flags that prompt a conversation rather than a penalty, a scoring mix you can tune, and challenges with real rules: weighted measures, minimum qualifiers, prizes by place, head-to-head and team against team.</p>
+      <ul><li>Flags for agents gone quiet, volume without quality, low customer sentiment, auto-fails</li><li>Reward approvals in two clicks</li><li>Slack, Teams and email keep the team posted</li></ul>
+    </div>
+    <div class="shot"><img src="img/console.webp" alt="Supervisor console with leaderboard, scoring mix and challenges" width="1440" height="900" loading="lazy"></div>
+  </div>
+
+  <div class="feature">
+    <div class="text">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16M7 16l4-5 3 3 5-7"/></svg></div>
+      <h3>Results report</h3>
+      <p>Is it working? The report compares any period with the one before: evaluation average, customer sentiment, survey score, auto-fails, escalation rate and handle time, for the team and for every agent, with a daily chart and CSV export.</p>
+      <ul><li>Headline sentence a manager can forward</li><li>Every coaching plan with the numbers before and after</li><li>Prints cleanly</li></ul>
+    </div>
+    <div class="shot"><img src="img/report.webp" alt="The results report with period-over-period tiles and a daily chart" width="1440" height="900" loading="lazy"></div>
+  </div>
+
+  <div class="feature flip">
+    <div class="text">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <h3>Coaching that closes the loop</h3>
+      <p>Any flag opens a plan: the reason, the action agreed with the agent, a follow-up date and a private note. Arena records a 14-day baseline when the plan opens and shows the numbers since, so you know whether it worked before you close it.</p>
+      <ul><li>Agents confirm the plan in their panel</li><li>Private notes stay with supervisors</li><li>Before and after in the report</li></ul>
+    </div>
+    <div class="shot tall"><img src="img/coaching.webp" alt="Flags with Coach buttons, an open coaching plan with before and since numbers, and notification settings" width="1080" height="1800" loading="lazy"></div>
+  </div>
+
+  <div class="feature">
+    <div class="text">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+      <h3>Wallboard for the floor</h3>
+      <p>A display sized for a TV: leaderboard, team totals, the active challenge, kudos as they land, and a moment card when something worth celebrating happens. A supervisor creates a sign-in-free link in one click, and names can be shortened for shared spaces.</p>
+    </div>
+    <div class="shot"><img src="img/wallboard.webp" alt="The Arena wallboard on a floor display" width="1440" height="900" loading="lazy"></div>
+  </div>
+</div></section>
+
+<section class="alt"><div class="wrap">
+  <div class="section-head"><h2>Quality outweighs speed, by design</h2><p>A fast contact earns a little. A good evaluation earns a lot. An auto-fail removes points that no setting can soften. Customer sentiment and survey answers count as quality, and never deduct.</p></div>
+  <div class="pillars">
+    <div class="pillar"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"/></svg></div><h3>Runs in your account</h3><p>One CloudFormation stack. Agent data never leaves your AWS account. We see one number a day: how many agents were active, for billing.</p></div>
+    <div class="pillar"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div><h3>Nothing self-reported</h3><p>Points, challenge progress and coaching results come from Connect agent events, Contact Lens and surveys. Agents cannot type their own scores.</p></div>
+    <div class="pillar"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg></div><h3>Tunable, with guardrails</h3><p>Supervisors weight quality, productivity and adherence. The console warns when a mix would let volume beat quality.</p></div>
+    <div class="pillar"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Scoped by default</h3><p>Agents see their own team and their own feed. Supervisors see everything. Wallboards can show initials only. Kudos are capped so they cannot be traded.</p></div>
+  </div>
+</div></section>
+
+<section id="pricing"><div class="wrap">
+  <div class="section-head"><h2>Simple pricing</h2><p>Billed through AWS Marketplace on your existing AWS bill. No seats to count, no minimum.</p></div>
+  <div class="price">
+    <div class="price-card">
+      <div class="big">$0.40 <small>per active agent-day</small></div>
+      <p class="muted" style="margin-top:.6rem">About $12 per agent per month for a full-time agent. An agent with no contacts on a day costs nothing that day.</p>
+      <ul><li>Every feature, every team, every screen</li><li>Unlimited supervisors and wallboards</li><li>Updates included; see the <a href="releases.html">release notes</a></li><li>Email support with a one-business-day response</li></ul>
+      <div class="btn-row"><a class="btn" href="support.html">Ask for early access</a></div>
+    </div>
+    <dl class="notes">
+      <dt>What else does it cost?</dt><dd>The stack's own AWS resources are billed by AWS at normal rates, around $15 a month for a 500-agent center.</dd>
+      <dt>How is an active agent-day counted?</dt><dd>One unit for each agent who had scored activity that day, reported once a night from your stack. Nothing else leaves your account.</dd>
+      <dt>Can I pilot it first?</dt><dd>Yes. The same stack runs outside Marketplace with the billing settings left empty. <a href="support.html">Get in touch</a> and we will set you up.</dd>
+      <dt>Contact Lens and surveys?</dt><dd>Optional. Evaluations and customer sentiment need Contact Lens on your instance, billed by AWS as usual. Arena never re-runs analysis.</dd>
+    </dl>
+  </div>
+</div></section>
+
+<section class="alt"><div class="wrap">
+  <div class="section-head"><h2>Questions people ask</h2></div>
+  <div class="faq">
+    <details><summary>Does it work with our existing agent workspace?</summary><p>Arena is a third-party application in the Amazon Connect agent workspace, which means it opens as a tab beside the contact. It needs the standard workspace; custom contact control panels can open the panel in a browser tab instead.</p></details>
+    <details><summary>Can agents game it?</summary><p>Scores come only from Connect data. Kudos are capped per day, cannot be sent to yourself, and unusual kudos volume is flagged. Races have minimum qualifiers so a one-call wonder cannot win on a single evaluation.</p></details>
+    <details><summary>What do agents see of each other?</summary><p>Their own team's leaderboard and feed. Coaching plans are visible only to the agent concerned and their supervisors, and the supervisor's private note stays private.</p></details>
+    <details><summary>Can we use our own identity provider?</summary><p>Yes. Federate it to the user pool the stack creates, or launch with your provider's issuer and audience. The <a href="kb.html?a=users-and-sign-in">sign-in guide</a> explains both.</p></details>
+    <details><summary>How do we get our data out?</summary><p>It is in a DynamoDB table in your own account. Export it to S3 for your warehouse, or delete the stack and it is gone. Per-agent deletion is built in.</p></details>
+  </div>
+</div></section>
+
+<div class="band"><div class="wrap">
+  <h2>See it with your own team's data</h2>
+  <p>A pilot takes an afternoon to set up and runs inside your AWS account. We will walk you through it.</p>
+  <div class="btn-row"><a class="btn" href="support.html">Talk to us</a><a class="btn ghost" href="agent-panel.html">Open the demo</a></div>
+</div></div>
+
+<footer class="site"><div class="wrap">
+  <div><a class="mark" href="./"><img src="logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by EKPK LLC.</p></div>
+  <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="agent-panel.html">Demo</a><a href="releases.html">Release notes</a></div>
+  <div><h4>Support</h4><a href="kb.html">Help center</a><a href="support.html">Contact support</a><a href="privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation on GitHub</a></div>
+  <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
+</div></footer>
 <script>
 fetch('releases.json', { cache: 'no-cache' }).then((r) => r.json()).then((list) => {
   const r = list[0], el = document.getElementById('latest');
   if (!r || !el) return;
-  const day = new Date(r.date + 'T12:00:00Z').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
-  el.textContent = 'Latest version: ' + r.version + ', ' + day + '. ' + r.title + '. ';
-  const a = document.createElement('a'); a.href = 'releases.html#v' + r.version; a.textContent = 'See what changed'; el.appendChild(a);
-  el.hidden = false;
+  el.innerHTML = 'Latest version ' + r.version + ': <a href="releases.html#v' + r.version + '">' + r.title.replace(/[&<>]/g, '') + '</a>.';
 }).catch(() => {});
 </script>
 </html>
