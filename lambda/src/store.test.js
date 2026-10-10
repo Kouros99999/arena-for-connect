@@ -99,3 +99,11 @@ test('an adherence day adds hours and the percentage to the day and week rows', 
   const merged = store.mergeTeam([], [{ pk: 'AGENT#arn:a', points: 37, adherenceHours: 7.4, adhSum: 93.5, adhCount: 1 }], []);
   assert.equal(merged[0].adherenceHours, 7.4); assert.equal(merged[0].adhSum, 93.5);
 });
+
+test('a backfilled day carries its contacts, handle time and evaluation scores into the day row', () => {
+  const ev = { EventType: 'BACKFILL_DAY', AgentARN: 'arn:a', EventTimestamp: '2026-09-14T23:59:59.000Z', Team: 'Billing', Handled: 10, AhtSum: 3000, Evaluations: 2, EvalScore: 90, DedupKey: 'BF#2026-09-14#a' };
+  const day = store.planWrites(ev, 150, 0).find((x) => x.key && x.key.sk === 'DAY#2026-09-14');
+  assert.equal(day.values[':h'], 10); assert.equal(day.values[':aht'], 3000); assert.deepEqual(day.values[':ev'], [90, 90]); assert.equal(day.values[':p'], 150);
+  const none = store.planWrites(Object.assign({}, ev, { Evaluations: 0, EvalScore: null }), 100, 0).find((x) => x.key && x.key.sk === 'DAY#2026-09-14');
+  assert.equal(none.values[':ev'], undefined);
+});

@@ -405,7 +405,9 @@ button{font:inherit;cursor:pointer}
       : e.type==='SENTIMENT_SCORED' ? `Customer sentiment <b>${e.sentiment > 0 ? '+' : ''}${e.sentiment}</b> on a contact`
       : e.type==='CSAT_RECEIVED' ? `Customer survey: <b>${e.score} of 5</b>`
       : e.type==='STREAK_DAY' ? `Streak bonus${e.day ? ', day ' + e.day : ''}`
-      : e.type==='ADHERENCE_SCORED' ? `Schedule adherence <b>${Math.round(e.adherence || 0)}%</b>` : e.type;
+      : e.type==='ADHERENCE_SCORED' ? `Schedule adherence <b>${Math.round(e.adherence || 0)}%</b>`
+      : e.type==='EVALUATION_ACKNOWLEDGED' ? `Acknowledged your <b>${e.score != null ? e.score + '%' : ''}</b> evaluation`
+      : e.type==='BACKFILL_DAY' ? `History: <b>${e.handled || 0}</b> contacts` : e.type;
     async function loadFeed(){ const evs = await engine.events(YOU.id, 6); feed = evs.filter(e => e.points).map(e => ({ words: words(e), pts: e.points, t: e.at.slice(11,16) })); render(); }
     engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); loadPrefs(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
     engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); });

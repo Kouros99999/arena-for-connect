@@ -77,6 +77,8 @@ exports.handler = async (event) => {
     const points = Arena.scoreEvent('EVALUATION_SUBMITTED', ev, await mixFor(store, ev.Team));
     const applied = await store.apply(store.planWrites(ev, points));
     if (applied) scored++; else { skipped++; console.info('duplicate evaluation', doc.evaluationId); }
+    // The agent has not seen it yet: the acknowledgements job asks Connect later and pays the acknowledgement points.
+    if (applied && !ev.AutoFail) await store.putAck({ evaluationId: ev.EvaluationId, agent: ev.AgentARN, team: ev.Team, username: ev.Username, name: ev.Name, contactId: ev.ContactId, score: ev.Score, submittedAt: ev.EventTimestamp });
   }
   return { scored, skipped };
 };

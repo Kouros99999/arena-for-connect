@@ -68,3 +68,22 @@ test('SaaS mode fails loudly when Marketplace leaves the record unprocessed', as
   delete process.env.PRODUCT_CODE; delete process.env.LICENSE_ARN; delete process.env.CUSTOMER_ACCOUNT_ID;
   delete require.cache[require.resolve('./metering.js')];
 });
+
+test('free trial: the first agents each day are not billed for the trial period, and the full count is kept', async () => {
+  const { billable } = require('./metering.js');
+  const t0 = NOW;
+  assert.deepEqual(billable(40, t0, t0, 30, 25), { inTrial: true, billable: 15, trialEndsAt: new Date(t0 + 30 * 86400000).toISOString() });
+  assert.equal(billable(10, t0 + 10 * 86400000, t0, 30, 25).billable, 0);
+  assert.equal(billable(40, t0 + 31 * 86400000, t0, 30, 25).billable, 40);
+  assert.equal(billable(40, t0, null, 30, 25).billable, 40);
+  assert.equal(billable(40, t0, t0, 0, 25).inTrial, false);
+  // Through the handler: the trial row is created on the first report and the reported quantity is the billable count.
+  process.env.PRODUCT_CODE = 'code'; process.env.LICENSE_ARN = ''; delete require.cache[require.resolve('./metering.js')];
+  const mod = require('./metering.js');
+  const s = fakeStore(); const sent = [];
+  const metering = { client: { send: async (cmd) => { sent.push(cmd.input); return { MeteringRecordId: 'rec' }; } }, MeterUsageCommand: function (i) { this.input = i; }, BatchMeterUsageCommand: function (i) { this.input = i; } };
+  const r = await mod.handler({}, {}, { store: s, now: () => NOW, metering, trialDays: 30, trialAgents: 1 });
+  assert.equal(r.count, 2); assert.equal(r.billed, 1); assert.equal(r.trial, true); assert.equal(sent[0].UsageQuantity, 1);
+  assert.equal(s.meters.TRIAL.startedAt, new Date(NOW).toISOString()); assert.equal(s.meters['2026-09-16'].count, 2); assert.equal(s.meters['2026-09-16'].billed, 1);
+  delete process.env.PRODUCT_CODE; delete require.cache[require.resolve('./metering.js')];
+});

@@ -12,6 +12,9 @@
  *
  * Idempotent per day: the report carries a UsageRecord for today's date and the
  * last reported count is stored in the table so a retry never double-bills.
+ *
+ * Free trial: for the first TRIAL_DAYS after the first report, up to TRIAL_AGENTS agents a day are not billed.
+ * The count reported to Marketplace is what is left after that allowance; the full count is still stored.
  */
 'use strict';
 const store = require('./store.js');
@@ -21,6 +24,14 @@ const LICENSE_ARN = process.env.LICENSE_ARN || '';               // SaaS listing
 const CUSTOMER_ACCOUNT_ID = process.env.CUSTOMER_ACCOUNT_ID || ''; // SaaS listings: the buyer's CustomerAWSAccountId
 const DIMENSION = process.env.USAGE_DIMENSION || 'agent_days';
 const WINDOW_DAYS = +(process.env.USAGE_WINDOW_DAYS || 1);
+const TRIAL_DAYS = Math.max(0, +(process.env.TRIAL_DAYS || 0));
+const TRIAL_AGENTS = Math.max(0, +(process.env.TRIAL_AGENTS || 0));
+
+/** Pure: how many of `count` agents to bill today given when the trial started. */
+function billable(count, now, trialStartMs, trialDays, trialAgents) {
+  const inTrial = trialDays > 0 && trialStartMs != null && now < trialStartMs + trialDays * 86400000;
+  return { inTrial, billable: inTrial ? Math.max(0, count - trialAgents) : count, trialEndsAt: inTrial ? new Date(trialStartMs + trialDays * 86400000).toISOString() : null };
+}
 
 let mm;
 function metering() {
@@ -47,6 +58,16 @@ async function report(count, now, deps) {
   const prior = await s.getMeter(day);
   if (prior && prior.reported) return { skipped: 'already reported', day, count: prior.count };
   if (!PRODUCT_CODE) { await s.putMeter(day, { count, reported: false, note: 'no PRODUCT_CODE' }); return { skipped: 'not a Marketplace deployment', day, count }; }
+  // The trial clock starts with the first report this stack makes.
+  const trialDays = deps.trialDays != null ? deps.trialDays : TRIAL_DAYS, trialAgents = deps.trialAgents != null ? deps.trialAgents : TRIAL_AGENTS;
+  let trialStart = null;
+  if (trialDays > 0) {
+    const t = await s.getMeter('TRIAL');
+    if (t && t.startedAt) trialStart = Date.parse(t.startedAt);
+    else { trialStart = now; await s.putMeter('TRIAL', { startedAt: new Date(now).toISOString(), days: trialDays, agents: trialAgents }); }
+  }
+  const trial = billable(count, now, trialStart, trialDays, trialAgents);
+  const full = count; count = trial.billable;
   const m = deps.metering || metering();
   let recordId;
   if (LICENSE_ARN) {
@@ -63,8 +84,8 @@ async function report(count, now, deps) {
     const r = await m.client.send(new m.MeterUsageCommand({ ProductCode: PRODUCT_CODE, Timestamp: new Date(now), UsageDimension: DIMENSION, UsageQuantity: count, DryRun: false }));
     recordId = r.MeteringRecordId;
   }
-  await s.putMeter(day, { count, reported: true, meteringRecordId: recordId, mode: LICENSE_ARN ? 'saas' : 'ami', at: new Date(now).toISOString() });
-  return { reported: true, day, count, meteringRecordId: recordId, mode: LICENSE_ARN ? 'saas' : 'ami' };
+  await s.putMeter(day, { count: full, billed: count, trial: trial.inTrial, reported: true, meteringRecordId: recordId, mode: LICENSE_ARN ? 'saas' : 'ami', at: new Date(now).toISOString() });
+  return { reported: true, day, count: full, billed: count, trial: trial.inTrial, trialEndsAt: trial.trialEndsAt, meteringRecordId: recordId, mode: LICENSE_ARN ? 'saas' : 'ami' };
 }
 
 exports.handler = async (event, context, deps) => {
@@ -79,4 +100,5 @@ exports.handler = async (event, context, deps) => {
 };
 
 exports.countActive = countActive;
+exports.billable = billable;
 exports.report = report;

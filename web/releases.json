@@ -1,5 +1,28 @@
 [
   {
+    "version": "0.9.0",
+    "date": "2026-10-10",
+    "title": "History on day one, evaluation acknowledgements, and a free trial",
+    "summary": "A new stack loads the last 90 days from Amazon Connect, agents earn points for acknowledging their evaluations, and the first 30 days are free for up to 25 agents a day.",
+    "changes": [
+      "Backfill: with ConnectInstanceArn set, the stack lists your users so the whole team appears in the console, and loads up to 90 days of contacts handled, handle time and evaluation scores per agent from Connect's historical metrics. Points are what Arena would have scored. Days the stream already covered are left alone, and backfilled days never count toward billing.",
+      "Evaluation acknowledgements: 5 points, scaled by the quality weight, when an agent acknowledges their evaluation in Amazon Connect. The stack checks hourly for evaluations submitted in the last 30 days.",
+      "Free trial: for 30 days from the first nightly usage report, up to 25 active agents a day are not billed. The full count is still recorded.",
+      "The agent's feed names acknowledgement and history lines."
+    ],
+    "upgrade": [
+      "Existing stacks keep running as before. To load history, set ConnectInstanceArn when you update the stack; BackfillDays defaults to 90 and the load runs once within the hour.",
+      "The trial clock starts with the first usage report after this update, so existing subscribers also get 30 days of allowance.",
+      "Acknowledgement points need EvaluationsBucket set, as evaluation scoring already does."
+    ],
+    "docs": [
+      "getting-started",
+      "how-scoring-works",
+      "billing",
+      "settings-reference"
+    ]
+  },
+  {
     "version": "0.8.0",
     "date": "2026-10-10",
     "title": "Scoring profiles per team and a personal-best view",

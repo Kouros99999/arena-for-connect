@@ -21,6 +21,8 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `lambda/src/adherence.js` | Nightly schedule adherence import from Connect (GetMetricDataV2) |
 | `lambda/src/clock.js` | Local time: day, week and month keys in the stack's Timezone |
 | `lambda/src/mix.js` | Which scoring mix applies to a team, cached |
+| `lambda/src/backfill.js` | One-time history load from Connect metrics |
+| `lambda/src/acknowledgements.js` | Hourly evaluation acknowledgement points |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
 | `web/` | Public site for arenaforconnect.com: landing page, support, privacy policy (deployed with the demo by GitHub Pages) |
@@ -40,7 +42,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -127,6 +129,12 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 ## Operations
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
+
+**Backfill.** With `ConnectInstanceArn` set and `BackfillDays` > 0, `lambda/src/backfill.js` runs hourly until a `MARK / BACKFILL#done` row exists: it lists the instance's users (`ListUsers`, `DescribeUser`, `DescribeRoutingProfile`) and seeds a LIVE row per agent without a `lastEvent`, then reads `GetMetricDataV2` per agent and day (`CONTACTS_HANDLED`, `SUM_HANDLE_TIME`, `EVALUATIONS_PERFORMED`, `AVG_EVALUATION_SCORE`) and writes one `BACKFILL_DAY` event per agent-day with contacts, worth what the engine would have scored them. Days that already have a row are skipped; today never is.
+
+**Evaluation acknowledgements.** The evaluations handler leaves an `ACK / <evaluationId>` row per scored evaluation; `lambda/src/acknowledgements.js` runs hourly, calls `DescribeContactEvaluation`, and pays `EVALUATION_ACKNOWLEDGED` (BASE.evalAck, quality-weighted, deduped) when Connect reports an acknowledgement, dropping rows after 30 days.
+
+**Free trial.** `MarketplaceTrialDays` and `MarketplaceTrialAgents` (30 and 25) make metering subtract up to 25 agents a day for 30 days from the first report (`METER / TRIAL` row); the stored meter row keeps both `count` and `billed`.
 
 **Scoring profiles.** `CONFIG / MIX` is the default mix and `CONFIG / MIX#<team>` a team's own; `lambda/src/mix.js` resolves which applies (team, then default, then the engine's built-in weights) with a one-minute cache per team, and every stream handler scores with the event's team. `GET/PUT /config/mix?team=T` reads and writes a profile, `{ useDefault: true }` removes it.
 

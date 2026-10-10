@@ -45,7 +45,7 @@ function planWrites(ev, points, now) {
   now = now || Date.now();
   const pk = keys.agent(ev.AgentARN), ts = ev.EventTimestamp, team = ev.Team || 'unassigned';
   const isContact = ev.EventType === 'CONTACT_HANDLED', isEval = ev.EventType === 'EVALUATION_SUBMITTED';
-  const isSent = ev.EventType === 'SENTIMENT_SCORED', isCsat = ev.EventType === 'CSAT_RECEIVED', isAdh = ev.EventType === 'ADHERENCE_SCORED';
+  const isSent = ev.EventType === 'SENTIMENT_SCORED', isCsat = ev.EventType === 'CSAT_RECEIVED', isAdh = ev.EventType === 'ADHERENCE_SCORED', isBackfill = ev.EventType === 'BACKFILL_DAY';
   const writes = [];
 
   // Optional idempotency marker. A conditional put that fails aborts the rest of the plan.
@@ -63,15 +63,16 @@ function planWrites(ev, points, now) {
   // Kudos also land on a team feed so the console and wallboard can list them without scanning agents.
   if (ev.EventType === 'KUDOS') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Note, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
 
-  if (points !== 0 || isContact || isEval || isSent || isCsat || isAdh || ev.EventType === 'KUDOS') {
+  if (points !== 0 || isContact || isEval || isSent || isCsat || isAdh || isBackfill || ev.EventType === 'KUDOS') {
     for (const [kind, period] of [['DAY', dayKey(ts)], ['WEEK', weekKey(ts)]]) {
-      const values = { ':p': points, ':h': isContact ? 1 : 0, ':aht': isContact ? ev.HandleTime || 0 : 0,
+      const values = { ':p': points, ':h': isContact ? 1 : isBackfill ? ev.Handled || 0 : 0, ':aht': isContact ? ev.HandleTime || 0 : isBackfill ? ev.AhtSum || 0 : 0,
         ':esc': isContact && ev.Escalated ? 1 : 0, ':af': isEval && ev.AutoFail ? 1 : 0, ':k': ev.EventType === 'KUDOS' ? 1 : 0,
         ':ss': isSent ? ev.Sentiment : 0, ':sc': isSent ? 1 : 0, ':cs': isCsat ? ev.Score : 0, ':cc': isCsat ? 1 : 0,
         ':ah': isAdh ? ev.AdherentHours || 0 : 0, ':as': isAdh ? ev.Adherence || 0 : 0, ':ac': isAdh ? 1 : 0,
         ':g1': keys.team(team, kind, period), ':g2': pk, ':user': ev.Username || ev.AgentARN, ':empty': [] };
       let expr = 'SET gsi1pk = :g1, gsi1sk = :g2, username = if_not_exists(username, :user)';
       if (isEval) { expr += ', evals = list_append(if_not_exists(evals, :empty), :ev)'; values[':ev'] = [ev.AutoFail ? 0 : ev.Score]; }
+      else if (isBackfill && ev.Evaluations > 0 && ev.EvalScore != null) { expr += ', evals = list_append(if_not_exists(evals, :empty), :ev)'; values[':ev'] = Array.from({ length: Math.min(10, ev.Evaluations) }, () => ev.EvalScore); }
       else expr += ', evals = if_not_exists(evals, :empty)';
       expr += ' ADD points :p, handled :h, ahtSum :aht, escalations :esc, autofails :af, kudosReceived :k, sentSum :ss, sentCount :sc, csatSum :cs, csatCount :cc, adherenceHours :ah, adhSum :as, adhCount :ac';
       writes.push({ op: 'update', key: { pk, sk: `${kind}#${period}` }, expr, values });
@@ -94,6 +95,24 @@ async function apply(writes) {
   return true;
 }
 
+/** A LIVE row for an agent the stream has not seen yet (backfill). Leaves lastEvent alone so metering ignores them until they work. */
+async function seedLive(arn, f) {
+  const team = f.team || 'unassigned';
+  await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: 'LIVE' },
+    UpdateExpression: 'SET team = if_not_exists(team, :team), username = if_not_exists(username, :u), displayName = if_not_exists(displayName, :n), gsi1pk = if_not_exists(gsi1pk, :g1), gsi1sk = if_not_exists(gsi1sk, :g2)',
+    ExpressionAttributeValues: { ':team': team, ':u': f.username || arn, ':n': f.displayName || f.username || arn.split('/').pop(), ':g1': keys.team(team, 'LIVE'), ':g2': keys.agent(arn) } }));
+}
+// ---------- pending evaluation acknowledgements: pk ACK, sk <evaluationId> ----------
+async function putAck(a) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'ACK', sk: a.evaluationId, ttl: Math.floor(Date.now() / 1000) + 45 * 86400 }, a) })); }
+async function deleteAck(evaluationId) { await db().send(new cmds.DeleteCommand({ TableName: TABLE, Key: { pk: 'ACK', sk: evaluationId } })); }
+async function listAcks() {
+  const d = db(); const out = []; let ExclusiveStartKey;
+  do {
+    const r = await d.send(new cmds.QueryCommand({ TableName: TABLE, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': 'ACK' }, ExclusiveStartKey }));
+    out.push(...(r.Items || [])); ExclusiveStartKey = r.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return out;
+}
 /** LIVE row for one agent, or null. Used to attach team and username to events that do not carry them. */
 async function getLive(arn) {
   const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: 'LIVE' } }));
@@ -340,7 +359,7 @@ async function putAgentPrefs(arn, prefs) {
   } catch (e) { if (e.name === 'ConditionalCheckFailedException') return false; throw e; }
 }
 
-module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, getMixes, putMix, deleteMix, putAgentPrefs, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
+module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, getMixes, putMix, deleteMix, putAgentPrefs, seedLive, putAck, deleteAck, listAcks, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
   getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount, getNotify, putNotify, getDigestMark, putDigestMark, listTeams,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

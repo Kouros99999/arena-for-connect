@@ -58,6 +58,26 @@ Parameters:
     Default: disabled
     AllowedValues: [enabled, disabled]
     Description: Score schedule adherence from Amazon Connect each night (needs forecasting, capacity planning and scheduling enabled on the instance). Points per adherent hour, weighted by the adherence slider.
+  ConnectInstanceArn:
+    Type: String
+    Default: ''
+    Description: ARN of your Amazon Connect instance. Needed only for backfill (reads history with GetMetricDataV2 and lists your users). Leave empty to skip backfill.
+  BackfillDays:
+    Type: Number
+    Default: 90
+    MinValue: 0
+    MaxValue: 92
+    Description: On first run, load this many days of past contacts and evaluations per agent from Amazon Connect (up to 92; Connect keeps three months). 0 disables. Needs ConnectInstanceArn.
+  MarketplaceTrialDays:
+    Type: Number
+    Default: 30
+    MinValue: 0
+    Description: Free trial length in days from the first usage report. During the trial the first MarketplaceTrialAgents active agents each day are not billed. 0 disables.
+  MarketplaceTrialAgents:
+    Type: Number
+    Default: 25
+    MinValue: 0
+    Description: Agents per day that are free during the trial.
   KudosDailyLimit:
     Type: Number
     Default: 5
@@ -106,6 +126,7 @@ Conditions:
   HasDigestEmail: !Not [!Equals [!Ref DigestEmail, '']]
   InstallSite: !Not [!Equals [!Ref SiteArchiveUrl, '']]
   UseAdherence: !Equals [!Ref ScheduleAdherence, enabled]
+  UseBackfill: !And [!Not [!Equals [!Ref ConnectInstanceArn, '']], !Not [!Equals [!Ref BackfillDays, '0']]]
 
 Globals:
   Function:
@@ -240,6 +261,8 @@ Resources:
           CUSTOMER_ACCOUNT_ID: !Ref MarketplaceCustomerAccountId
           USAGE_DIMENSION: agent_days   # listing dimension: one unit per agent with scored activity that day
           USAGE_WINDOW_DAYS: '1'
+          TRIAL_DAYS: !Ref MarketplaceTrialDays
+          TRIAL_AGENTS: !Ref MarketplaceTrialAgents
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - Statement:
@@ -305,6 +328,53 @@ Resources:
           Properties:
             Schedule: cron(30 * * * ? *)   # half past every hour; the first run after local midnight assesses yesterday, the rest are no-ops
             Description: Assess each agent's previous day and update quality streaks
+
+  AcknowledgementsFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseEvaluations
+    Properties:
+      FunctionName: !Sub arena-acknowledgements-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: acknowledgements.handler
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: connect:DescribeContactEvaluation
+              Resource: !Sub arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/*
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(20 * * * ? *)   # twenty past every hour: pay points for evaluations agents have acknowledged
+            Description: Score evaluation acknowledgements from Amazon Connect
+
+  BackfillFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseBackfill
+    Properties:
+      FunctionName: !Sub arena-backfill-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: backfill.handler
+      Timeout: 900
+      MemorySize: 512
+      Environment:
+        Variables:
+          CONNECT_INSTANCE_ARN: !Ref ConnectInstanceArn
+          BACKFILL_DAYS: !Ref BackfillDays
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: [connect:ListUsers, connect:DescribeUser, connect:DescribeRoutingProfile, connect:GetMetricDataV2]
+              Resource: !Sub arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/*
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)         # runs until it has done the one-time backfill, then finds the mark and exits
+            Description: One-time history load from Amazon Connect
 
   AdherenceFunction:
     Type: AWS::Serverless::Function

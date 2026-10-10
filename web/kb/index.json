@@ -3,13 +3,13 @@
     "slug": "getting-started",
     "title": "Getting started",
     "summary": "From subscribing on AWS Marketplace to agents seeing their first points.",
-    "updated": "0.5.0"
+    "updated": "0.9.0"
   },
   {
     "slug": "how-scoring-works",
     "title": "How scoring works",
     "summary": "Where points come from, why quality outweighs speed, and what the scoring mix changes.",
-    "updated": "0.8.0"
+    "updated": "0.9.0"
   },
   {
     "slug": "sentiment-and-surveys",
@@ -63,13 +63,13 @@
     "slug": "settings-reference",
     "title": "Settings reference",
     "summary": "Every setting on the launch page, what it does, and when to change it.",
-    "updated": "0.7.0"
+    "updated": "0.9.0"
   },
   {
     "slug": "billing",
     "title": "Billing and cancellation",
     "summary": "How the active agent-day is counted, what you pay, and how to stop.",
-    "updated": "0.3.0"
+    "updated": "0.9.0"
   },
   {
     "slug": "troubleshooting",

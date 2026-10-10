@@ -27,6 +27,8 @@ Arena reads the agent event stream. In the Amazon Connect console:
 2. Under **Agent events**, choose the Kinesis stream named in the `StreamArn` output.
 3. Save.
 
+Optional, and recommended: set **ConnectInstanceArn** on the stack (the instance's ARN from the Connect console) and leave **BackfillDays** at 90. Within the hour the stack lists your users so every agent appears in the console, and loads the last 90 days of contacts and evaluations per agent from Connect's own metrics, so leaderboards, the results report and personal bests have history on day one. Backfilled days show as "History" lines in an agent's feed and never count toward billing.
+
 Optional, for survey scores: under **Contact records**, choose the same stream, and set the `CsatAttribute` setting on the stack to the contact attribute your survey writes. See [customer sentiment and survey scores](kb.html?a=sentiment-and-surveys).
 
 ## 3. Put the panel in the agent workspace

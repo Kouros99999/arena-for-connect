@@ -62,7 +62,7 @@ function registeredPage(c) {
 <li><b>Add the panel to the agent workspace.</b> Register <code>&lt;SiteUrl&gt;/agent-panel.html</code> as a third-party application and grant it on your agents' security profiles.</li>
 <li><b>Create sign-ins.</b> Add your agents and supervisors to the Cognito user pool the stack created (the <code>UserPoolId</code> output), with the <code>custom:agentArn</code> and <code>custom:team</code> attributes. The <code>sync-users</code> script in the docs does this from your Connect directory in one command.</li>
 </ol>
-<div class="warn">Billing is per active agent-day, reported nightly from your stack against this subscription. Nothing is billed until agents produce activity.</div>
+<div class="warn">Billing is per active agent-day, reported nightly from your stack against this subscription. Nothing is billed until agents produce activity, and for the first 30 days up to 25 active agents a day are free.</div>
 <h2>Need help?</h2>
 <p>Documentation and scripts: <a href="https://github.com/Kouros99999/arena-for-connect">github.com/Kouros99999/arena-for-connect</a>${SUPPORT ? ` · Support: <a href="mailto:${esc(SUPPORT)}">${esc(SUPPORT)}</a>` : ''}</p>`);
 }

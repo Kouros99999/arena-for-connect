@@ -44,7 +44,7 @@ Entered in the stored listing on 2026-10-03 (Save updates request succeeded 11:1
 - **Dimension:** `agent_days` — display "Active agent-day", unit type Units, description "One agent with scored activity on a day (UTC). About 16 USD per agent per month."
 - **Price:** $0.75 per agent-day (≈ $16 per agent per month at 22 working days; raised from $0.40 on 2026-10-10, before public availability). Entered as the test price $0.00000001 while the listing is in limited visibility; set the real price in the update request that asks for public availability. Optional private offer at $0.50 per agent-day for 500+ seats.
 - **Metering change needed:** the stack must report a per-day count (`USAGE_DIMENSION=agent_days`, `USAGE_WINDOW_DAYS=1`) instead of the trailing-30-day count; see README.
-- **Free trial:** 30 days, up to 25 agents
+- **Free trial:** 30 days, up to 25 agents. Implemented in the stack's metering (MarketplaceTrialDays=30, MarketplaceTrialAgents=25): the first 25 active agents a day are subtracted before the usage report for 30 days from the first report. Marketplace itself has no trial for usage pricing, so the listing text describes it and the stack enforces it.
 - **Refund policy text:** Cancel any time from AWS Marketplace; usage is billed monthly in arrears for agent-days already reported, and no further usage is reported after cancellation.
 
 ## Submitted (2026-10-09)

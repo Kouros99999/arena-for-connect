@@ -107,7 +107,7 @@ function makeHandler(deps) {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
           const limit = Math.min(100, +(qs.limit || 20));
           const items = await s.listEvents(r.arn, limit);
-          return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day, adherence: i.Adherence })) });
+          return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day, adherence: i.Adherence, handled: i.Handled })) });
         }
         case 'getMix': {
           const team = qs.team || '';

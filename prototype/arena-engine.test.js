@@ -241,3 +241,8 @@ test('personal best compares an agent with their own record', () => {
   assert.equal(record.newBestDay, true); assert.equal(record.dayPct, 100);
   assert.equal(Arena.isoWeek('2026-09-15'), '2026-W38');
 });
+
+test('acknowledging an evaluation pays a small quality-weighted bonus', () => {
+  assert.equal(Arena.scoreEvent('EVALUATION_ACKNOWLEDGED', { Score: 92 }, Arena.DEFAULT_MIX), 5);
+  assert.equal(Arena.scoreEvent('EVALUATION_ACKNOWLEDGED', { Score: 92 }, { quality: 100, productivity: 0, adherence: 0 }), 10);
+});

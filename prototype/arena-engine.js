@@ -33,6 +33,7 @@
     csat: (n) => (n >= 5 ? 10 : n >= 4 ? 6 : n >= 3 ? 2 : 0),
     kudos: 8,
     streakDay: 25,
+    evalAck: 5,        // reading and acknowledging your own evaluation: the coaching loop closes
   };
 
   const LEVELS = [
@@ -300,6 +301,7 @@
       case 'CSAT_RECEIVED': return Math.round(BASE.csat(data.Score) * q);
       case 'KUDOS': return BASE.kudos;
       case 'STREAK_DAY': return BASE.streakDay;
+      case 'EVALUATION_ACKNOWLEDGED': return Math.round(BASE.evalAck * q);
       case 'CHALLENGE_WON': return Math.max(0, Math.round(Number(data.Points) || 0));
       default: return 0;
     }
@@ -456,6 +458,7 @@
       if (type === 'SENTIMENT_SCORED') { agent.sentSum = round1((agent.sentSum || 0) + ev.Sentiment); agent.sentCount = (agent.sentCount || 0) + 1; }
       if (type === 'CSAT_RECEIVED') { agent.csatSum = round1((agent.csatSum || 0) + ev.Score); agent.csatCount = (agent.csatCount || 0) + 1; }
       if (type === 'AGENT_STATE_CHANGE') agent.state = ev.State;
+      if (type === 'BACKFILL_DAY') { agent.handled += ev.Handled || 0; agent.ahtSum += ev.AhtSum || 0; }
       agent.today += pts; agent.week += pts;
       const result = { event: ev, agent, points: pts, words: describe(type, ev) };
       listeners.forEach((fn) => fn(result));
@@ -469,6 +472,8 @@
       if (type === 'ADHERENCE_HOUR') return 'Hour in adherence';
       if (type === 'ADHERENCE_SCORED') return `Schedule adherence <b>${Math.round(ev.Adherence || 0)}%</b>, ${round1(ev.AdherentHours || 0)} h on schedule`;
       if (type === 'STREAK_DAY') return `Streak bonus, day ${ev.Day}`;
+      if (type === 'EVALUATION_ACKNOWLEDGED') return `Acknowledged your <b>${ev.Score != null ? ev.Score + '%' : ''}</b> evaluation`;
+      if (type === 'BACKFILL_DAY') return `History: <b>${ev.Handled}</b> contacts on ${ev.Day}`;
       if (type === 'CHALLENGE_WON') return `Challenge <b>${ev.Title || 'won'}</b>${ev.Place ? ', ' + ev.Place : ''}`;
       if (type === 'SENTIMENT_SCORED') return `Customer sentiment <b>${ev.Sentiment > 0 ? '+' : ''}${ev.Sentiment}</b> on a contact`;
       if (type === 'CSAT_RECEIVED') return `Customer survey: <b>${ev.Score} of 5</b>`;

@@ -12,6 +12,7 @@ Arena turns what already happens in Amazon Connect into points. Nothing is self-
 | Customer sentiment on an analysed contact | 8 for strongly positive, 5 for positive, 2 for neutral, 0 for negative |
 | Post-contact survey answer | 10 for 5 of 5, 6 for 4, 2 for 3, 0 below |
 | Schedule adherence, each night (with `ScheduleAdherence` enabled) | 5 per hour spent on schedule the day before; a 7.4-hour adherent day is 37 |
+| Acknowledging your own evaluation in Connect | 5 |
 | Kudos from a teammate | 8 |
 | Quality streak, from day two | 25 each clean day |
 
@@ -23,11 +24,15 @@ Supervisors tune three weights in the console that must add to 100%: quality, pr
 
 The mix can differ by team. The console's scoring mix card shows which mix applies to the team on screen and has a **Save for** choice: *every team* changes the default, *this team only* gives that team its own profile. A chat team can weight productivity higher while an escalations team weights quality higher. **Use the default again** removes a team's profile. Points already scored keep the mix they were scored with.
 
-- Quality scales evaluations, customer sentiment and survey points.
+- Quality scales evaluations, acknowledgements, customer sentiment and survey points.
 - Productivity scales contact points.
 - Adherence scales schedule adherence points. They exist only when the stack's `ScheduleAdherence` setting is enabled and your Connect instance has scheduling turned on; otherwise the slider changes nothing.
 
 The console warns if quality drops under 40%, because that lets volume beat quality. The auto-fail penalty is never scaled.
+
+## Acknowledging evaluations
+
+When an agent opens an evaluation in Amazon Connect and acknowledges it, Arena pays 5 points on the day of the acknowledgement. The stack checks with Connect every hour for evaluations submitted in the last 30 days, so the points arrive within the hour. Auto-failed evaluations carry no acknowledgement points. This needs evaluation scoring to be on (`EvaluationsBucket`).
 
 ## Levels, badges and streaks
 
