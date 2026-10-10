@@ -29,7 +29,10 @@ async function api(req, res, p) {
   try {
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/challenges$/))) return json(res, 200, { challenges: await engine.challenges() });
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/challenges$/))) return json(res, 201, { challenge: await engine.createChallenge(await body(req)) });
-    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/challenges\/([^/]+)$/))) return json(res, 200, { challenge: await engine.endChallenge(decodeURIComponent(m[2])) });
+    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/challenges\/([^/]+)$/))) return json(res, 200, { challenge: await engine.updateChallenge(decodeURIComponent(m[2]), await body(req)) });
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/notifications$/))) return json(res, 200, { notifications: await engine.notifications() });
+    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/notifications$/))) return json(res, 200, { notifications: await engine.saveNotifications(await body(req)) });
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/notifications\/test$/))) return json(res, 200, await engine.testNotification());
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const st = (req.url.split('?')[1] || '').match(/status=([a-z]+)/); return json(res, 200, { rewards: await engine.rewards(st && st[1]), catalog: Arena.CATALOG }); }
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const b = await body(req); return json(res, 201, { reward: await engine.requestReward(b.agentId, b.catalogId, b.by) }); }
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) { const b = await body(req); return json(res, 200, { reward: await engine.decideReward(decodeURIComponent(m[2]), b.status, 'mock supervisor') }); }

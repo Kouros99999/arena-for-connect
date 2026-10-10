@@ -2,14 +2,31 @@
 
 ## Challenges
 
-A challenge sets a target for a period and measures progress from Connect data. Agents cannot report their own progress. Supervisors create challenges from the console with **New challenge**, choosing a template:
+A challenge sets a target for a period and measures progress from Connect data over the whole of that period. Agents cannot report their own progress. Supervisors create challenges from the console with **New challenge**, choosing a template:
 
 - **Keep escalations under target**: the team's escalation rate stays at or below a percentage.
 - **Every evaluation at or above a score**: every evaluated agent clears the bar.
 - **Team points target**: the team earns a total.
 - **Kudos received per agent**: everyone receives at least a number of kudos.
+- **Agent race**: agents are ranked on one or two measures, with prizes by finishing place.
+- **Head-to-head**: two agents on one measure. The winner takes the reward.
+- **Team vs team**: your team against another routing profile on one measure.
 
-Each has a scope, a target, a reward in points, and start and end dates. Progress shows in the console, the agent panel and on wallboards. A supervisor can end a challenge early.
+Measures for races, head-to-heads and team contests: points, contacts handled, evaluation average, customer sentiment, survey score, handle time, escalation rate, kudos received.
+
+### Contest rules for a race
+
+- **Two measures, weighted.** Pick a main measure and optionally a second, with weights. Each agent is scored from 0 to 100 against the best in the field, lower-is-better measures are inverted, and the weighted score ranks them.
+- **Minimum qualifier.** An agent needs at least that many contacts in the period to be ranked, so a one-call wonder cannot win on a single evaluation.
+- **Prizes by place.** Points for 1st, 2nd and 3rd, each paid to the agent who finishes there.
+- **Anonymised standings.** Hide names from agents until the race ends. Each agent still sees their own position; supervisors see everything.
+- **Disqualify.** A supervisor can remove an agent from a running race with **DQ** on their row, and reinstate them later. The agent sees "disqualified"; the rest of the field re-ranks.
+
+### Finishing
+
+When a challenge's end date passes, or a supervisor ends it early, its standings are **frozen** and the prizes are **paid as points** once, with a "Challenge won" line in each winner's feed. For team challenges, the reward goes to everyone who took part if the target was held. Later data never changes a finished result.
+
+Progress shows in the console, the agent panel and on wallboards. Challenge starts and results also go to the team's Slack or Teams channel if [notifications](kb.html?a=notifications) are set up.
 
 ## Rewards
 

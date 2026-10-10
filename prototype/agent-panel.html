@@ -285,10 +285,15 @@ button{font:inherit;cursor:pointer}
     if (!chal) { $('#chalEnds').textContent = ''; box.innerHTML = '<div class="d">No active challenge. Your supervisor can start one from the console.</div>'; return; }
     const p = chal.progress || {};
     $('#chalEnds').textContent = 'ends ' + chal.endsAt;
+    const st = p.standings, me = st && st.rows.find(r => r.you || (YOU && r.agentId === YOU.id));
+    const ranked = st ? st.rows.filter(r => r.rank) : [];
+    const mine = me ? (me.rank ? `You are <b>${me.rank}${['th','st','nd','rd'][me.rank % 10 > 3 || (me.rank % 100 - me.rank % 10 === 10) ? 0 : me.rank % 10]}</b> of ${ranked.length}` + (me.prize ? ` · +${me.prize} pts if it holds` : '') : me.excluded ? 'You are not in this one' : chal.minContacts ? `Handle ${chal.minContacts} contacts to be ranked` : 'Not ranked yet') : '';
+    const top = st && !chal.anonymize ? ranked.slice(0, 3).map(r => `${r.rank}. ${esc(r.name)}`).join(' · ') : st && chal.anonymize ? 'Names are hidden until it ends' : '';
+    const reward = chal.template === 'race' ? ((chal.tiers || []).length ? 'prizes ' + chal.tiers.map(t => t.reward).join(' / ') + ' pts' : `+${chal.reward} pts to the winner`) : chal.template === 'duel' ? `+${chal.reward} pts to the winner` : chal.template === 'teams' ? `+${chal.reward} pts each if we win` : `+${chal.reward} pts each if held`;
     box.innerHTML = `<div class="t">${esc(chal.title)}</div>
       <div class="d">${esc(chal.scope)}. Measured from Connect data, not self-reported.</div>
       <div class="bar"><i style="width:${Math.round((p.progress || 0) * 100)}%"></i></div>
-      <div class="meta"><span>${p.measured === false ? esc(p.label) : 'Currently <b class="num">' + esc(p.value) + '</b> · ' + (p.onTrack ? 'on track' : 'behind')}</span><span>+${chal.reward} pts each if held</span></div>`;
+      <div class="meta"><span>${st ? (mine || esc(p.label)) : p.measured === false ? esc(p.label) : 'Currently <b class="num">' + esc(p.value) + '</b> · ' + (p.onTrack ? 'on track' : 'behind')}</span><span>${reward}</span></div>${top ? `<div class="d">${top}</div>` : ''}`;
   }
 
   function render(changed){

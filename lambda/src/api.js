@@ -11,6 +11,9 @@
  *   POST /teams/{team}/coaching                 { agentId, reason, note, action, dueAt } opens a plan with a 14-day baseline (supervisors)
  *   PUT  /teams/{team}/coaching/{id}            supervisors edit or close; the agent may only acknowledge
  *   POST /teams/{team}/metrics                  { agentId, metric: csat|sentiment, score, contactId? } for survey tools without a stream (supervisors)
+ *   GET/PUT /teams/{team}/notifications         Slack and Teams webhooks, digest email and hour, event switches (supervisors)
+ *   POST /teams/{team}/notifications/test       posts "Arena connected" to the configured channels (supervisors)
+ *   Challenges run over their whole period; races, duels and team-vs-team carry standings; ending one freezes results and pays prizes.
  *
  * Auth: HTTP API JWT authorizer (Cognito or the customer's IdP) is configured in the template.
  * The workspace app sends the agent's token; the API trusts the token's claims, never a body field, for identity.
@@ -21,6 +24,8 @@
 'use strict';
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
+const notify = require('./notify.js');
+const challenges = require('./challenges.js');
 
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const KUDOS_DAILY_LIMIT = Math.max(1, +(process.env.KUDOS_DAILY_LIMIT || 5));
@@ -46,6 +51,9 @@ function route(method, path) {
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/coaching$/))) return { name: 'createCoaching', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/coaching\/([^/]+)$/))) return { name: 'updateCoaching', team: decodeURIComponent(x[1]), id: decodeURIComponent(x[2]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/metrics$/))) return { name: 'recordMetric', team: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/notifications$/))) return { name: 'getNotify', team: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/notifications$/))) return { name: 'putNotify', team: decodeURIComponent(x[1]) };
+  if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/notifications\/test$/))) return { name: 'testNotify', team: decodeURIComponent(x[1]) };
   if (method === 'DELETE' && (x = m(/^\/agents\/(.+)$/))) return { name: 'deleteAgent', arn: decodeURIComponent(x[1]) };
   // Kiosk: unauthenticated at the gateway, the token is the credential. Read-only, wallboard only.
   if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
@@ -59,6 +67,9 @@ function route(method, path) {
 
 function makeHandler(deps) {
   const s = deps.store || store, now = deps.now || (() => new Date());
+  const sendFn = deps.send || notify.send;
+  // Fire-and-forget notifications: a dead webhook must never fail the request that triggered it.
+  const tell = async (team, ev) => { try { const cfg = await s.getNotify(team); if (cfg) await sendFn(cfg, ev, deps); } catch (e) { console.warn('notify failed', e.message); } };
   return async (event) => {
     const method = event.requestContext && event.requestContext.http ? event.requestContext.http.method : event.httpMethod;
     const path = event.rawPath || event.path || '/';
@@ -94,23 +105,24 @@ function makeHandler(deps) {
           return json(200, { mix, warning: v.message || undefined });
         }
         case 'listChallenges': {
-          const [items, agents] = await Promise.all([s.listTeamItems(r.team, 'CH#', 50, true), s.getTeam(r.team, now().toISOString())]);
-          const today = now().toISOString().slice(0, 10);
-          const challenges = items.map(strip).map((c) => {
-            const state = c.state === 'ended' ? 'ended' : c.startsAt > today ? 'scheduled' : c.endsAt < today ? 'ended' : 'active';
-            return Object.assign({}, c, { state, progress: Arena.challengeProgress(c, agents) });
-          });
-          return json(200, { team: r.team, challenges });
+          const list = await challenges.challengesFor(s, r.team, now(), { supervisor: isSupervisor(claims), viewer: claims['custom:agentArn'] });
+          return json(200, { team: r.team, challenges: list });
         }
         case 'createChallenge': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
           const b = parse(event), t = Arena.TEMPLATES[b.template];
           if (!t) return json(400, { error: 'unknown template' });
           const today = now().toISOString().slice(0, 10), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
-          const c = { id, template: b.template, title: String(b.title || t.title).slice(0, 120), scope: String(b.scope || 'Team').slice(0, 60), target: b.target != null ? Number(String(b.target).replace(/[^0-9.]/g, '')) : t.defaultTarget,
-            reward: b.reward != null ? Number(String(b.reward).replace(/[^0-9.]/g, '')) : t.reward, startsAt: b.startsAt || today, endsAt: b.endsAt || today, createdAt: now().toISOString(), createdBy: who(claims) };
+          const v = challenges.challengeFields(b, t, today);
+          if (!v.ok) return json(400, { error: v.error });
+          if (b.template === 'duel') {
+            const team = await s.getTeam(r.team, now().toISOString());
+            if (!v.fields.agents.every((a) => team.some((x) => x.id === a))) return json(400, { error: 'both agents must be on this team' });
+          }
+          const c = Object.assign({ id }, v.fields, { createdAt: now().toISOString(), createdBy: who(claims) });
           c.state = c.startsAt > today ? 'scheduled' : 'active';
           await s.putTeamItem(r.team, `CH#${c.createdAt}#${id}`, c);
+          if (c.state === 'active') await tell(r.team, { kind: 'challengeStarted', challenge: c });
           return json(201, { challenge: c });
         }
         case 'updateChallenge': {
@@ -118,8 +130,18 @@ function makeHandler(deps) {
           const b = parse(event);
           const item = (await s.listTeamItems(r.team, 'CH#', 50)).find((c) => c.id === r.id);
           if (!item) return json(404, { error: 'not found' });
-          const updated = await s.updateTeamItem(r.team, item.sk, { state: b.state === 'ended' ? 'ended' : item.state, updatedAt: now().toISOString(), updatedBy: who(claims) });
-          return json(200, { challenge: strip(updated) });
+          if (item.results) return json(409, { error: 'this challenge has already finished' });
+          const fields = { updatedAt: now().toISOString(), updatedBy: who(claims) };
+          // A supervisor may disqualify or reinstate agents while a race or duel runs.
+          if (Array.isArray(b.excluded)) fields.excluded = b.excluded.map(String).slice(0, 100);
+          if (b.state === 'ended') {
+            if (fields.excluded) await s.updateTeamItem(r.team, item.sk, fields);
+            const results = await challenges.finalize(s, r.team, Object.assign({}, item, fields), now(), { notify: tell });
+            return json(200, { challenge: Object.assign(strip(item), fields, { state: 'ended', results, progress: Object.assign({}, results, { frozen: true }) }) });
+          }
+          const updated = await s.updateTeamItem(r.team, item.sk, fields);
+          const list = await challenges.challengesFor(s, r.team, now(), { supervisor: true });
+          return json(200, { challenge: list.find((c) => c.id === r.id) || strip(updated) });
         }
         case 'listRewards': {
           const status = qs.status;
@@ -137,6 +159,7 @@ function makeHandler(deps) {
           const at = now().toISOString(), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
           const reward = { id, agentId, agentName: agent.name, catalogId: item.id, what: item.name, cost: item.cost, status: 'pending', requestedAt: at, requestedBy: who(claims) };
           await s.putTeamItem(r.team, `RW#${at}#${id}`, reward);
+          await tell(r.team, { kind: 'rewardRequested', agentName: agent.name, what: item.name, cost: item.cost });
           return json(201, { reward });
         }
         case 'decideReward': {
@@ -148,6 +171,7 @@ function makeHandler(deps) {
           if (item.status !== 'pending') return json(409, { error: 'already ' + item.status });
           const updated = await s.updateTeamItem(r.team, item.sk, { status: b.status, decidedAt: now().toISOString(), decidedBy: who(claims) });
           if (b.status === 'approved') await s.spendPoints(item.agentId, now().toISOString(), item.cost);
+          await tell(r.team, { kind: 'rewardDecided', agentName: item.agentName, what: item.what, status: b.status });
           return json(200, { reward: strip(updated) });
         }
         case 'kudosFeed': {
@@ -182,9 +206,8 @@ function makeHandler(deps) {
           const iso = now().toISOString();
           if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: (await s.getTeam(k.team, iso)).map(forWallboard) });
           if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip).map((k2) => Object.assign({}, k2, { from: displayName(k2.from), toName: displayName(k2.toName) })) });
-          const [items, agents] = await Promise.all([s.listTeamItems(k.team, 'CH#', 50, true), s.getTeam(k.team, iso)]);
-          const today = iso.slice(0, 10);
-          return json(200, { team: k.team, challenges: items.map(strip).map((c) => Object.assign({}, c, { state: c.state === 'ended' ? 'ended' : c.startsAt > today ? 'scheduled' : c.endsAt < today ? 'ended' : 'active', progress: Arena.challengeProgress(c, agents) })) });
+          const list = (await challenges.challengesFor(s, k.team, now(), { supervisor: false })).map((c) => (c.progress && c.progress.standings ? Object.assign({}, c, { progress: Object.assign({}, c.progress, { standings: { metrics: c.progress.standings.metrics, rows: c.progress.standings.rows.map((row) => Object.assign({}, row, { name: displayName(row.name) })) } }) }) : c));
+          return json(200, { team: k.team, challenges: list });
         }
         case 'history': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
@@ -284,7 +307,26 @@ function makeHandler(deps) {
           const ev = { EventType: 'KUDOS', AgentARN: body.to, EventTimestamp: now().toISOString(), From: from, FromId: sender, Note: String(body.note).slice(0, 140), Team: team, Username: recipient.username, ToName: recipient.name };
           const points = Arena.scoreEvent('KUDOS', ev, Arena.DEFAULT_MIX);
           await s.apply(store.planWrites(ev, points, now().getTime()));
+          await tell(team, { kind: 'kudos', from, to: recipient.name, note: ev.Note });
           return json(201, { ok: true, points });
+        }
+        case 'getNotify': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          return json(200, { team: r.team, notifications: notify.masked(await s.getNotify(r.team)) });
+        }
+        case 'putNotify': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          let merged;
+          try { merged = notify.merge(await s.getNotify(r.team), parse(event)); } catch (e) { return json(400, { error: e.message }); }
+          await s.putNotify(r.team, merged);
+          return json(200, { team: r.team, notifications: notify.masked(merged) });
+        }
+        case 'testNotify': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const cfg = await s.getNotify(r.team);
+          if (!cfg || !(cfg.slackUrl || cfg.teamsUrl || cfg.email)) return json(400, { error: 'add a Slack or Teams webhook, or an email, first' });
+          try { const sent = await sendFn(cfg, { kind: 'test', team: r.team }, deps); return json(200, { ok: true, sent }); }
+          catch (e) { return json(502, { error: 'a channel refused the message: ' + e.message }); }
         }
       }
     } catch (err) {

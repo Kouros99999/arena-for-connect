@@ -10,6 +10,8 @@
  *   pk=AGENT#<arn>  sk=WEEK#2026-W38      same shape, weekly
  *   pk=AGENT#<arn>  sk=EV#<ts>#<type>     ledger row, ttl 90 days
  *   pk=CONFIG       sk=MIX                scoring mix
+ *   pk=CONFIG       sk=NOTIFY#<team>      where the team hears about Arena (webhooks, email, digest hour)
+ *   pk=DIGEST       sk=<team>#<day>       digest sent marker
  *   gsi1: gsi1pk=TEAM#<team>#DAY#<date> | TEAM#<team>#WEEK#<week> | TEAM#<team>#LIVE, gsi1sk=AGENT#<arn>
  */
 'use strict';
@@ -269,6 +271,27 @@ async function setStreak(arn, streak, assessedDay) {
 async function getMeter(day) { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'METER', sk: 'DAY#' + day } })); return r.Item || null; }
 async function putMeter(day, fields) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'METER', sk: 'DAY#' + day, day }, fields) })); }
 
+// ---------- notifications ----------
+async function getNotify(team) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'NOTIFY#' + team } }));
+  return r.Item ? r.Item.settings : null;
+}
+async function putNotify(team, settings) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'NOTIFY#' + team, team, settings, updatedAt: new Date().toISOString() } }));
+}
+async function getDigestMark(team, day) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'DIGEST', sk: team + '#' + day } }));
+  return r.Item || null;
+}
+async function putDigestMark(team, day, channels) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'DIGEST', sk: team + '#' + day, team, day, channels, at: new Date().toISOString(), ttl: Math.floor(Date.now() / 1000) + 14 * 86400 } }));
+}
+/** Distinct team names, from the LIVE rows. */
+async function listTeams() {
+  const rows = await scanLiveFull();
+  return [...new Set(rows.map((r) => r.team).filter(Boolean))].sort();
+}
+
 async function getMix() {
   const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'MIX' } }));
   return r.Item ? r.Item.mix : null;
@@ -278,6 +301,6 @@ async function putMix(mix) {
 }
 
 module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
-  getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount,
+  getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount, getNotify, putNotify, getDigestMark, putDigestMark, listTeams,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

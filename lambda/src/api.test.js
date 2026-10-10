@@ -13,6 +13,11 @@ function fakeStore() {
     spendPoints: async (arn, iso, cost) => { calls.push(['spendPoints', arn, cost]); },
     getTeam: async (team, iso) => { calls.push(['getTeam', team, iso]); return [{ id: 'a1', name: 'priya', username: 'priya', today: 118, week: 900, handled: 4, ahtSum: 1200, evals: [92], autofails: 0, kudosReceived: 1, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 },
       { id: 'a2', name: 'Marcus Bell', username: 'marcus', today: 50, week: 300, handled: 2, ahtSum: 600, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 }]; },
+    // Day rows for today match the live agents above, so period-based challenges measure the same thing the old today-only ones did.
+    getTeamDays: async (team, dates) => { const out = {}; for (const d of dates) out[d] = d === '2026-09-15' ? [{ pk: 'AGENT#a1', username: 'priya', points: 118, handled: 4, ahtSum: 1200, evals: [92], kudosReceived: 1 }, { pk: 'AGENT#a2', username: 'marcus', points: 50, handled: 2, ahtSum: 600, evals: [] }] : []; return out; },
+    getTeamLive: async () => [{ pk: 'AGENT#a1', displayName: 'priya', username: 'priya' }, { pk: 'AGENT#a2', displayName: 'Marcus Bell', username: 'marcus' }],
+    notify: null, getNotify: async function () { return this.notify; }, putNotify: async function (team, cfg) { this.notify = cfg; calls.push(['putNotify', team]); },
+    getDigestMark: async () => null, putDigestMark: async (team, day, ch) => { calls.push(['digestMark', team, day, ch]); }, listTeams: async () => ['t'],
     kudosCounts: {},
     bumpKudosCount: async function (sender, day, limit) { const k = sender + '#' + day; if ((this.kudosCounts[k] || 0) >= limit) return false; this.kudosCounts[k] = (this.kudosCounts[k] || 0) + 1; return true; },
     listEvents: async (arn, limit) => { calls.push(['listEvents', arn, limit]); return [{ EventType: 'KUDOS', EventTimestamp: 'x', points: 8, From: 'm', Note: 'n' }]; },
@@ -318,4 +323,90 @@ test('wallboards get shortened names and no usernames when DISPLAY_NAMES is set'
   assert.deepEqual(JSON.parse((await h2(anon('GET', '/kiosk/tok/agents'))).body).agents.map((a) => a.name), ['P', 'MB']);
   delete process.env.DISPLAY_NAMES;
   delete require.cache[require.resolve('./api.js')];
+});
+
+// ---------- notifications, contest rules, head-to-head ----------
+test('notifications: supervisors set channels, URLs come back masked, a test message goes to each channel', async () => {
+  const s = fakeStore(); const sent = [];
+  const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push([ev.kind, cfg.slackUrl, cfg.teamsUrl]); return ['slack']; } });
+  assert.equal((await h(Object.assign(anon('GET', '/teams/t/notifications'), agentOn('t', 'a1', 'GET')))).statusCode, 403);
+  const empty = JSON.parse((await h(req('GET', '/teams/t/notifications'))).body).notifications;
+  assert.equal(empty.slackSet, false); assert.equal(empty.digestHour, 17); assert.equal(empty.events.kudos, true);
+  assert.equal((await h(req('POST', '/teams/t/notifications/test', { body: '{}' }))).statusCode, 400, 'nothing configured yet');
+  const bad = await h(req('PUT', '/teams/t/notifications', { body: JSON.stringify({ slackUrl: 'http://not-https' }) }));
+  assert.equal(bad.statusCode, 400);
+  const saved = JSON.parse((await h(req('PUT', '/teams/t/notifications', { body: JSON.stringify({ slackUrl: 'https://hooks.slack.com/services/T/B/abcdef', digestHour: 9, events: { rewards: false } }) }))).body).notifications;
+  assert.equal(saved.slackSet, true); assert.equal(saved.slackUrl, '…abcdef'); assert.equal(saved.digestHour, 9); assert.equal(saved.events.rewards, false); assert.equal(saved.events.kudos, true);
+  assert.equal(s.notify.slackUrl, 'https://hooks.slack.com/services/T/B/abcdef', 'the full URL is stored');
+  const again = JSON.parse((await h(req('PUT', '/teams/t/notifications', { body: JSON.stringify({ slackUrl: '…abcdef', email: 'lead@example.com' }) }))).body).notifications;
+  assert.equal(s.notify.slackUrl, 'https://hooks.slack.com/services/T/B/abcdef', 'sending the mask back keeps the URL'); assert.equal(again.email, 'lead@example.com');
+  const t = await h(req('POST', '/teams/t/notifications/test', { body: '{}' }));
+  assert.equal(t.statusCode, 200); assert.deepEqual(JSON.parse(t.body).sent, ['slack']); assert.equal(sent[0][0], 'test');
+});
+
+test('kudos and reward events reach the team channels; a dead webhook never fails the request', async () => {
+  const s = fakeStore(); const sent = [];
+  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true } };
+  const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev.kind); if (ev.kind === 'rewardRequested') throw new Error('boom'); return ['slack']; } });
+  assert.equal((await h(Object.assign(anon('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'nice' }) }), agentOn('t', 'a1', 'POST')))).statusCode, 201);
+  s.getTeam = async () => [{ id: 'a1', name: 'priya', week: 3000, today: 0, handled: 0, evals: [], escalations: 0, kudosReceived: 0 }];
+  assert.equal((await h(Object.assign(req('POST', '/teams/t/rewards', { body: JSON.stringify({ catalogId: 'gift25' }) }), agentTok))).statusCode, 201, 'request succeeds although the webhook threw');
+  assert.deepEqual(sent, ['kudos', 'rewardRequested']);
+});
+
+test('a race ranks agents over its period with qualifiers, tiers and anonymity; ending it freezes results and pays prizes', async () => {
+  const s = fakeStore(); const sent = [];
+  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true } };
+  const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev); return ['slack']; } });
+  const bad = await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'race', metrics: [{ key: 'nope', weight: 1 }] }) }));
+  assert.equal(bad.statusCode, 400);
+  const made = await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'race', title: 'Points race', metrics: [{ key: 'points', weight: 2 }, { key: 'handled', weight: 1 }], minContacts: 3, tiers: [{ place: 1, reward: 100 }, { place: 2, reward: 40 }], anonymize: true, endsAt: '2026-09-19' }) }));
+  assert.equal(made.statusCode, 201); const c = JSON.parse(made.body).challenge;
+  assert.equal(c.minContacts, 3); assert.equal(c.anonymize, true); assert.equal(c.metrics.length, 2); assert.equal(sent[0].kind, 'challengeStarted');
+  const sup = JSON.parse((await h(req('GET', '/teams/t/challenges'))).body).challenges[0];
+  const rows = sup.progress.standings.rows;
+  assert.equal(rows[0].name, 'priya'); assert.equal(rows[0].rank, 1); assert.equal(rows[0].prize, 100);
+  const marcus = rows.find((r) => r.name === 'Marcus Bell');
+  assert.equal(marcus.qualified, false, 'two contacts is under the minimum'); assert.equal(marcus.rank, undefined);
+  assert.equal(sup.progress.label, 'priya leads on 100 pts · 1 ranked');
+  const agentView = JSON.parse((await h(Object.assign(anon('GET', '/teams/t/challenges'), agentOn('t', 'a2', 'GET')))).body).challenges[0];
+  assert.equal(agentView.progress.value, 'in progress', 'anonymised: no leader named');
+  assert.equal(agentView.progress.standings.rows[0].name, undefined, 'anonymised: no names');
+  assert.equal(agentView.progress.standings.rows.find((r) => r.you).qualified, false, 'but you can see your own row');
+  // disqualify priya, then end: marcus is unqualified too, so nobody is paid
+  const excluded = await h(req('PUT', '/teams/t/challenges/' + c.id, { body: JSON.stringify({ excluded: ['a1'] }) }));
+  assert.equal(JSON.parse(excluded.body).challenge.progress.standings.rows.find((r) => r.name === 'priya').excluded, true);
+  const reinstated = await h(req('PUT', '/teams/t/challenges/' + c.id, { body: JSON.stringify({ excluded: [] }) }));
+  assert.equal(JSON.parse(reinstated.body).challenge.progress.standings.rows[0].rank, 1);
+  const ended = JSON.parse((await h(req('PUT', '/teams/t/challenges/' + c.id, { body: JSON.stringify({ state: 'ended' }) }))).body).challenge;
+  assert.equal(ended.state, 'ended'); assert.equal(ended.results.prizes.length, 1); assert.equal(ended.results.prizes[0].points, 100); assert.equal(ended.results.prizes[0].place, '1st place');
+  const paid = s.calls.filter((x) => x[0] === 'apply').map((x) => x[1][1].item);
+  assert.equal(paid.length, 1); assert.equal(paid[0].EventType, 'CHALLENGE_WON'); assert.equal(paid[0].points, 100); assert.equal(paid[0].AgentARN, 'a1');
+  assert.equal(s.calls.filter((x) => x[0] === 'apply')[0][1][0].item.sk, 'SEEN#CHW#' + c.id + '#a1', 'paid once, ever');
+  assert.equal(sent.pop().kind, 'challengeEnded');
+  assert.equal((await h(req('PUT', '/teams/t/challenges/' + c.id, { body: JSON.stringify({ state: 'ended' }) }))).statusCode, 409, 'cannot end twice');
+  const frozen = JSON.parse((await h(req('GET', '/teams/t/challenges'))).body).challenges[0];
+  assert.equal(frozen.state, 'ended'); assert.equal(frozen.progress.frozen, true); assert.equal(frozen.progress.standings.rows[0].name, 'priya');
+});
+
+test('a head-to-head needs two agents on the team and names the leader', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  assert.equal((await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'duel', agents: ['a1'] }) }))).statusCode, 400);
+  assert.equal((await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'duel', agents: ['a1', 'ghost'] }) }))).statusCode, 400);
+  const made = await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'duel', title: 'Priya vs Marcus', agents: ['a1', 'a2'], metric: 'handled', reward: 60, endsAt: '2026-09-19' }) }));
+  assert.equal(made.statusCode, 201);
+  const c = JSON.parse((await h(req('GET', '/teams/t/challenges'))).body).challenges[0];
+  assert.equal(c.progress.value, '4 vs 2'); assert.equal(c.progress.label, 'priya leads');
+  assert.equal(c.progress.standings.rows[0].prize, 60, 'the flat reward goes to the winner');
+});
+
+test('team vs team compares this team with the opponent over the same period', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  const mine = s.getTeamDays;
+  s.getTeamDays = async (team, dates) => { if (team !== 'Support') return mine(team, dates); const out = {}; for (const d of dates) out[d] = d === '2026-09-15' ? [{ pk: 'AGENT#b1', username: 'bob', points: 300, handled: 9, ahtSum: 2700, evals: [70] }] : []; return out; };
+  assert.equal((await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'teams' }) }))).statusCode, 400, 'needs an opponent');
+  const made = await h(req('POST', '/teams/t/challenges', { body: JSON.stringify({ template: 'teams', title: 'Billing vs Support', opponent: 'Support', metric: 'qa', endsAt: '2026-09-19' }) }));
+  assert.equal(made.statusCode, 201);
+  const c = JSON.parse((await h(req('GET', '/teams/t/challenges'))).body).challenges[0];
+  assert.equal(c.progress.value, '92% vs 70%'); assert.equal(c.progress.label, 'ahead of Support'); assert.equal(c.progress.onTrack, true);
 });

@@ -1,14 +1,80 @@
 [
-  { "slug": "getting-started", "title": "Getting started", "summary": "From subscribing on AWS Marketplace to agents seeing their first points.", "updated": "0.5.0" },
-  { "slug": "how-scoring-works", "title": "How scoring works", "summary": "Where points come from, why quality outweighs speed, and what the scoring mix changes.", "updated": "0.5.0" },
-  { "slug": "sentiment-and-surveys", "title": "Customer sentiment and survey scores", "summary": "Scoring quality on every contact with Contact Lens and post-contact surveys.", "updated": "0.4.0" },
-  { "slug": "challenges-rewards-kudos", "title": "Challenges, rewards and kudos", "summary": "Team challenges measured from Connect data, a reward catalog with approval, and kudos between teammates.", "updated": "0.5.0" },
-  { "slug": "coaching", "title": "Coaching plans", "summary": "Turning a flag into an agreed action with a follow-up date and before-and-after numbers.", "updated": "0.4.0" },
-  { "slug": "results-report", "title": "The results report", "summary": "Seeing whether things are improving: any period against the one before, team and per agent.", "updated": "0.4.0" },
-  { "slug": "wallboard", "title": "Wallboards and TV links", "summary": "Putting Arena on a floor display without a sign-in, and controlling how names appear.", "updated": "0.5.0" },
-  { "slug": "users-and-sign-in", "title": "Users and sign-in", "summary": "Creating agent and supervisor accounts, using your own identity provider, and who can see what.", "updated": "0.5.0" },
-  { "slug": "security-and-data", "title": "Security and your data", "summary": "What Arena stores, where it lives, how to delete it, and what we never see.", "updated": "0.5.0" },
-  { "slug": "settings-reference", "title": "Settings reference", "summary": "Every setting on the launch page, what it does, and when to change it.", "updated": "0.5.0" },
-  { "slug": "billing", "title": "Billing and cancellation", "summary": "How the active agent-day is counted, what you pay, and how to stop.", "updated": "0.3.0" },
-  { "slug": "troubleshooting", "title": "Troubleshooting", "summary": "Nothing scoring, sign-in loops, missing evaluations, and what to send support.", "updated": "0.5.0" }
+  {
+    "slug": "getting-started",
+    "title": "Getting started",
+    "summary": "From subscribing on AWS Marketplace to agents seeing their first points.",
+    "updated": "0.5.0"
+  },
+  {
+    "slug": "how-scoring-works",
+    "title": "How scoring works",
+    "summary": "Where points come from, why quality outweighs speed, and what the scoring mix changes.",
+    "updated": "0.5.0"
+  },
+  {
+    "slug": "sentiment-and-surveys",
+    "title": "Customer sentiment and survey scores",
+    "summary": "Scoring quality on every contact with Contact Lens and post-contact surveys.",
+    "updated": "0.4.0"
+  },
+  {
+    "slug": "challenges-rewards-kudos",
+    "title": "Challenges, rewards and kudos",
+    "summary": "Team challenges measured from Connect data, a reward catalog with approval, and kudos between teammates.",
+    "updated": "0.6.0"
+  },
+  {
+    "slug": "notifications",
+    "title": "Slack, Teams and email notifications",
+    "summary": "Kudos, reward requests, challenge results and a daily digest where the team already is.",
+    "updated": "0.6.0"
+  },
+  {
+    "slug": "coaching",
+    "title": "Coaching plans",
+    "summary": "Turning a flag into an agreed action with a follow-up date and before-and-after numbers.",
+    "updated": "0.4.0"
+  },
+  {
+    "slug": "results-report",
+    "title": "The results report",
+    "summary": "Seeing whether things are improving: any period against the one before, team and per agent.",
+    "updated": "0.4.0"
+  },
+  {
+    "slug": "wallboard",
+    "title": "Wallboards and TV links",
+    "summary": "Putting Arena on a floor display without a sign-in, and controlling how names appear.",
+    "updated": "0.5.0"
+  },
+  {
+    "slug": "users-and-sign-in",
+    "title": "Users and sign-in",
+    "summary": "Creating agent and supervisor accounts, using your own identity provider, and who can see what.",
+    "updated": "0.5.0"
+  },
+  {
+    "slug": "security-and-data",
+    "title": "Security and your data",
+    "summary": "What Arena stores, where it lives, how to delete it, and what we never see.",
+    "updated": "0.5.0"
+  },
+  {
+    "slug": "settings-reference",
+    "title": "Settings reference",
+    "summary": "Every setting on the launch page, what it does, and when to change it.",
+    "updated": "0.6.0"
+  },
+  {
+    "slug": "billing",
+    "title": "Billing and cancellation",
+    "summary": "How the active agent-day is counted, what you pay, and how to stop.",
+    "updated": "0.3.0"
+  },
+  {
+    "slug": "troubleshooting",
+    "title": "Troubleshooting",
+    "summary": "Nothing scoring, sign-in loops, missing evaluations, and what to send support.",
+    "updated": "0.5.0"
+  }
 ]

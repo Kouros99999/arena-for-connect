@@ -115,6 +115,24 @@ tr.flash td{background:var(--flash)}
 .rw .acts{display:flex;gap:4px}
 .empty{color:var(--muted);font-size:13px;padding:6px 0}
 
+.stand{grid-column:1/-1;margin-top:6px;font-size:12.5px;display:grid;gap:3px}
+.stand .sr{display:grid;grid-template-columns:22px 1fr auto auto;gap:8px;align-items:center}
+.stand .sr.you{font-weight:600}
+.stand .sr .mono{font-size:11.5px;color:var(--ink-2)}
+.stand .sr.out{color:var(--muted)}
+.stand .sr .btn{padding:1px 6px;font-size:11px}
+.form .wide{grid-column:1/-1}
+.form .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px}
+.form .row label{flex-direction:row;align-items:center;gap:4px;color:var(--ink)}
+.form .row input[type=number]{width:60px}
+.form .row select{min-width:150px}
+.notif{display:grid;gap:8px;font-size:13px}
+.notif label{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
+.notif input[type=text],.notif input[type=url],.notif input[type=email],.notif select{border:1px solid var(--line);border-radius:4px;padding:5px 8px;background:var(--panel);color:var(--ink);font-size:13px;min-width:0}
+.notif .sw{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px}
+.notif .sw label{display:flex;grid-template-columns:none;gap:4px;color:var(--ink)}
+.notif .acts{display:flex;gap:6px;align-items:center}
+.notif .ok{color:var(--good);font-size:12px}
 .co{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;display:flex;flex-direction:column;gap:4px}
 .co:last-child{border-bottom:0}
 .co .h{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -186,12 +204,23 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
             <option value="qa">Every evaluation above a score</option>
             <option value="fcr">First-contact resolution on a queue (needs Contact Lens)</option>
             <option value="contest">Team points target</option>
-            <option value="kudos">Kudos received per agent</option></select></label>
+            <option value="kudos">Kudos received per agent</option>
+            <option value="race">Agent race (ranked, with prizes by place)</option>
+            <option value="duel">Head-to-head (two agents)</option>
+            <option value="teams">Team vs team</option></select></label>
           <label>Scope<select id="fScope"><option>Team</option><option>Individual, opt-in</option></select></label>
-          <label>Target<input id="fTarget" value="5%"></label>
-          <label>Reward per agent<input id="fReward" value="150 pts"></label>
+          <label id="fTargetRow">Target<input id="fTarget" value="5%"></label>
+          <label id="fRewardRow">Reward per agent<input id="fReward" value="150 pts"></label>
           <label>Starts<input id="fStart" type="date"></label>
           <label>Ends<input id="fEnd" type="date"></label>
+          <div class="wide row" id="fMetricRow" hidden><label>Measure <select id="fMetric"></select></label><label id="fMetric2Row" hidden>plus <select id="fMetric2"><option value="">nothing else</option></select> weighted <input id="fWeight2" type="number" min="1" max="9" value="1"> to <input id="fWeight1" type="number" min="1" max="9" value="1"></label></div>
+          <div class="wide row" id="fDuelRow" hidden><label>Agents <select id="fAgentA"></select></label><label>vs <select id="fAgentB"></select></label></div>
+          <div class="wide row" id="fTeamsRow" hidden><label>Opponent team <input id="fOpponent" placeholder="Routing profile name, e.g. Support team"></label></div>
+          <div class="wide row" id="fRulesRow" hidden>
+            <label>Needs at least <input id="fMinContacts" type="number" min="0" value="5"> contacts to rank</label>
+            <label>Prizes: 1st <input id="fP1" type="number" min="0" value="150"></label><label>2nd <input id="fP2" type="number" min="0" value="75"></label><label>3rd <input id="fP3" type="number" min="0" value="40"> pts</label>
+            <label><input id="fAnon" type="checkbox"> hide names from agents until it ends</label>
+          </div>
           <div class="act"><button type="submit" class="btn pri">Schedule challenge</button><button type="button" class="btn" id="cancelChal">Cancel</button>
             <span class="hint">Progress is measured from Connect data, never self-reported.</span></div>
         </form>
@@ -219,6 +248,18 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
       <div class="card">
         <div class="card-h"><h2>Coaching</h2><span class="sub" id="coachCount"></span></div>
         <div class="card-b" id="coach"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>Notifications</h2><span class="sub">Slack, Teams and a daily digest</span></div>
+        <div class="card-b notif" id="notif">
+          <label>Slack webhook<input id="nSlack" type="url" placeholder="https://hooks.slack.com/services/…"></label>
+          <label>Teams webhook<input id="nTeams" type="url" placeholder="https://….webhook.office.com/…"></label>
+          <label>Digest email<input id="nEmail" type="email" placeholder="team-lead@example.com"></label>
+          <label>Digest at<select id="nHour"></select></label>
+          <div class="sw"><label><input type="checkbox" id="nKudos"> kudos</label><label><input type="checkbox" id="nRewards"> reward requests</label><label><input type="checkbox" id="nChal"> challenges</label><label><input type="checkbox" id="nDigest"> daily digest</label></div>
+          <div class="acts"><button class="btn sm pri" id="nSave">Save</button><button class="btn sm" id="nTest">Send a test</button><span class="ok" id="nStatus"></span></div>
+        </div>
       </div>
 
       <div class="card">
@@ -324,7 +365,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     const shown = chals.filter(c => c.state !== 'ended');
     $('#chals').innerHTML = shown.length ? shown.map(c => { const p = c.progress || {}; return `<div class="chal"><div><div class="t">${esc(c.title)}</div><div class="d">${esc(c.scope)} · ${c.startsAt === c.endsAt ? c.endsAt : c.startsAt + ' to ' + c.endsAt}${p.measured === false ? ' · <span style="color:var(--warn)">' + esc(p.label) + '</span>' : ''}</div></div>
       <div class="st"><span class="pill ${c.state==='active' ? (p.onTrack ? 'good' : 'warn') : 'mute'}">${c.state === 'active' ? (p.onTrack ? 'on track' : 'behind') : c.state}</span>${c.state !== 'ended' && conn.isSupervisor !== false ? ` <button class="btn sm" data-end="${c.id}" title="End this challenge">End</button>` : ''}</div>
-      <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round((p.progress || 0)*100)}%"></i></div><span>${esc(p.measured === false ? '' : p.label)}${p.measured === false ? '' : ' · '}${c.reward} pts each</span></div></div>`; }).join('')
+      <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round((p.progress || 0)*100)}%"></i></div><span>${esc(p.measured === false ? '' : p.label)}${p.measured === false ? '' : ' · '}${rewardText(c)}</span></div>${standings(c)}</div>`; }).join('')
       : '<div class="empty">No challenges yet. Schedule one below.</div>';
     $('#rewards').innerHTML = rewards.length ? rewards.map(r => `<div class="rw"><div><b>${esc(r.agentName)}</b> · ${esc(r.what)}<small>${r.cost.toLocaleString()} pts · requested ${hm(r.requestedAt)}</small></div><div class="acts"><button class="btn sm pri" data-approve="${r.id}">Approve</button><button class="btn sm" data-decline="${r.id}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
     $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b>${esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
@@ -379,6 +420,32 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
   });
 
   function readMix(){ return { quality:+$('#mQ').value, productivity:+$('#mP').value, adherence:+$('#mA').value }; }
+  // Standings for races and duels: rank, name, the measured values, the prize, and a disqualify switch for supervisors.
+  function standings(c){
+    const st = c.progress && c.progress.standings; if (!st || !st.rows.length) return '';
+    const ms = st.metrics, fmt = (k, v) => (v === null || v === undefined ? '—' : Arena.METRICS[k].fmt(v));
+    const rows = st.rows.slice(0, c.template === 'duel' ? 2 : 6);
+    return `<div class="stand">${rows.map(r => `<div class="sr ${r.you ? 'you' : ''} ${r.rank ? '' : 'out'}"><span class="rk num">${r.rank ? r.rank + '.' : '·'}</span><span>${r.you ? 'You' : esc(r.name || 'Agent')}${r.excluded ? ' <span class="pill bad">disqualified</span>' : r.qualified === false ? ` <span class="pill mute">under ${c.minContacts} contacts</span>` : ''}</span><span class="mono">${ms.map(m => fmt(m.key, r.values[m.key])).join(' · ')}${ms.length > 1 && r.rank ? ' · ' + r.score + ' pts' : ''}${r.prize ? ' · <b>+' + r.prize + '</b>' : ''}</span>${conn.isSupervisor !== false && c.state === 'active' && r.agentId ? `<button class="btn sm" data-dq="${c.id}" data-agent="${esc(r.agentId)}" data-on="${r.excluded ? 1 : 0}" title="${r.excluded ? 'Reinstate' : 'Disqualify'}">${r.excluded ? 'Reinstate' : 'DQ'}</button>` : '<span></span>'}</div>`).join('')}${st.rows.length > rows.length ? `<div class="sr out"><span></span><span>${st.rows.length - rows.length} more</span></div>` : ''}</div>`;
+  }
+  function rewardText(c){
+    if (c.template === 'race') return (c.tiers || []).length ? 'prizes ' + c.tiers.map(t => t.reward).join(' / ') + ' pts' : `${c.reward} pts to the winner`;
+    if (c.template === 'duel') return `${c.reward} pts to the winner`;
+    if (c.template === 'teams') return `${c.reward} pts each if ${esc(engine.team || 'we')} win${c.opponent ? ' against ' + esc(c.opponent) : ''}`;
+    return `${c.reward} pts each`;
+  }
+
+  // Notifications card
+  async function loadNotif(){
+    try { const n = await engine.notifications(); $('#nSlack').value = n.slackUrl || ''; $('#nTeams').value = n.teamsUrl || ''; $('#nEmail').value = n.email || ''; $('#nHour').value = String(n.digestHour);
+      $('#nKudos').checked = !!n.events.kudos; $('#nRewards').checked = !!n.events.rewards; $('#nChal').checked = !!n.events.challenges; $('#nDigest').checked = !!n.events.digest;
+      $('#nStatus').textContent = (n.slackSet ? 'Slack on' : '') + (n.slackSet && n.teamsSet ? ', ' : '') + (n.teamsSet ? 'Teams on' : '') || 'No channel yet';
+    } catch (e) { $('#nStatus').textContent = ''; }
+  }
+  const readNotif = () => ({ slackUrl: $('#nSlack').value.trim(), teamsUrl: $('#nTeams').value.trim(), email: $('#nEmail').value.trim(), digestHour: +$('#nHour').value, events: { kudos: $('#nKudos').checked, rewards: $('#nRewards').checked, challenges: $('#nChal').checked, digest: $('#nDigest').checked } });
+  $('#nHour').innerHTML = Array.from({ length: 24 }, (_, h) => { const local = new Date(Date.UTC(2026, 0, 1, h)).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); return `<option value="${h}">${String(h).padStart(2, '0')}:00 UTC (${local} here)</option>`; }).join('');
+  $('#nSave').addEventListener('click', async () => { try { await engine.saveNotifications(readNotif()); toast('Notification settings saved'); loadNotif(); } catch (e) { toast('Not saved: ' + e.message); } });
+  $('#nTest').addEventListener('click', async () => { try { const r = await engine.testNotification(); toast(r.sent && r.sent.length ? 'Test sent to ' + r.sent.join(' and ') + (r.note ? ' (' + r.note + ')' : '') : 'Nothing to send to yet'); } catch (e) { toast('Test failed: ' + e.message); } });
+
   function renderMix(){
     const m = readMix();
     $('#mQv').textContent = m.quality+'%'; $('#mPv').textContent = m.productivity+'%'; $('#mAv').textContent = m.adherence+'%';
@@ -403,22 +470,51 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
 
   // New challenge form: template drives the default target and reward.
   const tpl = () => Arena.TEMPLATES[$('#fTemplate').value] || Arena.TEMPLATES.contest;
-  function fillTemplateDefaults(){ const t = tpl(); $('#fTarget').value = t.defaultTarget + (t.unit === '%' ? '%' : ''); $('#fReward').value = t.reward + ' pts'; }
+  function fillTemplateDefaults(){
+    const t = tpl(), k = $('#fTemplate').value, ranked = k === 'race' || k === 'duel', teams = k === 'teams';
+    $('#fTarget').value = t.defaultTarget + (t.unit === '%' ? '%' : ''); $('#fReward').value = t.reward + ' pts';
+    $('#fTargetRow').hidden = ranked || teams; $('#fRewardRow').hidden = k === 'race';
+    $('#fMetricRow').hidden = !(ranked || teams); $('#fMetric2Row').hidden = k !== 'race'; $('#fDuelRow').hidden = k !== 'duel'; $('#fTeamsRow').hidden = !teams; $('#fRulesRow').hidden = k !== 'race';
+    const opts = Object.entries(Arena.METRICS).map(([key, m]) => `<option value="${key}">${m.label}</option>`).join('');
+    if (!$('#fMetric').options.length) { $('#fMetric').innerHTML = opts; $('#fMetric2').insertAdjacentHTML('beforeend', opts); }
+    if (k === 'duel') { const ag = engine.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(''); $('#fAgentA').innerHTML = ag; $('#fAgentB').innerHTML = ag; if (engine.agents[1]) $('#fAgentB').value = engine.agents[1].id; }
+    $('#fScope').value = k === 'duel' ? 'Individual, opt-in' : 'Team';
+  }
+  // Everything the form says about the chosen template, in the shape the engine and API accept.
+  function readChallengeForm(){
+    const t = $('#fTemplate'), k = t.value, label = t.options[t.selectedIndex].text.replace(/ \(.*\)/, '');
+    const metric = $('#fMetric').value, mlabel = Arena.METRICS[metric] ? Arena.METRICS[metric].label.toLowerCase() : metric;
+    const c = { template: k, scope: $('#fScope').value, startsAt: $('#fStart').value, endsAt: $('#fEnd').value, reward: $('#fReward').value, target: $('#fTarget').value };
+    if (k === 'race') {
+      c.metrics = [{ key: metric, weight: +$('#fWeight1').value || 1 }]; if ($('#fMetric2').value) c.metrics.push({ key: $('#fMetric2').value, weight: +$('#fWeight2').value || 1 });
+      c.minContacts = +$('#fMinContacts').value || 0; c.tiers = [['1', $('#fP1').value], ['2', $('#fP2').value], ['3', $('#fP3').value]].filter(([, r]) => +r > 0).map(([place, reward]) => ({ place: +place, reward: +reward }));
+      c.anonymize = $('#fAnon').checked; c.reward = c.tiers.length ? 0 : c.reward;
+      c.title = `${label.replace('Agent race', 'Race')}: ${mlabel}${$('#fMetric2').value ? ' and ' + Arena.METRICS[$('#fMetric2').value].label.toLowerCase() : ''}`;
+    } else if (k === 'duel') {
+      c.metric = metric; c.agents = [$('#fAgentA').value, $('#fAgentB').value];
+      const nm = id => (engine.byId(id) || {}).name || id; c.title = `${nm(c.agents[0])} vs ${nm(c.agents[1])}: ${mlabel}`;
+    } else if (k === 'teams') {
+      c.metric = metric; c.opponent = $('#fOpponent').value.trim(); c.title = `${engine.team || 'Us'} vs ${c.opponent}: ${mlabel}`;
+    } else c.title = `${label} · ${$('#fTarget').value}`;
+    return c;
+  }
   $('#newChal').addEventListener('click', () => { $('#chalForm').hidden = !$('#chalForm').hidden; if (!$('#chalForm').hidden) fillTemplateDefaults(); });
   $('#cancelChal').addEventListener('click', () => { $('#chalForm').hidden = true; });
   $('#fTemplate').addEventListener('change', fillTemplateDefaults);
   $('#chalForm').addEventListener('submit', async e => { e.preventDefault();
     const t = $('#fTemplate'); const label = t.options[t.selectedIndex].text.replace(/ \(.*\)/, '');
     try {
-      const c = await engine.createChallenge({ template: t.value, title: `${label} · ${$('#fTarget').value}`, scope: $('#fScope').value, target: $('#fTarget').value, reward: $('#fReward').value, startsAt: $('#fStart').value, endsAt: $('#fEnd').value });
+      const c = await engine.createChallenge(readChallengeForm());
       $('#chalForm').hidden = true; toast(c.state === 'active' ? 'Challenge started' : 'Challenge scheduled'); loadSide();
     } catch (err) { toast('Not saved: ' + err.message); } });
   document.addEventListener('click', async e => {
     const ap = e.target.closest('[data-approve]'), dc = e.target.closest('[data-decline]'), rv = e.target.closest('[data-review]'), en = e.target.closest('[data-end]');
-    const ce = e.target.closest('[data-coach-edit]'), cc = e.target.closest('[data-coach-close]');
+    const ce = e.target.closest('[data-coach-edit]'), cc = e.target.closest('[data-coach-close]'), dq = e.target.closest('[data-dq]');
     try {
       if (ap || dc) { const id = (ap || dc).dataset[ap ? 'approve' : 'decline']; const r = await engine.decideReward(id, ap ? 'approved' : 'declined'); toast(`${ap ? 'Approved' : 'Declined'} ${r.what} for ${r.agentName}`); if (engine.remote) await engine.refresh(); render(); loadSide(); }
-      if (en) { await engine.endChallenge(en.dataset.end); toast('Challenge ended'); loadSide(); }
+      if (en) { const r = await engine.endChallenge(en.dataset.end); const won = r && r.results && r.results.prizes; toast(won && won.length ? `Challenge ended · ${won.length} prize${won.length === 1 ? '' : 's'} paid` : 'Challenge ended'); loadSide(); }
+      if (dq) { const c = chals.find(x => x.id === dq.dataset.dq); if (!c) return; const ex = new Set(c.excluded || []); if (dq.dataset.on === '1') ex.delete(dq.dataset.agent); else ex.add(dq.dataset.agent);
+        await engine.updateChallenge(c.id, { excluded: [...ex] }); toast(dq.dataset.on === '1' ? 'Reinstated' : 'Disqualified from this challenge'); loadSide(); }
       if (rv) { if (conn.isSupervisor === false) return toast('Supervisors only'); openCoach('create', engine.byId(rv.dataset.review), null, rv.dataset.flag); }
       if (ce || cc) { const item = coach.find(c => c.id === (ce || cc).dataset[ce ? 'coachEdit' : 'coachClose']); if (item) openCoach(ce ? 'edit' : 'close', { id: item.agentId, name: item.agentName }, item); }
     } catch (err) { toast('Failed: ' + err.message); }
@@ -439,6 +535,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
   setInterval(loadSide, 30000);
   const d = new Date(); $('#fStart').value = d.toISOString().slice(0,10); d.setDate(d.getDate()+5); $('#fEnd').value = d.toISOString().slice(0,10);
   renderMix(); render();
+  loadNotif();
   if (sim) { sim.start(); loadSide(); }
   else engine.loadMix().then(m => { $('#mQ').value = m.quality; $('#mP').value = m.productivity; $('#mA').value = m.adherence; renderMix(); })
     .then(() => engine.start(5)).then(() => { render(); loadSide(); }).catch(err => toast('API error: ' + err.message));

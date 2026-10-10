@@ -37,7 +37,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -89,7 +89,11 @@ A flag is only useful if something happens next. **Coach** on any flag opens a p
 
 ## Challenges, rewards, kudos
 
-Challenges come from templates (escalation rate, evaluation floor, team points target, kudos per agent) and their progress is always computed from agent data by the same function in the browser and the API, never self-reported. Supervisors create and end them from the console. Agents redeem weekly points against a catalog; each request waits for supervisor approval, which deducts the points. Kudos are sent from the agent panel, score 8 points for the recipient, and land on a team feed that the console and wallboard show. They are capped per sender per day (`KudosDailyLimit`, default 5), cannot be sent to oneself, and must go to someone on the sender's team. An agent receiving far more kudos than the team average is flagged in the console, so a trading ring stands out. All of it lives in the same DynamoDB table as team items, with routes under `/teams/{team}/challenges`, `/rewards` and `/kudos`.
+Challenges come from templates (escalation rate, evaluation floor, team points target, kudos per agent, and three ranked formats: agent race, head-to-head, team vs team) and their progress is always computed from agent data by the same function in the browser and the API, never self-reported. They are measured over their whole period from the per-agent day rows. Races carry contest rules: one or two weighted measures, a minimum number of contacts to be ranked, prizes by place, anonymised standings until the end, and supervisor disqualification. When a challenge ends, by date (the hourly job) or by a supervisor, its standings are frozen into `results` and prizes are paid once as `CHALLENGE_WON` events. Supervisors create and end them from the console. Agents redeem weekly points against a catalog; each request waits for supervisor approval, which deducts the points. Kudos are sent from the agent panel, score 8 points for the recipient, and land on a team feed that the console and wallboard show. They are capped per sender per day (`KudosDailyLimit`, default 5), cannot be sent to oneself, and must go to someone on the sender's team. An agent receiving far more kudos than the team average is flagged in the console, so a trading ring stands out. All of it lives in the same DynamoDB table as team items, with routes under `/teams/{team}/challenges`, `/rewards` and `/kudos`.
+
+## Notifications
+
+Each team can have a Slack incoming webhook, a Teams incoming webhook and a digest email, set from the console (`/teams/{team}/notifications`, supervisors only; URLs are stored whole and returned masked). Kudos, reward requests and decisions, challenge starts and results are posted as they happen. An hourly job sends each team's daily digest at its chosen UTC hour and finishes challenges whose end date has passed. Email goes through the `DigestTopic` SNS topic; pass `DigestEmail` at deploy time to subscribe an address. A failed webhook is logged and never fails the request that triggered it.
 
 ## Marketplace: metering and releases
 

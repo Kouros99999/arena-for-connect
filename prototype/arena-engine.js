@@ -63,7 +63,22 @@
     qa: { title: 'Every evaluation at or above a score', unit: 'score', defaultTarget: 85, reward: 100, needs: 'evaluations' },
     contest: { title: 'Team points target', unit: 'pts', defaultTarget: 1000, reward: 250, needs: 'points' },
     kudos: { title: 'Kudos received per agent', unit: 'each', defaultTarget: 3, reward: 50, needs: 'kudos' },
+    race: { title: 'Agent race', unit: '', defaultTarget: 0, reward: 100, needs: 'ranked agents', ranked: true },
+    duel: { title: 'Head-to-head', unit: '', defaultTarget: 0, reward: 100, needs: 'two agents', ranked: true },
+    teams: { title: 'Team vs team', unit: '', defaultTarget: 0, reward: 150, needs: 'an opponent team' },
     fcr: { title: 'First-contact resolution on a queue', unit: '%', defaultTarget: 80, reward: 150, needs: 'contact lens categories (not yet fed)' },
+  };
+
+  // Measures a race, duel or team-vs-team can be run on. `of` reads an agent; `team` reads a whole team's rows.
+  const METRICS = {
+    points: { label: 'Points', higher: true, fmt: (v) => Math.round(v).toLocaleString() },
+    handled: { label: 'Contacts handled', higher: true, fmt: (v) => Math.round(v).toLocaleString() },
+    qa: { label: 'Evaluation average', higher: true, fmt: (v) => Math.round(v) + '%' },
+    sentiment: { label: 'Customer sentiment', higher: true, fmt: (v) => (v > 0 ? '+' : '') + (Math.round(v * 10) / 10).toFixed(1) },
+    csat: { label: 'Survey score', higher: true, fmt: (v) => (Math.round(v * 10) / 10).toFixed(1) },
+    aht: { label: 'Handle time', higher: false, fmt: (v) => Math.floor(v / 60) + ':' + String(Math.round(v) % 60).padStart(2, '0') },
+    escRate: { label: 'Escalation rate', higher: false, fmt: (v) => (Math.round(v * 10) / 10).toFixed(1) + '%' },
+    kudos: { label: 'Kudos received', higher: true, fmt: (v) => Math.round(v).toLocaleString() },
   };
 
   // What points buy. Cost is in points; the supervisor approves each redemption.
@@ -73,6 +88,75 @@
     { id: 'lunch', name: 'Team lunch (team pool)', cost: 8000 },
     { id: 'parking', name: 'Prime parking spot, one week', cost: 1500 },
   ];
+
+  /** One agent's value for a metric, or null when there is nothing to measure. */
+  function metricOf(key, a) {
+    switch (key) {
+      case 'points': return a.today || 0;
+      case 'handled': return a.handled || 0;
+      case 'qa': { const e = (a.evals || []).filter((x) => x > 0); return e.length ? e.reduce((s, x) => s + x, 0) / e.length : null; }
+      case 'sentiment': return a.sentCount ? a.sentSum / a.sentCount : null;
+      case 'csat': return a.csatCount ? a.csatSum / a.csatCount : null;
+      case 'aht': return a.handled ? a.ahtSum / a.handled : null;
+      case 'escRate': return a.handled ? ((a.escalations || 0) / a.handled) * 100 : null;
+      case 'kudos': return a.kudosReceived || 0;
+      default: return null;
+    }
+  }
+  /** A whole team's value for a metric: totals for counts, averages for rates. */
+  function metricOfTeam(key, agents) {
+    if (key === 'points' || key === 'handled' || key === 'kudos') return agents.reduce((s, a) => s + (metricOf(key, a) || 0), 0);
+    const t = summarizeRows(agents.map((a) => Object.assign({}, a, { points: a.today })));
+    return { qa: t.qa, sentiment: t.sentiment, csat: t.csat, aht: t.aht, escRate: t.escalationRate }[key];
+  }
+
+  /**
+   * Rank agents for a race or duel. Pure. Contest rules on the challenge:
+   *   metrics      [{ key, weight }]  weighted measures; one metric by default. Each is scaled to the best in the field,
+   *                                   lower-is-better metrics inverted, then combined by weight into a score out of 100.
+   *   minContacts  n                  an agent needs at least n contacts in the period to be ranked (a minimum qualifier)
+   *   excluded     [agentId]          disqualified by a supervisor; shown, never ranked
+   *   agents       [agentId]          duel only: the two contestants
+   *   tiers        [{ place, reward }] prizes by finishing place; otherwise `reward` goes to the winner
+   */
+  function challengeStandings(ch, agents) {
+    const metrics = (Array.isArray(ch.metrics) && ch.metrics.length ? ch.metrics : [{ key: ch.metric || 'points', weight: 1 }]).filter((m) => METRICS[m.key]);
+    const field = ch.template === 'duel' && Array.isArray(ch.agents) ? agents.filter((a) => ch.agents.includes(a.id)) : agents;
+    const totalW = metrics.reduce((s, m) => s + (Number(m.weight) || 0), 0) || 1;
+    const raw = field.map((a) => ({ a, v: metrics.map((m) => { const x = metricOf(m.key, a); return x === null ? null : m.key === 'sentiment' ? x + 5 : x; }) }));
+    const best = metrics.map((m, i) => { const xs = raw.map((r) => r.v[i]).filter((x) => x !== null); if (!xs.length) return null; return METRICS[m.key].higher ? Math.max(...xs) : Math.min(...xs); });
+    const worst = metrics.map((m, i) => { const xs = raw.map((r) => r.v[i]).filter((x) => x !== null); if (!xs.length) return null; return METRICS[m.key].higher ? Math.min(...xs) : Math.max(...xs); });
+    const rows = raw.map(({ a, v }) => {
+      let score = 0, measured = false;
+      metrics.forEach((m, i) => {
+        const x = v[i]; if (x === null || best[i] === null) return;
+        measured = true;
+        const span = Math.abs(best[i] - worst[i]);
+        const n = span === 0 ? 1 : METRICS[m.key].higher ? (x - worst[i]) / span : (worst[i] - x) / span;
+        score += n * (Number(m.weight) || 0) / totalW;
+      });
+      const values = {}; metrics.forEach((m, i) => { values[m.key] = v[i] === null ? null : m.key === 'sentiment' ? v[i] - 5 : v[i]; });
+      return { agentId: a.id, name: a.name, score: Math.round(score * 1000) / 10, values, handled: a.handled || 0, measured,
+        excluded: (ch.excluded || []).includes(a.id), qualified: (a.handled || 0) >= (Number(ch.minContacts) || 0) };
+    });
+    const ranked = rows.filter((r) => r.qualified && !r.excluded && r.measured).sort((x, y) => y.score - x.score || y.handled - x.handled);
+    ranked.forEach((r, i) => { r.rank = i + 1; const t = (ch.tiers || []).find((tt) => Number(tt.place) === r.rank); r.prize = t ? Number(t.reward) || 0 : r.rank === 1 && !(ch.tiers || []).length ? Number(ch.reward) || 0 : 0; });
+    const rest = rows.filter((r) => !ranked.includes(r)).sort((x, y) => y.score - x.score);
+    return { metrics: metrics.map((m) => ({ key: m.key, weight: Number(m.weight) || 1, label: METRICS[m.key].label })), rows: ranked.concat(rest) };
+  }
+
+  /** Collapse day rows for a period into the agent shape the engine reads (points as `today`). Pure. */
+  function aggregateAgents(days) {
+    const by = new Map();
+    for (const d of days) for (const r of d.rows) {
+      if (!by.has(r.id)) by.set(r.id, { id: r.id, name: r.name, today: 0, week: 0, handled: 0, ahtSum: 0, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, sentSum: 0, sentCount: 0, csatSum: 0, csatCount: 0, streak: 0, adherenceHours: 0, state: 'Offline', lastEvent: 0 });
+      const a = by.get(r.id);
+      a.name = r.name || a.name; a.today += r.points || 0; a.handled += r.handled || 0; a.ahtSum += r.ahtSum || 0; a.autofails += r.autofails || 0; a.kudosReceived += r.kudosReceived || 0; a.escalations += r.escalations || 0;
+      a.sentSum += r.sentSum || 0; a.sentCount += r.sentCount || 0; a.csatSum += r.csatSum || 0; a.csatCount += r.csatCount || 0;
+      for (const e of r.evals || []) a.evals.push(e);
+    }
+    return [...by.values()];
+  }
 
   /** Measure a challenge against the current team. Pure: same function runs in the browser and in the API. */
   function challengeProgress(ch, agents) {
@@ -86,6 +170,25 @@
       case 'qa': { const withEvals = agents.filter((a) => (a.evals || []).some((e) => e > 0)); const clean = withEvals.filter((a) => a.evals.filter((e) => e > 0).every((e) => e >= t)); return { value: `${clean.length}/${withEvals.length}`, label: withEvals.length ? `${clean.length} of ${withEvals.length} agents clean` : 'no evaluations yet', progress: withEvals.length ? clean.length / withEvals.length : 0, onTrack: withEvals.length > 0 && clean.length === withEvals.length, measured: withEvals.length > 0 }; }
       case 'contest': return { value: points.toLocaleString(), label: `${points.toLocaleString()} of ${t.toLocaleString()} pts`, progress: t ? clamp(points / t) : 0, onTrack: points >= t, measured: true };
       case 'kudos': { const met = agents.filter((a) => (a.kudosReceived || 0) >= t).length; return { value: `${met}/${agents.length}`, label: `${met} of ${agents.length} agents at ${t}+`, progress: agents.length ? met / agents.length : 0, onTrack: agents.length > 0 && met === agents.length, measured: true }; }
+      case 'race': case 'duel': {
+        const st = challengeStandings(ch, agents), lead = st.rows.find((r) => r.rank === 1);
+        const m = st.metrics[0], single = st.metrics.length === 1;
+        const show = (r) => (single ? (r.values[m.key] === null ? '—' : METRICS[m.key].fmt(r.values[m.key])) : r.score + ' pts');
+        const ranked = st.rows.filter((r) => r.rank).length;
+        if (ch.template === 'duel') {
+          const [x, y] = st.rows;
+          if (!x || !y) return { value: '—', label: 'needs two agents on the team', progress: 0, onTrack: false, measured: false, standings: st };
+          return { value: `${show(x)} vs ${show(y)}`, label: lead ? `${lead.name} leads` : 'nothing measured yet', progress: lead ? 1 : 0, onTrack: !!lead, measured: !!lead, standings: st };
+        }
+        return { value: lead ? lead.name : '—', label: lead ? `${lead.name} leads on ${show(lead)} · ${ranked} ranked` : (ch.minContacts ? `nobody at ${ch.minContacts} contacts yet` : 'nothing measured yet'), progress: lead ? 1 : 0, onTrack: !!lead, measured: !!lead, standings: st };
+      }
+      case 'teams': {
+        const key = ch.metric || 'points', mine = metricOfTeam(key, agents), theirs = ch.opponentAgents ? metricOfTeam(key, ch.opponentAgents) : null;
+        const f = (v) => (v === null || v === undefined ? '—' : METRICS[key].fmt(v));
+        if (theirs === null || theirs === undefined) return { value: f(mine), label: `needs data for ${ch.opponent || 'the opponent team'}`, progress: 0, onTrack: false, measured: false, teamValue: mine };
+        const winning = mine !== null && (METRICS[key].higher ? mine > theirs : mine < theirs);
+        return { value: `${f(mine)} vs ${f(theirs)}`, label: mine === theirs ? 'level' : winning ? `ahead of ${ch.opponent}` : `behind ${ch.opponent}`, progress: winning ? 1 : 0.5, onTrack: winning, measured: mine !== null, teamValue: mine, opponentValue: theirs };
+      }
       default: return { value: '—', label: 'needs ' + (TEMPLATES[ch.template] ? TEMPLATES[ch.template].needs : 'data'), progress: 0, onTrack: false, measured: false };
     }
   }
@@ -120,6 +223,7 @@
       case 'CSAT_RECEIVED': return Math.round(BASE.csat(data.Score) * q);
       case 'KUDOS': return BASE.kudos;
       case 'STREAK_DAY': return BASE.streakDay;
+      case 'CHALLENGE_WON': return Math.max(0, Math.round(Number(data.Points) || 0));
       default: return 0;
     }
   }
@@ -284,6 +388,7 @@
       if (type === 'KUDOS') return `Kudos from <b>${ev.From}</b>: “${ev.Note}”`;
       if (type === 'ADHERENCE_HOUR') return 'Hour in adherence';
       if (type === 'STREAK_DAY') return `Streak bonus, day ${ev.Day}`;
+      if (type === 'CHALLENGE_WON') return `Challenge <b>${ev.Title || 'won'}</b>${ev.Place ? ', ' + ev.Place : ''}`;
       if (type === 'SENTIMENT_SCORED') return `Customer sentiment <b>${ev.Sentiment > 0 ? '+' : ''}${ev.Sentiment}</b> on a contact`;
       if (type === 'CSAT_RECEIVED') return `Customer survey: <b>${ev.Score} of 5</b>`;
       return type;
@@ -316,11 +421,21 @@
       const t = TEMPLATES[ch.template] || TEMPLATES.contest;
       const now = new Date().toISOString().slice(0, 10);
       const c = { id: newId(), template: ch.template, title: ch.title || t.title, scope: ch.scope || 'Team', target: ch.target != null ? ch.target : t.defaultTarget,
-        reward: ch.reward != null ? ch.reward : t.reward, startsAt: ch.startsAt || now, endsAt: ch.endsAt || now, createdAt: new Date().toISOString(), createdBy: ch.createdBy || 'supervisor' };
+        reward: ch.reward != null ? ch.reward : t.reward, startsAt: ch.startsAt || now, endsAt: ch.endsAt || now, createdAt: new Date().toISOString(), createdBy: ch.createdBy || 'supervisor',
+        metric: ch.metric, metrics: ch.metrics, minContacts: ch.minContacts, tiers: ch.tiers, anonymize: !!ch.anonymize, agents: ch.agents, opponent: ch.opponent, excluded: [] };
       c.state = c.startsAt > now ? 'scheduled' : 'active';
+      if (c.template === 'teams') {   // the demo has no second team, so it invents one that tracks a little behind ours
+        c.opponentAgents = agents.slice(0, Math.max(3, agents.length - 2)).map((a, i) => makeAgent(100 + i, 'Opponent ' + (i + 1), 200, { today: Math.round((a.today || 0) * 0.85), handled: Math.round((a.handled || 0) * 0.9), ahtSum: Math.round((a.ahtSum || 0) * 0.9), evals: (a.evals || []).map((e) => Math.max(0, e - 3)), sentSum: (a.sentSum || 0) * 0.7, sentCount: a.sentCount || 0, csatSum: (a.csatSum || 0) * 0.95, csatCount: a.csatCount || 0, kudosReceived: Math.round((a.kudosReceived || 0) * 0.5) }));
+      }
       local.challenges.push(c); return withProgress(c);
     };
-    const endChallenge = async (id) => { const c = local.challenges.find((x) => x.id === id); if (c) c.state = 'ended'; return c; };
+    const endChallenge = async (id) => { const c = local.challenges.find((x) => x.id === id); if (c) { c.state = 'ended'; c.results = Object.assign({ endedAt: new Date().toISOString() }, challengeProgress(c, agents)); } return c; };
+    const updateChallenge = async (id, fields) => { const c = local.challenges.find((x) => x.id === id); if (!c) throw new Error('unknown challenge'); if (fields.state === 'ended') return endChallenge(id); if (Array.isArray(fields.excluded)) c.excluded = fields.excluded; return withProgress(c); };
+    // Notifications: where the team hears about kudos, rewards, challenges and the daily digest. The demo keeps them in memory.
+    local.notifications = { slackUrl: '', teamsUrl: '', email: '', digestHour: 17, events: { kudos: true, rewards: true, challenges: true, digest: true } };
+    const notifications = async () => Object.assign({}, local.notifications, { slackUrl: local.notifications.slackUrl ? '…' + local.notifications.slackUrl.slice(-6) : '', teamsUrl: local.notifications.teamsUrl ? '…' + local.notifications.teamsUrl.slice(-6) : '', slackSet: !!local.notifications.slackUrl, teamsSet: !!local.notifications.teamsUrl });
+    const saveNotifications = async (n) => { for (const k of ['slackUrl', 'teamsUrl', 'email']) if (typeof n[k] === 'string' && !n[k].startsWith('…')) local.notifications[k] = n[k]; if (n.digestHour !== undefined) local.notifications.digestHour = +n.digestHour; if (n.events) Object.assign(local.notifications.events, n.events); return notifications(); };
+    const testNotification = async () => ({ ok: true, sent: ['slackUrl', 'teamsUrl'].filter((k) => local.notifications[k]).map((k) => k.replace('Url', '')), note: 'demo: nothing is posted' });
     const rewards = async (status) => local.rewards.filter((r) => !status || r.status === status);
     const requestReward = async (agentId, catalogId, by) => {
       const a = byId(agentId), item = CATALOG.find((c) => c.id === catalogId);
@@ -373,8 +488,8 @@
       setMix: (m) => { const v = validateMix(m); if (v.ok) mix = Object.assign({}, m); return v; },
       flags: (a) => flagsFor(a, agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed,
-      coaching, createCoaching, updateCoaching, history,
+      challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed,
+      coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
     };
@@ -424,7 +539,10 @@
     engine._local.challenges.push(
       { id: 'c-esc', template: 'esc', title: 'Billing queue: keep escalations under 5%', scope: 'Team', target: 5, reward: 150, startsAt: today, endsAt: fri, state: 'active', createdAt: new Date(now).toISOString() },
       { id: 'c-qa', template: 'qa', title: 'Every evaluation 85 or better', scope: 'Individual, opt-in', target: 85, reward: 100, startsAt: today, endsAt: fri, state: 'active', createdAt: new Date(now).toISOString() },
-      { id: 'c-contest', template: 'contest', title: 'Billing vs Support: most points', scope: 'Head-to-head', target: 2000, reward: 250, startsAt: mon, endsAt: mon, state: 'scheduled', createdAt: new Date(now).toISOString() });
+      { id: 'c-race', template: 'race', title: 'Quality race: evaluations and sentiment', scope: 'Individual', target: 0, reward: 0, startsAt: today, endsAt: fri, state: 'active', createdAt: new Date(now).toISOString(),
+        metrics: [{ key: 'qa', weight: 2 }, { key: 'sentiment', weight: 1 }], minContacts: 3, tiers: [{ place: 1, reward: 150 }, { place: 2, reward: 75 }, { place: 3, reward: 40 }], anonymize: false, excluded: [] },
+      { id: 'c-duel', template: 'duel', title: 'Head-to-head: Diego vs Grace on contacts', scope: 'Head-to-head', target: 0, reward: 100, startsAt: today, endsAt: fri, state: 'active', createdAt: new Date(now).toISOString(), metric: 'handled', agents: [engine.agents[3].id, engine.agents[6].id], excluded: [] },
+      { id: 'c-contest', template: 'contest', title: 'Team points target', scope: 'Team', target: 2000, reward: 250, startsAt: mon, endsAt: mon, state: 'scheduled', createdAt: new Date(now).toISOString() });
     engine.agents[2].week = 2600; engine.agents[3].week = 5200; engine.agents[3].escalations = 1;
     engine._local.rewards.push(
       { id: 'r1', agentId: engine.agents[2].id, agentName: engine.agents[2].name, catalogId: 'gift25', what: '$25 gift card', cost: 2500, status: 'pending', requestedAt: new Date(now - 3600000).toISOString() },
@@ -503,6 +621,10 @@
     const challenges = async () => (await call('GET', readPath('challenges'))).challenges;
     const createChallenge = async (ch) => (await call('POST', `${teamPath()}/challenges`, ch)).challenge;
     const endChallenge = async (id) => (await call('PUT', `${teamPath()}/challenges/${encodeURIComponent(id)}`, { state: 'ended' })).challenge;
+    const updateChallenge = async (id, fields) => (await call('PUT', `${teamPath()}/challenges/${encodeURIComponent(id)}`, fields)).challenge;
+    const notifications = async () => (await call('GET', `${teamPath()}/notifications`)).notifications;
+    const saveNotifications = async (n) => (await call('PUT', `${teamPath()}/notifications`, n)).notifications;
+    const testNotification = async () => call('POST', `${teamPath()}/notifications/test`);
     const rewards = async (status) => (await call('GET', `${teamPath()}/rewards${status ? '?status=' + status : ''}`)).rewards;
     const requestReward = async (agentId, catalogId) => (await call('POST', `${teamPath()}/rewards`, { agentId, catalogId })).reward;
     const decideReward = async (id, status) => (await call('PUT', `${teamPath()}/rewards/${encodeURIComponent(id)}`, { status })).reward;
@@ -523,7 +645,7 @@
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, kiosks, createKiosk, revokeKiosk, deleteAgent,
-      coaching, createCoaching, updateCoaching, history, recordMetric,
+      coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) saveMix(m); return v; },
@@ -559,6 +681,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
-    DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, CATALOG, NAMES, HUES };
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+    DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

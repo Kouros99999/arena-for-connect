@@ -36,6 +36,7 @@ These are the settings on the stack's launch page. Change any of them later by u
 | Setting | Default | What it does |
 |---|---|---|
 | AlarmEmail | empty | Email that receives alarms: ingest errors, the stream falling behind, API errors, a failed usage report. Confirm the subscription email AWS sends. |
+| DigestEmail | empty | Address that receives teams' daily digests when a team turns email on in the console. Confirm the subscription email AWS sends. See [notifications](kb.html?a=notifications). |
 
 ## Filled in by the registration page
 

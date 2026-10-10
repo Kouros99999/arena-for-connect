@@ -1,5 +1,28 @@
 [
   {
+    "version": "0.6.0",
+    "date": "2026-10-10",
+    "title": "Notifications, contest rules, and head-to-head",
+    "summary": "Arena now reaches the team in Slack, Teams and email, challenges have real rules and prizes, and agents can go head-to-head or team against team.",
+    "changes": [
+      "Slack and Microsoft Teams: kudos, reward requests and decisions, challenge starts and results are posted to a channel per team, set up from the console with a test button.",
+      "Daily digest: team points, contacts, evaluation average, sentiment, kudos, the top five, open challenges and what needs attention, at the hour you choose, to Slack, Teams or email.",
+      "Agent race: a ranked challenge on one or two weighted measures, with a minimum number of contacts to qualify, prizes for 1st, 2nd and 3rd, the option to hide names until it ends, and a supervisor switch to disqualify or reinstate an agent.",
+      "Head-to-head: two agents on one measure, winner takes the reward. Team vs team: your team against another routing profile on one measure.",
+      "Challenges are now measured over their whole period, not just today. When one ends its standings are frozen and prizes are paid as points, once, with a line in each winner's feed.",
+      "The agent panel shows where you stand in a race and what you would win."
+    ],
+    "upgrade": [
+      "No action is needed. Existing challenges keep running and finish with frozen results.",
+      "To receive the email digest, set the new DigestEmail setting on the stack and accept the confirmation email AWS sends. Slack and Teams need no stack change: paste the webhook into the console."
+    ],
+    "docs": [
+      "challenges-rewards-kudos",
+      "notifications",
+      "settings-reference"
+    ]
+  },
+  {
     "version": "0.5.0",
     "date": "2026-10-09",
     "title": "Tighter access, honest kudos, and discreet wallboards",

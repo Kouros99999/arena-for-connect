@@ -78,6 +78,10 @@ Parameters:
     Type: String
     Default: ''
     Description: Routing profile name the supervisor console and wallboard open on when the signed-in user has no team attribute. Optional.
+  DigestEmail:
+    Type: String
+    Default: ''
+    Description: Optional. One email address that receives each team's daily digest when the team turns email on in the console. AWS sends a confirmation email first.
   AlarmEmail:
     Type: String
     Default: ''
@@ -90,6 +94,7 @@ Conditions:
   PinInstance: !Not [!Equals [!Ref ConnectInstanceUrl, '']]
   OnMarketplace: !Not [!Equals [!Ref MarketplaceProductCode, '']]
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+  HasDigestEmail: !Not [!Equals [!Ref DigestEmail, '']]
   InstallSite: !Not [!Equals [!Ref SiteArchiveUrl, '']]
 
 Globals:
@@ -236,6 +241,40 @@ Resources:
           Properties:
             Schedule: cron(15 3 * * ? *)   # 03:15 UTC daily; Marketplace accepts one report per dimension per hour
             Description: Report distinct active agents to AWS Marketplace
+
+  DigestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub arena-digest-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: digest.handler
+      Timeout: 300
+      Environment:
+        Variables:
+          DIGEST_TOPIC_ARN: !Ref DigestTopic
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt DigestTopic.TopicName }
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(5 * * * ? *)    # five past every hour: send digests whose hour it is, finish challenges whose date has passed
+            Description: Daily digests to Slack, Teams and email; freeze finished challenges and pay prizes
+
+  DigestTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub arena-digest-${AWS::StackName}
+      DisplayName: Arena daily digest
+
+  DigestSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasDigestEmail
+    Properties:
+      TopicArn: !Ref DigestTopic
+      Protocol: email
+      Endpoint: !Ref DigestEmail
 
   StreaksFunction:
     Type: AWS::Serverless::Function
@@ -444,9 +483,11 @@ Resources:
         Variables:
           DISPLAY_NAMES: !Ref WallboardNames
           KUDOS_DAILY_LIMIT: !Ref KudosDailyLimit
+          DIGEST_TOPIC_ARN: !Ref DigestTopic
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           AUTH_MODE: jwt
       Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt DigestTopic.TopicName }
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
       Events:
         Any:

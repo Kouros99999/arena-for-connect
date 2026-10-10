@@ -83,7 +83,7 @@ test('challengeProgress measures from agent data', () => {
 test('local engine: challenges, rewards and kudos feed', async () => {
   const e = Arena.seedTeam(Arena.createEngine());
   const list = await e.challenges();
-  assert.equal(list.length, 3); assert.ok(list[0].progress);
+  assert.equal(list.length, 5); assert.ok(list[0].progress);
   const made = await e.createChallenge({ template: 'contest', target: 500, startsAt: '2099-01-01', endsAt: '2099-01-05' });
   assert.equal(made.state, 'scheduled'); assert.equal(made.reward, 250);
   assert.equal((await e.endChallenge(made.id)).state, 'ended');
