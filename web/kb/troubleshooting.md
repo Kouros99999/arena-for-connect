@@ -1,5 +1,9 @@
 # Troubleshooting
 
+## The Create stack button does nothing
+
+The launch page has three acknowledgement boxes at the bottom, not one: IAM resources, IAM resources with custom names, and `CAPABILITY_AUTO_EXPAND`. All three must be ticked. When one is missed the console shows only a small "Please acknowledge all checkboxes" notice above the button. Tick the remaining boxes and choose **Create stack** again.
+
 ## Nothing scores
 
 - In the Connect console, under **Data streaming**, confirm agent events go to the stream named in the stack's `StreamArn` output. Events only flow for agents who change state or handle a contact after this is set.
