@@ -14,7 +14,7 @@ const { marked } = require('marked');
 
 const ORIGIN = 'https://arenaforconnect.com';
 const out = path.resolve(process.argv[2] || 'site');
-const read = (f) => fs.readFileSync(path.join(out, f), 'utf8');
+const read = (f) => fs.readFileSync(path.join(out, f), 'utf8').replace(/\r\n/g, '\n');   // CRLF checkouts must match the same strings
 const write = (f, s) => { fs.mkdirSync(path.dirname(path.join(out, f)), { recursive: true }); fs.writeFileSync(path.join(out, f), s); };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const day = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
