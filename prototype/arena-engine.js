@@ -589,6 +589,19 @@
     local.budget = { monthly: 20000, spent: 7500 };
     const budgetView = () => budgetSummary(local.budget.monthly, local.budget.spent, new Date().toISOString().slice(0, 7));
     const budget = async () => budgetView();
+    // People and data keys exist only against the live API; the demo shows the shape.
+    local.users = agents.slice(0, 4).map((a, i) => ({ username: a.name.toLowerCase().replace(/[^a-z]+/g, '.'), name: a.name, email: '', team: 'Billing team', agentArn: a.id, role: i === 0 ? 'supervisor' : 'agent', status: 'CONFIRMED', enabled: true }));
+    const users = async () => local.users;
+    const createUser = async (p) => { const person = Object.assign({ status: 'FORCE_CHANGE_PASSWORD', enabled: true, role: 'agent', team: '', email: '', agentArn: '' }, p); local.users.push(person); return { person, temporaryPassword: p.email ? undefined : 'Demo-Temp-1234', invited: !!p.email }; };
+    const updateUser = async (username, p) => { const u = local.users.find((x) => x.username === username); if (!u) throw new Error('no such person'); Object.assign(u, p); return u; };
+    const resetPassword = async (username) => ({ username, temporaryPassword: 'Demo-Temp-5678' });
+    const deleteUser = async (username) => { local.users = local.users.filter((x) => x.username !== username); return { username, deleted: true }; };
+    local.dataKeys = [];
+    const dataKeys = async () => local.dataKeys;
+    const createDataKey = async (label, days) => { const k = { key: 'dk_demo' + (local.dataKeys.length + 1), label: label || 'Warehouse', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + (days || 365) * 86400000).toISOString() }; local.dataKeys.push(k); return k; };
+    const revokeDataKey = async (key) => { local.dataKeys = local.dataKeys.filter((k) => k.key !== key); return { revoked: key }; };
+    const exportDays = async (from, to) => ({ from, to, rows: syntheticHistory(agents, 7).flatMap((d) => d.rows.map((r) => ({ day: d.date, team: 'Billing team', agentId: r.id, name: r.name, points: r.points, contactsHandled: r.handled }))) });
+    const apiBase = () => '/api';
     const setBudget = async (monthly) => { local.budget.monthly = Math.max(0, Math.round(Number(monthly) || 0)); return budgetView(); };
 
     // ---- coaching: a flag becomes a plan with an owner, an action and a follow-up date ----
@@ -641,6 +654,7 @@
       flags: (a) => flagsFor(a, agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance,
+      users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase,
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
@@ -796,6 +810,17 @@
     const resetRewardSettings = async () => (await call('PUT', `${teamPath()}/rewards/settings`, { useDefault: true })).settings;
     const catalog = async () => (await call('GET', `${teamPath()}/rewards?status=none`)).catalog;
     const balance = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/balance`)).balance;
+    // People (Cognito) and data keys for warehouses: supervisors only; the API enforces it.
+    const users = async () => (await call('GET', `${base}/admin/users`)).users;
+    const createUser = async (p) => call('POST', `${base}/admin/users`, p);
+    const updateUser = async (username, p) => (await call('PUT', `${base}/admin/users/${encodeURIComponent(username)}`, p)).person;
+    const resetPassword = async (username) => call('POST', `${base}/admin/users/${encodeURIComponent(username)}/password`, {});
+    const deleteUser = async (username) => call('DELETE', `${base}/admin/users/${encodeURIComponent(username)}`);
+    const dataKeys = async () => (await call('GET', `${base}/data/keys`)).keys;
+    const createDataKey = async (label, days) => (await call('POST', `${base}/data/keys`, { label, days })).key;
+    const revokeDataKey = async (key) => call('DELETE', `${base}/data/keys/${encodeURIComponent(key)}`);
+    const exportDays = async (from, to, teamName) => call('GET', `${base}/export/days?from=${from}&to=${to}` + (teamName ? '&team=' + encodeURIComponent(teamName) : ''));
+    const apiBase = () => base;
     const setBudget = async (monthly) => (await call('PUT', `${teamPath()}/budget`, { monthly })).budget;
     const kiosks = async () => (await call('GET', `${teamPath()}/kiosk`)).kiosks;
     const createKiosk = async (label, days) => (await call('POST', `${teamPath()}/kiosk`, { label, days })).kiosk;
@@ -812,7 +837,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),

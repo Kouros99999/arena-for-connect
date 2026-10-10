@@ -14,6 +14,7 @@ These are the settings on the stack's launch page. Change any of them later by u
 | CsatAttribute | `csat` | Contact attribute your survey writes. Used only if contact records are sent to the Arena stream. |
 | ConnectInstanceArn | empty | Your Connect instance ARN. Needed only for backfill. |
 | BackfillDays | 90 | On first run, load this many days of past contacts and evaluations per agent from Connect, and list every user so the console shows the whole team. 0 disables. Needs ConnectInstanceArn. See [getting started](kb.html?a=getting-started). |
+| DataExport | `disabled` | `enabled` creates a private export bucket and writes per-agent per-day rows to it nightly. See [warehouse export](kb.html?a=data-export). |
 | ScheduleAdherence | `disabled` | `enabled` scores each agent's schedule adherence every night from Amazon Connect. Needs forecasting, capacity planning and scheduling enabled on the instance. See [how scoring works](kb.html?a=how-scoring-works). |
 | ShardCount | 1 | Kinesis shards. One handles thousands of agents. |
 

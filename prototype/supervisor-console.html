@@ -149,6 +149,14 @@ tr.flash td{background:var(--flash)}
 .co .acts{display:flex;gap:4px;margin-top:2px}
 dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;width:min(520px,calc(100vw - 32px))}
 dialog::backdrop{background:rgba(10,14,20,.55)}
+dialog.wide{width:min(760px,calc(100vw - 32px))}
+.people{display:grid;gap:4px;margin:8px 0;max-height:280px;overflow:auto}
+.person{display:grid;grid-template-columns:1.2fr 1fr 90px 1fr auto;gap:8px;align-items:center;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)}
+.person small{display:block;color:var(--muted);font-size:11px}
+.person .acts{display:flex;gap:4px}
+.sub-h{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.code{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:11.5px;white-space:pre-wrap;word-break:break-all}
 .cat-rows{display:grid;gap:6px;margin:8px 0}
 .cat-row{display:grid;grid-template-columns:1fr 110px auto;gap:6px;align-items:center}
 .cat-row input{width:100%}
@@ -177,6 +185,8 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
   <a class="link" href="report.html" id="reportLink">Results report</a>
   <a class="link" href="https://arenaforconnect.com/kb.html" target="_blank" rel="noopener">Help</a>
   <a class="link" href="wallboard.html" target="_blank" rel="noopener" id="wallLink">Open wallboard</a>
+  <button class="btn sm" id="peopleBtn" title="Sign-ins for agents and supervisors">People</button>
+  <button class="btn sm" id="dataBtn" title="Keys and files for your warehouse or BI tool">Data</button>
   <button class="btn sm" id="kioskBtn" title="Create a sign-in-free link for a floor TV">TV link</button>
   <span class="crumb" id="clock">09:41</span>
 </div>
@@ -291,6 +301,34 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
 
   <div class="demo"><span class="l">Demo</span> Simulated event stream · <span id="evCount">0</span> events since load · <label>speed <input type="range" id="speed" min="1" max="10" value="4" style="vertical-align:middle;width:100px"></label></div>
 </div>
+<dialog id="peopleDlg" aria-labelledby="peopleTitle" class="wide">
+  <form class="dlg" id="peopleForm" method="dialog">
+    <h2 id="peopleTitle">People</h2>
+    <div class="ctx" id="peopleCtx">Sign-ins for this stack. An agent's sign-in is tied to their Connect agent so their points find them.</div>
+    <div class="people" id="peopleList"></div>
+    <h3 class="sub-h">Add a person</h3>
+    <div class="grid2">
+      <label>Username<input id="pUser" maxlength="128" placeholder="priya.n" autocomplete="off"></label>
+      <label>Display name<input id="pName" maxlength="100" placeholder="Priya Natarajan"></label>
+      <label>Email (optional; Cognito emails the temporary password)<input id="pEmail" type="email" maxlength="254" placeholder="priya@example.com"></label>
+      <label>Role<select id="pRole"><option value="agent">Agent</option><option value="supervisor">Supervisor</option></select></label>
+      <label>Team (routing profile)<input id="pTeam" maxlength="120" list="pTeams"></label>
+      <label>Connect agent<select id="pAgent"><option value="">Not an agent</option></select></label>
+    </div>
+    <datalist id="pTeams"></datalist>
+    <div class="act"><span class="err" id="pErr"></span><button type="button" class="btn" id="pClose">Close</button><button type="submit" class="btn pri" id="pAdd">Add person</button></div>
+  </form>
+</dialog>
+<dialog id="dataDlg" aria-labelledby="dataTitle">
+  <form class="dlg" id="dataForm" method="dialog">
+    <h2 id="dataTitle">Data for your warehouse</h2>
+    <div class="ctx">Per-agent, per-day rows: points, contacts, handle time, evaluations, sentiment, surveys, adherence and kudos. No customer data. The stack writes them nightly to its export bucket when DataExport is enabled; the read API below returns the same rows.</div>
+    <div class="people" id="dataKeys"></div>
+    <div class="act"><label>Label<input id="dkLabel" maxlength="60" placeholder="Databricks"></label><button type="button" class="btn sm pri" id="dkCreate">Create a data key</button></div>
+    <pre class="code" id="dkHow" hidden></pre>
+    <div class="act"><span class="err" id="dkErr"></span><button type="button" class="btn" id="dkClose">Close</button></div>
+  </form>
+</dialog>
 <dialog id="catDlg" aria-labelledby="catTitle">
   <form class="dlg" id="catForm" method="dialog">
     <h2 id="catTitle">Reward catalog</h2>
@@ -466,6 +504,44 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     if (budgetEditing) $('#budgetSave').onclick = async () => { try { budget = await engine.setBudget(+$('#budgetVal').value || 0); budgetEditing = false; renderBudget(); toast(budget.capped ? `Budget set to ${budget.monthly.toLocaleString()} pts a month` : 'Budget cap removed'); } catch (e) { toast(e.message); } };
   }
   $('#budgetEdit').addEventListener('click', () => { budgetEditing = !budgetEditing; renderBudget(); });
+  // People: sign-ins in the stack's Cognito pool. Supervisors only; with an external identity provider the API says so.
+  let people = [];
+  function renderPeople(){
+    $('#peopleList').innerHTML = people.length ? people.map(u => `<div class="person"><span><b>${esc(u.name || u.username)}</b><small>${esc(u.username)}${u.email ? ' · ' + esc(u.email) : ''}</small></span><span>${esc(u.team || '')}<small>${u.agentArn ? 'agent ' + esc(u.agentArn.split('/').pop()) : 'no Connect agent'}</small></span><select data-role="${esc(u.username)}" aria-label="Role"><option value="agent" ${u.role === 'agent' ? 'selected' : ''}>Agent</option><option value="supervisor" ${u.role === 'supervisor' ? 'selected' : ''}>Supervisor</option></select><span><small>${esc(u.status || '')}${u.enabled === false ? ' · disabled' : ''}</small></span><span class="acts"><button type="button" class="btn sm" data-reset="${esc(u.username)}">Reset password</button><button type="button" class="btn sm" data-remove="${esc(u.username)}">Remove</button></span></div>`).join('') : '<div class="empty">No people yet.</div>';
+  }
+  async function loadPeople(){ try { people = await engine.users(); $('#pErr').textContent = ''; } catch (e) { people = []; $('#pErr').textContent = e.message; } renderPeople();
+    $('#pAgent').innerHTML = '<option value="">Not an agent</option>' + engine.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+    $('#pTeams').innerHTML = [...new Set(engine.agents.map(a => a.team).filter(Boolean).concat([engine.team]).filter(Boolean))].map(t => `<option value="${esc(t)}">`).join(''); $('#pTeam').value = engine.team || ''; }
+  $('#peopleBtn').addEventListener('click', async () => { if (!conn.isSupervisor && engine.remote) return toast('Supervisors only'); await loadPeople(); $('#peopleDlg').showModal(); });
+  $('#pClose').addEventListener('click', () => $('#peopleDlg').close());
+  $('#pAgent').addEventListener('change', e => { const a = engine.byId(e.target.value); if (a) { if (!$('#pName').value) $('#pName').value = a.name; if (!$('#pUser').value && a.username) $('#pUser').value = a.username; if (a.team) $('#pTeam').value = a.team; } });
+  $('#peopleForm').addEventListener('submit', async e => { e.preventDefault();
+    try { const r = await engine.createUser({ username: $('#pUser').value.trim(), name: $('#pName').value.trim(), email: $('#pEmail').value.trim(), role: $('#pRole').value, team: $('#pTeam').value.trim(), agentArn: $('#pAgent').value });
+      const msg = r.invited ? `Invited ${r.person.username}; Cognito emailed the temporary password.` : `Added ${r.person.username}. Temporary password, shown once: ${r.temporaryPassword}`;
+      ['#pUser', '#pName', '#pEmail'].forEach(id => $(id).value = ''); $('#pAgent').value = ''; await loadPeople(); $('#pErr').textContent = msg; }
+    catch (err) { $('#pErr').textContent = err.message; } });
+  $('#peopleList').addEventListener('change', async e => { const u = e.target.dataset.role; if (!u) return; try { await engine.updateUser(u, { role: e.target.value }); toast(`${u} is now ${e.target.value === 'supervisor' ? 'a supervisor' : 'an agent'}`); } catch (err) { $('#pErr').textContent = err.message; } });
+  $('#peopleList').addEventListener('click', async e => {
+    const rs = e.target.closest('[data-reset]'), rm = e.target.closest('[data-remove]');
+    try {
+      if (rs) { const r = await engine.resetPassword(rs.dataset.reset); $('#pErr').textContent = `Temporary password for ${r.username}, shown once: ${r.temporaryPassword}`; }
+      if (rm && confirm(`Remove ${rm.dataset.remove}'s sign-in? Their points stay.`)) { await engine.deleteUser(rm.dataset.remove); await loadPeople(); }
+    } catch (err) { $('#pErr').textContent = err.message; } });
+
+  // Data keys: a warehouse or BI tool reads per-agent per-day rows through the API without a sign-in. Supervisors mint and revoke them.
+  async function loadDataKeys(){
+    let keys = []; try { keys = await engine.dataKeys(); $('#dkErr').textContent = ''; } catch (e) { $('#dkErr').textContent = e.message; }
+    $('#dataKeys').innerHTML = keys.length ? keys.map(k => `<div class="person" style="grid-template-columns:1fr 1fr auto"><span><b>${esc(k.label)}</b><small>created ${esc((k.createdAt || '').slice(0, 10))}${k.createdBy ? ' by ' + esc(k.createdBy) : ''}</small></span><span><small>${esc(k.key.slice(0, 8))}… · until ${esc((k.expiresAt || '').slice(0, 10))}</small></span><span class="acts"><button type="button" class="btn sm" data-revoke="${esc(k.key)}">Revoke</button></span></div>`).join('') : '<div class="empty">No data keys yet.</div>';
+  }
+  $('#dataBtn').addEventListener('click', async () => { if (!conn.isSupervisor && engine.remote) return toast('Supervisors only'); $('#dkHow').hidden = true; await loadDataKeys(); $('#dataDlg').showModal(); });
+  $('#dkClose').addEventListener('click', () => $('#dataDlg').close());
+  $('#dkCreate').addEventListener('click', async () => {
+    try { const k = await engine.createDataKey($('#dkLabel').value.trim() || 'Warehouse', 365); const base = new URL(engine.apiBase(), location.href).toString().replace(/\/$/, '');
+      $('#dkHow').hidden = false; $('#dkHow').textContent = `Data key, shown once. Store it in your warehouse's secret store.\n\n${k.key}\n\nRead the last 30 days:\ncurl "${base}/data/${k.key}/days?from=${new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)}&to=${new Date(Date.now() - 86400000).toISOString().slice(0, 10)}"\n\nNightly files land in the stack's export bucket under days/dt=YYYY-MM-DD/<team>.json when DataExport is enabled.`;
+      $('#dkLabel').value = ''; await loadDataKeys(); }
+    catch (e) { $('#dkErr').textContent = e.message; } });
+  $('#dataKeys').addEventListener('click', async e => { const r = e.target.closest('[data-revoke]'); if (!r) return; try { await engine.revokeDataKey(r.dataset.revoke); await loadDataKeys(); toast('Data key revoked'); } catch (err) { $('#dkErr').textContent = err.message; } });
+
   // Reward catalog editor: what is on offer, what it costs, and how often balances reset. Saved per team.
   let catItems = [];
   function renderCatRows(){ $('#catRows').innerHTML = catItems.map((it, i) => `<div class="cat-row"><input data-i="${i}" data-k="name" value="${esc(it.name)}" maxlength="60" placeholder="Reward" aria-label="Reward name"><input data-i="${i}" data-k="cost" type="number" min="1" step="1" value="${it.cost}" aria-label="Cost in points"><button type="button" class="btn sm" data-del="${i}" aria-label="Remove">×</button></div>`).join('') || '<div class="empty">No rewards. Add one.</div>'; }

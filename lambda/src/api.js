@@ -17,6 +17,11 @@
  *   POST /teams/{team}/notifications/test       posts "Arena connected" to the configured channels (supervisors)
  *   GET/PUT /teams/{team}/rewards/settings      catalog (name, cost) and balance period (week, month, quarter) per team; { useDefault: true } resets (supervisors)
  *   GET  /agents/{arn}/balance                  what the agent may spend: points earned this period minus approved rewards (the agent or a supervisor)
+ *   GET/POST /admin/users, PUT/DELETE /admin/users/{username}, POST /admin/users/{username}/password
+ *                                               people in the stack's Cognito pool: list, invite, edit role/team/ARN, reset password, remove (supervisors; Cognito mode only)
+ *   GET/POST /data/keys, DELETE /data/keys/{key} data keys for warehouses and BI tools (supervisors)
+ *   GET  /data/{key}/days?from&to[&team]        read API: per-agent per-day rows, authenticated by a data key (no sign-in); same rows the nightly export writes
+ *   GET  /export/days?from&to[&team]            the same rows for a signed-in supervisor
  *   GET/PUT /teams/{team}/budget                monthly reward budget in points; approvals stop at the cap, alerts at 25/50/75/100% (supervisors)
  *   Days, weeks and months are calendar periods in the stack's Timezone (clock.js).
  *   Challenges run over their whole period; races, duels and team-vs-team carry standings; ending one freezes results and pays prizes.
@@ -33,6 +38,8 @@ const store = require('./store.js');
 const notify = require('./notify.js');
 const challenges = require('./challenges.js');
 const clock = require('./clock.js');
+const adminMod = require('./admin.js');
+const exporter = require('./export.js');
 
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const KUDOS_DAILY_LIMIT = Math.max(1, +(process.env.KUDOS_DAILY_LIMIT || 5));
@@ -65,6 +72,16 @@ function route(method, path) {
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/notifications\/test$/))) return { name: 'testNotify', team: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/budget$/))) return { name: 'getBudget', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/budget$/))) return { name: 'putBudget', team: decodeURIComponent(x[1]) };
+  if (method === 'GET' && path === '/admin/users') return { name: 'listUsers' };
+  if (method === 'POST' && path === '/admin/users') return { name: 'createUser' };
+  if (method === 'POST' && (x = m(/^\/admin\/users\/([^/]+)\/password$/))) return { name: 'resetPassword', username: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/admin\/users\/([^/]+)$/))) return { name: 'updateUser', username: decodeURIComponent(x[1]) };
+  if (method === 'DELETE' && (x = m(/^\/admin\/users\/([^/]+)$/))) return { name: 'deleteUser', username: decodeURIComponent(x[1]) };
+  if (method === 'GET' && path === '/data/keys') return { name: 'listDataKeys' };
+  if (method === 'POST' && path === '/data/keys') return { name: 'createDataKey' };
+  if (method === 'DELETE' && (x = m(/^\/data\/keys\/([^/]+)$/))) return { name: 'revokeDataKey', token: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/data\/([^/]+)\/days$/))) return { name: 'dataDays', token: decodeURIComponent(x[1]) };
+  if (method === 'GET' && path === '/export/days') return { name: 'exportDays' };
   if (method === 'DELETE' && (x = m(/^\/agents\/(.+)$/))) return { name: 'deleteAgent', arn: decodeURIComponent(x[1]) };
   // Kiosk: unauthenticated at the gateway, the token is the credential. Read-only, wallboard only.
   if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
@@ -83,6 +100,9 @@ function route(method, path) {
 function makeHandler(deps) {
   const s = deps.store || store, now = deps.now || (() => new Date());
   const sendFn = deps.send || notify.send;
+  const admin = deps.admin || adminMod.makeAdmin({});
+  /** Date range for the export routes: from..to inclusive, defaults to yesterday, capped. */
+  const rangeOf = (q) => { const today = clock.dayKey(now()); const to = clock.isDay(q.to) && q.to <= today ? q.to : clock.addDays(today, -1); let from = clock.isDay(q.from) ? q.from : to; if (from > to) from = to; if (clock.addDays(from, exporter.MAX_DAYS - 1) < to) from = clock.addDays(to, 1 - exporter.MAX_DAYS); return { from, to }; };
   // Fire-and-forget notifications: a dead webhook must never fail the request that triggered it.
   const tell = async (team, ev) => { try { const cfg = await s.getNotify(team); if (cfg) await sendFn(cfg, ev, deps); } catch (e) { console.warn('notify failed', e.message); } };
     /** The mix a team is scored with and where it comes from. */
@@ -260,7 +280,7 @@ function makeHandler(deps) {
         }
         case 'listKiosk': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
-          const items = (await s.listKiosks(r.team)).map((k) => ({ token: k.token, team: k.team, label: k.label, createdAt: k.createdAt, createdBy: k.createdBy, expiresAt: k.expiresAt }));
+          const items = (await s.listKiosks(r.team)).filter((k) => k.kind !== 'data').map((k) => ({ token: k.token, team: k.team, label: k.label, createdAt: k.createdAt, createdBy: k.createdBy, expiresAt: k.expiresAt }));
           return json(200, { team: r.team, kiosks: items });
         }
         case 'createKiosk': {
@@ -281,7 +301,7 @@ function makeHandler(deps) {
         }
         case 'kiosk': {
           const k = await s.getKiosk(r.token);
-          if (!k || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'kiosk link is invalid or expired' });
+          if (!k || k.kind === 'data' || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'kiosk link is invalid or expired' });
           const iso = now().toISOString();
           if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: (await s.getTeam(k.team, iso)).filter((a) => !a.hidden).map(forWallboard) });
           if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip).map((k2) => Object.assign({}, k2, { from: displayName(k2.from), toName: displayName(k2.toName) })) });
@@ -419,6 +439,55 @@ function makeHandler(deps) {
           const team = (live && live.team) || claims['custom:team'] || qs.team;
           if (!team) return json(404, { error: 'agent has no team yet' });
           return json(200, { agent: r.arn, team, balance: await balanceFor(team, r.arn) });
+        }
+        case 'listUsers': case 'createUser': case 'updateUser': case 'resetPassword': case 'deleteUser': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          if (!admin.ready()) return json(409, { error: 'this stack signs people in through an external identity provider; manage them there' });
+          try {
+            if (r.name === 'listUsers') return json(200, { users: await admin.list() });
+            if (r.name === 'createUser') { const out = await admin.create(parse(event)); console.info(JSON.stringify({ audit: 'createUser', username: out.person.username, role: out.person.role, by: who(claims) })); return json(201, out); }
+            if (r.name === 'updateUser') { const person = await admin.update(r.username, parse(event)); console.info(JSON.stringify({ audit: 'updateUser', username: r.username, by: who(claims) })); return json(200, { person }); }
+            if (r.name === 'resetPassword') { console.info(JSON.stringify({ audit: 'resetPassword', username: r.username, by: who(claims) })); return json(200, await admin.resetPassword(r.username)); }
+            console.info(JSON.stringify({ audit: 'deleteUser', username: r.username, by: who(claims) })); return json(200, await admin.remove(r.username));
+          } catch (e) {
+            if (e.name === 'UsernameExistsException') return json(409, { error: 'that username already exists' });
+            if (e.name === 'UserNotFoundException') return json(404, { error: 'no such person' });
+            if (e.name === 'InvalidParameterException' || e.name === 'InvalidPasswordException' || !e.name || e.name === 'Error') return json(400, { error: e.message });
+            throw e;
+          }
+        }
+        case 'listDataKeys': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          return json(200, { keys: (await s.listKiosks()).filter((k) => k.kind === 'data').map((k) => ({ key: k.token, label: k.label, createdAt: k.createdAt, createdBy: k.createdBy, expiresAt: k.expiresAt })) });
+        }
+        case 'createDataKey': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const b = parse(event), token = 'dk_' + require('crypto').randomBytes(24).toString('base64url');
+          const days = Math.min(730, Math.max(1, +(b.days || 365)));
+          const key = { kind: 'data', label: String(b.label || 'Warehouse').slice(0, 60), createdAt: now().toISOString(), createdBy: who(claims), expiresAt: new Date(now().getTime() + days * 86400000).toISOString(), ttl: Math.floor(now().getTime() / 1000) + days * 86400 };
+          await s.putKiosk(token, '*', key);
+          console.info(JSON.stringify({ audit: 'createDataKey', label: key.label, by: who(claims) }));
+          return json(201, { key: Object.assign({ key: token }, key, { ttl: undefined }) });
+        }
+        case 'revokeDataKey': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const k = await s.getKiosk(r.token);
+          if (!k || k.kind !== 'data') return json(404, { error: 'not found' });
+          await s.deleteKiosk(r.token);
+          return json(200, { revoked: r.token });
+        }
+        case 'dataDays': {
+          const k = await s.getKiosk(r.token);
+          if (!k || k.kind !== 'data' || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'data key is invalid or expired' });
+          const { from, to } = rangeOf(qs);
+          const rows = await exporter.rowsBetween(s, from, to, qs.team || undefined);
+          return json(200, { from, to, team: qs.team || undefined, rows });
+        }
+        case 'exportDays': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const { from, to } = rangeOf(qs);
+          const rows = await exporter.rowsBetween(s, from, to, qs.team || undefined);
+          return json(200, { from, to, team: qs.team || undefined, rows });
         }
         case 'getBudget': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });

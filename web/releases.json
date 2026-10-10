@@ -1,5 +1,26 @@
 [
   {
+    "version": "0.12.0",
+    "date": "2026-10-10",
+    "title": "People from the console, and your data in your warehouse",
+    "summary": "Supervisors manage sign-ins from a People button, and per-agent per-day rows flow to a warehouse as nightly files or through a read API with data keys.",
+    "changes": [
+      "People: a button at the top of the console lists everyone in the stack's user pool, adds a person (pick the Connect agent, choose agent or supervisor, optional email for the invitation), changes roles, resets passwords and removes sign-ins. No command line needed. With an external identity provider the console says so.",
+      "Warehouse export: with the new DataExport setting enabled, the stack writes yesterday's per-agent rows every night to a private export bucket as newline JSON under days/dt=YYYY-MM-DD/, one file per team, with a manifest. Databricks Auto Loader and Athena read it as-is.",
+      "Read API: a Data button in the console mints data keys; a warehouse or BI tool then reads the same rows over HTTPS at /api/data/<key>/days?from&to without a sign-in. Keys are shown once, expire after a year and can be revoked.",
+      "Signed-in supervisors can read the same rows at /api/export/days."
+    ],
+    "upgrade": [
+      "No action is needed. Set DataExport to enabled when you update the stack if you want the nightly files; the read API and People work as soon as the stack is updated.",
+      "The People button needs the stack's own Cognito pool (the default AuthMode)."
+    ],
+    "docs": [
+      "users-and-sign-in",
+      "data-export",
+      "settings-reference"
+    ]
+  },
+  {
     "version": "0.11.0",
     "date": "2026-10-10",
     "title": "Leaderboard opt-out and a security write-up for reviewers",

@@ -78,6 +78,11 @@ Parameters:
     Default: 25
     MinValue: 0
     Description: Agents per day that are free during the trial.
+  DataExport:
+    Type: String
+    Default: disabled
+    AllowedValues: [enabled, disabled]
+    Description: enabled creates a private export bucket and writes per-agent per-day rows to it every night (newline JSON under days/dt=YYYY-MM-DD/), for Databricks, Athena or any warehouse. The read API works either way.
   KudosDailyLimit:
     Type: Number
     Default: 5
@@ -126,6 +131,7 @@ Conditions:
   HasDigestEmail: !Not [!Equals [!Ref DigestEmail, '']]
   InstallSite: !Not [!Equals [!Ref SiteArchiveUrl, '']]
   UseAdherence: !Equals [!Ref ScheduleAdherence, enabled]
+  UseExport: !Equals [!Ref DataExport, enabled]
   UseBackfill: !And [!Not [!Equals [!Ref ConnectInstanceArn, '']], !Not [!Equals [!Ref BackfillDays, '0']]]
 
 Globals:
@@ -376,6 +382,40 @@ Resources:
             Schedule: rate(1 hour)         # runs until it has done the one-time backfill, then finds the mark and exits
             Description: One-time history load from Amazon Connect
 
+  ExportBucket:
+    Type: AWS::S3::Bucket
+    Condition: UseExport
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub arena-export-${AWS::StackName}-${AWS::AccountId}
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      LifecycleConfiguration:
+        Rules: [{ Id: expire, Status: Enabled, ExpirationInDays: 400 }]
+
+  ExportFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseExport
+    Properties:
+      FunctionName: !Sub arena-export-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: export.handler
+      Timeout: 300
+      Environment:
+        Variables:
+          EXPORT_BUCKET: !Ref ExportBucket
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref Table }
+        - S3WritePolicy: { BucketName: !Ref ExportBucket }
+      Events:
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(50 * * * ? *)   # ten to every hour; the first run after local midnight writes yesterday, later runs rewrite the same files
+            Description: Write yesterday's per-agent rows to the export bucket
+
   AdherenceFunction:
     Type: AWS::Serverless::Function
     Condition: UseAdherence
@@ -588,10 +628,23 @@ Resources:
           DIGEST_TOPIC_ARN: !Ref DigestTopic
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           AUTH_MODE: jwt
+          USER_POOL_ID: !If [UseCognito, !Ref UserPool, '']
       Policies:
         - SNSPublishMessagePolicy: { TopicName: !GetAtt DigestTopic.TopicName }
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow   # People in the console: list, invite, edit, reset and remove sign-ins in the stack's own pool
+              Action: [cognito-idp:ListUsers, cognito-idp:ListUsersInGroup, cognito-idp:AdminGetUser, cognito-idp:AdminListGroupsForUser, cognito-idp:AdminCreateUser, cognito-idp:AdminUpdateUserAttributes, cognito-idp:AdminAddUserToGroup, cognito-idp:AdminRemoveUserFromGroup, cognito-idp:AdminSetUserPassword, cognito-idp:AdminDeleteUser]
+              Resource: !If [UseCognito, !GetAtt UserPool.Arn, !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/none']
       Events:
+        Data:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /data/{key}/days
+            Method: GET
+            Auth:
+              Authorizer: NONE   # the data key in the path is the credential; the function checks it. Read-only.
         Any:
           Type: HttpApi
           Properties:
@@ -740,6 +793,10 @@ Resources:
         }
 
 Outputs:
+  ExportBucketName:
+    Condition: UseExport
+    Value: !Ref ExportBucket
+    Description: Nightly per-agent per-day rows land here under days/dt=YYYY-MM-DD/<team>.json. Point Databricks Auto Loader, Athena or your warehouse at it.
   SiteUrl:
     Description: Register this as the third-party app URL in the Connect agent workspace. Supervisor console and wallboard live under it too.
     Value: !Sub https://${Distribution.DomainName}

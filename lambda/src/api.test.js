@@ -562,3 +562,42 @@ test('leaderboard opt-out: hidden agents are kept from teammates and wallboards,
   assert.deepEqual(JSON.parse((await h(anon('GET', '/kiosk/tok/agents'))).body).agents.map((a) => a.name), ['priya']);
   assert.deepEqual(rows(await h(anon('GET', '/kiosk/tok/challenges'))), ['priya', 'A teammate']);
 });
+
+test('people routes go through the admin module, supervisors only, and say so without Cognito', async () => {
+  const s = fakeStore(); const calls = [];
+  const admin = { ready: () => true, list: async () => [{ username: 'priya', role: 'agent' }], create: async (b) => { calls.push(['create', b]); if (b.username === 'dupe') { const e = new Error('x'); e.name = 'UsernameExistsException'; throw e; } if (!b.name) throw new Error('a display name is required'); return { person: Object.assign({}, b), temporaryPassword: 'T', invited: false }; },
+    update: async (u, b) => ({ username: u, role: b.role }), resetPassword: async (u) => ({ username: u, temporaryPassword: 'T2' }), remove: async (u) => ({ username: u, deleted: true }) };
+  const h = makeHandler({ store: s, now: fixed, admin });
+  const supReq = (method, path, body) => Object.assign(req(method, path), { body: body ? JSON.stringify(body) : undefined });
+  assert.equal((await h(Object.assign(anon('GET', '/admin/users'), { requestContext: { http: { method: 'GET' }, authorizer: { jwt: { claims: { 'custom:team': 't' } } } } }))).statusCode, 403);
+  assert.deepEqual(JSON.parse((await h(supReq('GET', '/admin/users'))).body).users[0].username, 'priya');
+  assert.equal((await h(supReq('POST', '/admin/users', { username: 'new', name: 'New', role: 'supervisor' }))).statusCode, 201);
+  assert.equal((await h(supReq('POST', '/admin/users', { username: 'dupe', name: 'D', role: 'supervisor' }))).statusCode, 409);
+  assert.equal((await h(supReq('POST', '/admin/users', { username: 'x', role: 'supervisor' }))).statusCode, 400);
+  assert.equal(JSON.parse((await h(supReq('PUT', '/admin/users/priya', { role: 'supervisor' }))).body).person.role, 'supervisor');
+  assert.equal(JSON.parse((await h(supReq('POST', '/admin/users/priya/password'))).body).temporaryPassword, 'T2');
+  assert.equal(JSON.parse((await h(supReq('DELETE', '/admin/users/priya'))).body).deleted, true);
+  const h2 = makeHandler({ store: s, now: fixed, admin: Object.assign({}, admin, { ready: () => false }) });
+  assert.equal((await h2(supReq('GET', '/admin/users'))).statusCode, 409);
+});
+
+test('data keys open the read API without a sign-in, and are not wallboard keys', async () => {
+  const s = fakeStore(); const kiosks = {};
+  s.putKiosk = async (t, team, f) => { kiosks[t] = Object.assign({ token: t, team }, f); }; s.getKiosk = async (t) => kiosks[t] || null; s.listKiosks = async (team) => Object.values(kiosks).filter((k) => !team || k.team === team); s.deleteKiosk = async (t) => { delete kiosks[t]; };
+  s.listTeams = async () => ['t']; s.getTeamDays = async (team, dates) => { const out = {}; for (const d of dates) out[d] = d === '2026-09-15' ? [{ pk: 'AGENT#a1', username: 'priya', points: 118, handled: 4, ahtSum: 1200, evals: [92] }] : []; return out; };
+  const h = makeHandler({ store: s, now: fixed });
+  const made = await h(Object.assign(req('POST', '/data/keys'), { body: JSON.stringify({ label: 'Databricks', days: 30 }) }));
+  assert.equal(made.statusCode, 201); const key = JSON.parse(made.body).key.key; assert.match(key, /^dk_/);
+  assert.equal(JSON.parse((await h(req('GET', '/data/keys'))).body).keys.length, 1);
+  assert.equal((await h(anon('GET', '/kiosk/' + key + '/agents'))).statusCode, 401, 'a data key is not a wallboard key');
+  assert.equal(JSON.parse((await h(req('GET', '/teams/t/kiosk'))).body).kiosks.length, 0, 'and is not listed among them');
+  const r = await h(Object.assign(anon('GET', `/data/${key}/days`), { queryStringParameters: { from: '2026-09-14', to: '2026-09-15' } }));
+  assert.equal(r.statusCode, 200); const b = JSON.parse(r.body);
+  assert.equal(b.from, '2026-09-14'); assert.equal(b.rows.length, 1); assert.equal(b.rows[0].name, 'priya'); assert.equal(b.rows[0].evaluationAvg, 92);
+  const sup = JSON.parse((await h(Object.assign(req('GET', '/export/days'), { queryStringParameters: { from: '2026-09-15', to: '2026-09-15' } }))).body);
+  assert.equal(sup.rows.length, 1);
+  assert.equal(JSON.parse((await h(Object.assign(anon('GET', `/data/${key}/days`), { queryStringParameters: { to: '2099-01-01' } }))).body).to, '2026-09-14', 'future dates clamp to yesterday');
+  assert.equal((await h(anon('GET', '/data/nope/days'))).statusCode, 401);
+  assert.equal((await h(req('DELETE', '/data/keys/' + key))).statusCode, 200);
+  assert.equal((await h(anon('GET', `/data/${key}/days`))).statusCode, 401);
+});

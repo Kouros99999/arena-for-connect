@@ -22,6 +22,8 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `lambda/src/clock.js` | Local time: day, week and month keys in the stack's Timezone |
 | `lambda/src/mix.js` | Which scoring mix applies to a team, cached |
 | `lambda/src/backfill.js` | One-time history load from Connect metrics |
+| `lambda/src/admin.js` | People: Cognito users from the console |
+| `lambda/src/export.js` | Nightly warehouse export and the read API rows |
 | `lambda/src/acknowledgements.js` | Hourly evaluation acknowledgement points |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
@@ -42,7 +44,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/admin.test.js lambda/src/export.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -129,6 +131,10 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 ## Operations
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
+
+**People.** `lambda/src/admin.js` wraps the stack's Cognito pool (`USER_POOL_ID`): `GET/POST /admin/users`, `PUT/DELETE /admin/users/{username}`, `POST /admin/users/{username}/password`. Supervisors only; 409 when `AuthMode` is external. Invitations go by email when one is given, otherwise a temporary password is returned once. Every action logs an audit line.
+
+**Warehouse export and read API.** `lambda/src/export.js` turns DAY rows into flat per-agent per-day rows (`toRow`). With `DataExport=enabled` the stack owns a private bucket and writes `days/dt=<day>/<team>.json` (newline JSON) plus `manifests/<day>.json` nightly. Data keys (`POST /data/keys`, kiosk rows with `kind: data`, team `*`) open `GET /data/{key}/days?from&to[&team]` without a sign-in; supervisors have `GET /export/days`. Ranges are capped at 92 days.
 
 **Leaderboard opt-out.** `PUT /agents/{arn}/prefs { hideFromBoard: true }` keeps an agent out of teammates' team-agents responses, kiosk responses and the standings teammates or wallboards see (rows become "A teammate"); supervisors get everyone with `hidden: true`.
 

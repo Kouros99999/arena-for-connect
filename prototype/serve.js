@@ -35,6 +35,15 @@ async function api(req, res, p) {
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/notifications\/test$/))) return json(res, 200, await engine.testNotification());
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/budget$/))) return json(res, 200, { budget: await engine.budget() });
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/budget$/))) { const b = await body(req); return json(res, 200, { budget: await engine.setBudget(b.monthly) }); }
+    if (req.method === 'GET' && p === '/admin/users') return json(res, 200, { users: await engine.users() });
+    if (req.method === 'POST' && p === '/admin/users') { try { return json(res, 201, await engine.createUser(await body(req))); } catch (e) { return json(res, 400, { error: e.message }); } }
+    if (req.method === 'POST' && (m = p.match(/^\/admin\/users\/([^/]+)\/password$/))) return json(res, 200, await engine.resetPassword(decodeURIComponent(m[1])));
+    if (req.method === 'PUT' && (m = p.match(/^\/admin\/users\/([^/]+)$/))) { try { return json(res, 200, { person: await engine.updateUser(decodeURIComponent(m[1]), await body(req)) }); } catch (e) { return json(res, 404, { error: e.message }); } }
+    if (req.method === 'DELETE' && (m = p.match(/^\/admin\/users\/([^/]+)$/))) return json(res, 200, await engine.deleteUser(decodeURIComponent(m[1])));
+    if (req.method === 'GET' && p === '/data/keys') return json(res, 200, { keys: await engine.dataKeys() });
+    if (req.method === 'POST' && p === '/data/keys') { const b = await body(req); return json(res, 201, { key: await engine.createDataKey(b.label, b.days) }); }
+    if (req.method === 'DELETE' && (m = p.match(/^\/data\/keys\/([^/]+)$/))) return json(res, 200, await engine.revokeDataKey(decodeURIComponent(m[1])));
+    if (req.method === 'GET' && (m = p.match(/^\/data\/([^/]+)\/days$/))) return json(res, 200, await engine.exportDays('2026-01-01', '2026-01-07'));
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/settings$/))) return json(res, 200, { settings: await engine.rewardSettings() });
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/settings$/))) { const b = await body(req); try { return json(res, 200, { settings: b.useDefault ? await engine.resetRewardSettings() : await engine.saveRewardSettings(b) }); } catch (e) { return json(res, 400, { error: e.message }); } }
     if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/balance$/))) return json(res, 200, { balance: await engine.balance(decodeURIComponent(m[1])) });

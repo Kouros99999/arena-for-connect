@@ -9,9 +9,20 @@ Arena has its own sign-in because the pages talk to an API, and the API must kno
 
 Each user carries two attributes: the Connect agent ARN and the routing profile name. The panel uses them to open on the right agent and team with no setup by the agent.
 
-## Creating users from Connect
+## People, from the console
 
-The sync script in the deployment package reads your Connect directory and creates matching users:
+Supervisors manage sign-ins from the **People** button at the top of the console, with no command line:
+
+- The list shows everyone in the stack's user pool with their role, team, Connect agent and status. Change a role from the dropdown on the row.
+- **Add a person**: pick the Connect agent from the list (the name, username and team fill in), choose agent or supervisor, and add an email if they have one. With an email, Cognito sends the invitation and temporary password. Without one, the console shows a temporary password once; pass it on and they set their own at first sign-in.
+- **Reset password** shows a new temporary password once.
+- **Remove** deletes the sign-in. Their points and history stay; see [security and your data](kb.html?a=security-and-data) to remove those too.
+
+Every action is written to the API log with who did it. With an external identity provider (`AuthMode` external) the button says so and people are managed in your provider instead.
+
+## Creating users from Connect in bulk
+
+The sync script in the deployment package reads your Connect directory and creates matching users, which suits the first day on a large instance:
 
 ```bash
 node lambda/sync-users.js <stack name> --instance <connect instance id> --dry-run
