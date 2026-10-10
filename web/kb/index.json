@@ -9,7 +9,7 @@
     "slug": "how-scoring-works",
     "title": "How scoring works",
     "summary": "Where points come from, why quality outweighs speed, and what the scoring mix changes.",
-    "updated": "0.9.0"
+    "updated": "0.10.0"
   },
   {
     "slug": "sentiment-and-surveys",
@@ -21,7 +21,7 @@
     "slug": "challenges-rewards-kudos",
     "title": "Challenges, rewards and kudos",
     "summary": "Team challenges measured from Connect data, a reward catalog with approval, and kudos between teammates.",
-    "updated": "0.7.0"
+    "updated": "0.10.0"
   },
   {
     "slug": "notifications",

@@ -35,7 +35,10 @@ async function api(req, res, p) {
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/notifications\/test$/))) return json(res, 200, await engine.testNotification());
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/budget$/))) return json(res, 200, { budget: await engine.budget() });
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/budget$/))) { const b = await body(req); return json(res, 200, { budget: await engine.setBudget(b.monthly) }); }
-    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const st = (req.url.split('?')[1] || '').match(/status=([a-z]+)/); return json(res, 200, { rewards: await engine.rewards(st && st[1]), catalog: Arena.CATALOG }); }
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/settings$/))) return json(res, 200, { settings: await engine.rewardSettings() });
+    if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/settings$/))) { const b = await body(req); try { return json(res, 200, { settings: b.useDefault ? await engine.resetRewardSettings() : await engine.saveRewardSettings(b) }); } catch (e) { return json(res, 400, { error: e.message }); } }
+    if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/balance$/))) return json(res, 200, { balance: await engine.balance(decodeURIComponent(m[1])) });
+    if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const st = (req.url.split('?')[1] || '').match(/status=([a-z]+)/); const rs = await engine.rewardSettings(); return json(res, 200, { rewards: await engine.rewards(st && st[1] === 'none' ? 'none' : st && st[1]), catalog: rs.items, balancePeriod: rs.balancePeriod }); }
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/rewards$/))) { const b = await body(req); return json(res, 201, { reward: await engine.requestReward(b.agentId, b.catalogId, b.by) }); }
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) { const b = await body(req); return json(res, 200, { reward: await engine.decideReward(decodeURIComponent(m[2]), b.status, 'mock supervisor') }); }
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/kudos$/))) { const l = (req.url.split('?')[1] || '').match(/limit=(\d+)/); return json(res, 200, { kudos: await engine.kudosFeed(l ? +l[1] : 10) }); }

@@ -15,6 +15,8 @@
  *   POST /teams/{team}/metrics                  { agentId, metric: csat|sentiment, score, contactId? } for survey tools without a stream (supervisors)
  *   GET/PUT /teams/{team}/notifications         Slack and Teams webhooks, digest email and hour, event switches (supervisors)
  *   POST /teams/{team}/notifications/test       posts "Arena connected" to the configured channels (supervisors)
+ *   GET/PUT /teams/{team}/rewards/settings      catalog (name, cost) and balance period (week, month, quarter) per team; { useDefault: true } resets (supervisors)
+ *   GET  /agents/{arn}/balance                  what the agent may spend: points earned this period minus approved rewards (the agent or a supervisor)
  *   GET/PUT /teams/{team}/budget                monthly reward budget in points; approvals stop at the cap, alerts at 25/50/75/100% (supervisors)
  *   Days, weeks and months are calendar periods in the stack's Timezone (clock.js).
  *   Challenges run over their whole period; races, duels and team-vs-team carry standings; ending one freezes results and pays prizes.
@@ -44,6 +46,8 @@ function route(method, path) {
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/challenges$/))) return { name: 'listChallenges', team: decodeURIComponent(x[1]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/challenges$/))) return { name: 'createChallenge', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/challenges\/([^/]+)$/))) return { name: 'updateChallenge', team: decodeURIComponent(x[1]), id: decodeURIComponent(x[2]) };
+  if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/rewards\/settings$/))) return { name: 'getRewardSettings', team: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/rewards\/settings$/))) return { name: 'putRewardSettings', team: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/rewards$/))) return { name: 'listRewards', team: decodeURIComponent(x[1]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/rewards$/))) return { name: 'requestReward', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) return { name: 'decideReward', team: decodeURIComponent(x[1]), id: decodeURIComponent(x[2]) };
@@ -66,6 +70,7 @@ function route(method, path) {
   if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/events$/))) return { name: 'agentEvents', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/best$/))) return { name: 'agentBest', arn: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/agents\/(.+)\/balance$/))) return { name: 'agentBalance', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/prefs$/))) return { name: 'getPrefs', arn: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/agents\/(.+)\/prefs$/))) return { name: 'putPrefs', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && path === '/config/mix') return { name: 'getMix' };
@@ -82,6 +87,17 @@ function makeHandler(deps) {
   const tell = async (team, ev) => { try { const cfg = await s.getNotify(team); if (cfg) await sendFn(cfg, ev, deps); } catch (e) { console.warn('notify failed', e.message); } };
     /** The mix a team is scored with and where it comes from. */
   const mixInfo = async (team) => { const m = await s.getMixes(team || undefined); return { team: team || undefined, mix: m.team || m.default || Arena.DEFAULT_MIX, source: m.team ? 'team' : 'default', default: m.default || Arena.DEFAULT_MIX }; };
+  /** The team's catalog and balance period, with defaults, and where they come from. */
+  const rewardSettingsFor = async (team) => { const own = await s.getRewardSettings(team); return Object.assign({ source: own ? 'team' : 'default' }, Arena.normalizeRewardSettings(own || {}, Arena.REWARD_DEFAULTS)); };
+  /** What an agent may spend right now: points earned in the team's balance period minus rewards approved in it. */
+  const balanceFor = async (team, arn) => {
+    const settings = await rewardSettingsFor(team), today = clock.dayKey(now());
+    const b = Arena.periodBounds(settings.balancePeriod, today);
+    const rows = await s.getAgentDays(arn, b.start, today);
+    const earned = rows.reduce((sum, row) => sum + (row.points || 0), 0);
+    const spent = await s.getSpent(arn, Arena.periodKey(settings.balancePeriod, today));
+    return Arena.balanceSummary(settings.balancePeriod, today, earned, spent);
+  };
   /** Where the team's reward budget stands this month. */
   const budgetFor = async (team) => { const b = await s.getBudget(team), month = clock.monthKey(now()); const sp = b && b.monthly ? await s.getSpend(team, month) : { spent: 0, alerted: [] }; return Object.assign(Arena.budgetSummary(b ? b.monthly : 0, sp.spent, month), { alerted: sp.alerted }); };
   return async (event) => {
@@ -185,16 +201,18 @@ function makeHandler(deps) {
           const status = qs.status;
           const items = (await s.listTeamItems(r.team, 'RW#', 100, true)).map(strip).filter((x) => !status || x.status === status);
           const budget = isSupervisor(claims) ? await budgetFor(r.team) : undefined;
-          return json(200, { team: r.team, rewards: items, catalog: Arena.CATALOG, budget });
+          const settings = await rewardSettingsFor(r.team);
+          return json(200, { team: r.team, rewards: items, catalog: settings.items, balancePeriod: settings.balancePeriod, budget });
         }
         case 'requestReward': {
           const b = parse(event);
           const agentId = claims['custom:agentArn'] || b.agentId;
-          const item = Arena.CATALOG.find((c) => c.id === b.catalogId);
+          const item = (await rewardSettingsFor(r.team)).items.find((c) => c.id === b.catalogId);
           if (!agentId || !item) return json(400, { error: 'agentId and a catalog item are required' });
           const agent = (await s.getTeam(r.team, now().toISOString())).find((a) => a.id === agentId);
           if (!agent) return json(404, { error: 'agent not on this team' });
-          if (agent.week < item.cost) return json(400, { error: `needs ${item.cost.toLocaleString()} pts this week, has ${agent.week.toLocaleString()}` });
+          const bal = await balanceFor(r.team, agentId);
+          if (bal.balance < item.cost) return json(400, { error: `needs ${item.cost.toLocaleString()} pts, has ${bal.balance.toLocaleString()} to spend this ${bal.period}` });
           const at = now().toISOString(), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
           const reward = { id, agentId, agentName: agent.name, catalogId: item.id, what: item.name, cost: item.cost, status: 'pending', requestedAt: at, requestedBy: who(claims) };
           await s.putTeamItem(r.team, `RW#${at}#${id}`, reward);
@@ -216,7 +234,7 @@ function makeHandler(deps) {
           }
           const updated = await s.updateTeamItem(r.team, item.sk, { status: b.status, decidedAt: now().toISOString(), decidedBy: who(claims) });
           if (b.status === 'approved') {
-            await s.spendPoints(item.agentId, now().toISOString(), item.cost);
+            await s.spendPoints(item.agentId, Arena.periodKey((await rewardSettingsFor(r.team)).balancePeriod, clock.dayKey(now())), item.cost);
             if (budget.capped) {
               const spent = await s.addSpend(r.team, budget.month, item.cost);
               for (const pct of Arena.budgetAlerts(budget.monthly, spent, budget.alerted)) { await s.markBudgetAlert(r.team, budget.month, pct); await tell(r.team, { kind: 'budgetAlert', pct, spent, monthly: budget.monthly, month: budget.month }); }
@@ -372,6 +390,26 @@ function makeHandler(deps) {
           try { merged = notify.merge(await s.getNotify(r.team), parse(event)); } catch (e) { return json(400, { error: e.message }); }
           await s.putNotify(r.team, merged);
           return json(200, { team: r.team, notifications: notify.masked(merged) });
+        }
+        case 'getRewardSettings': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          return json(200, { team: r.team, settings: await rewardSettingsFor(r.team) });
+        }
+        case 'putRewardSettings': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const b = parse(event);
+          if (b.useDefault) { await s.deleteRewardSettings(r.team); return json(200, { team: r.team, settings: await rewardSettingsFor(r.team) }); }
+          let settings;
+          try { settings = Arena.normalizeRewardSettings(b, await s.getRewardSettings(r.team)); } catch (e) { return json(400, { error: e.message }); }
+          await s.putRewardSettings(r.team, settings);
+          return json(200, { team: r.team, settings: await rewardSettingsFor(r.team) });
+        }
+        case 'agentBalance': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
+          const live = await s.getLive(r.arn);
+          const team = (live && live.team) || claims['custom:team'] || qs.team;
+          if (!team) return json(404, { error: 'agent has no team yet' });
+          return json(200, { agent: r.arn, team, balance: await balanceFor(team, r.arn) });
         }
         case 'getBudget': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });

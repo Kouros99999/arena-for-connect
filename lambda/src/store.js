@@ -197,10 +197,23 @@ async function updateTeamItem(team, sk, fields) {
     return r.Attributes;
   } catch (e) { if (e.name === 'ConditionalCheckFailedException') return null; throw e; }
 }
-/** Spend points from an agent's week total (reward approval). */
-async function spendPoints(arn, iso, cost) {
-  await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: `WEEK#${weekKey(iso)}` }, UpdateExpression: 'ADD points :c', ExpressionAttributeValues: { ':c': -cost } }));
+/** Record an approved reward against the agent's balance period (SPEND#<periodKey>). Earned points are never touched. */
+async function spendPoints(arn, periodKey, cost) {
+  await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: `SPEND#${periodKey}` }, UpdateExpression: 'ADD spent :c', ExpressionAttributeValues: { ':c': cost } }));
 }
+async function getSpent(arn, periodKey) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: `SPEND#${periodKey}` } }));
+  return (r.Item && r.Item.spent) || 0;
+}
+// ---------- reward settings per team: catalog and balance period (CONFIG / REWARDS#team) ----------
+async function getRewardSettings(team) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'REWARDS#' + team } }));
+  return r.Item ? r.Item.settings : null;
+}
+async function putRewardSettings(team, settings) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'REWARDS#' + team, team, settings, updatedAt: new Date().toISOString() } }));
+}
+async function deleteRewardSettings(team) { await db().send(new cmds.DeleteCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'REWARDS#' + team } })); }
 
 // ---------- agent data deletion ----------
 /** Every row in an agent's partition, plus their reward requests, coaching plans and kudos addressed to them on the team feed. Returns the keys. */
@@ -361,5 +374,5 @@ async function putAgentPrefs(arn, prefs) {
 
 module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, getMixes, putMix, deleteMix, putAgentPrefs, seedLive, putAck, deleteAck, listAcks, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
   getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount, getNotify, putNotify, getDigestMark, putDigestMark, listTeams,
-  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
+  listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, getSpent, getRewardSettings, putRewardSettings, deleteRewardSettings, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

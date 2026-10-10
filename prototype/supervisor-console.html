@@ -149,6 +149,9 @@ tr.flash td{background:var(--flash)}
 .co .acts{display:flex;gap:4px;margin-top:2px}
 dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;width:min(520px,calc(100vw - 32px))}
 dialog::backdrop{background:rgba(10,14,20,.55)}
+.cat-rows{display:grid;gap:6px;margin:8px 0}
+.cat-row{display:grid;grid-template-columns:1fr 110px auto;gap:6px;align-items:center}
+.cat-row input{width:100%}
 .dlg{display:flex;flex-direction:column;gap:10px;padding:16px 18px}
 .dlg h2{font-size:16px}
 .dlg .ctx{font-size:12.5px;color:var(--ink-2);background:var(--sub);border-radius:5px;padding:7px 10px}
@@ -272,7 +275,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
       </div>
 
       <div class="card">
-        <div class="card-h"><h2>Reward approvals</h2><button class="btn sm" id="budgetEdit" title="Monthly reward budget">Budget</button></div>
+        <div class="card-h"><h2>Reward approvals</h2><button class="btn sm" id="catEdit" title="Rewards on offer and when balances reset">Catalog</button><button class="btn sm" id="budgetEdit" title="Monthly reward budget">Budget</button></div>
         <div class="card-b">
           <div class="budget" id="budget"></div>
           <div id="rewards"></div>
@@ -288,6 +291,16 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
 
   <div class="demo"><span class="l">Demo</span> Simulated event stream · <span id="evCount">0</span> events since load · <label>speed <input type="range" id="speed" min="1" max="10" value="4" style="vertical-align:middle;width:100px"></label></div>
 </div>
+<dialog id="catDlg" aria-labelledby="catTitle">
+  <form class="dlg" id="catForm" method="dialog">
+    <h2 id="catTitle">Reward catalog</h2>
+    <div class="ctx" id="catCtx"></div>
+    <label>Balances reset every<select id="catPeriod"><option value="week">week (Monday)</option><option value="month">month</option><option value="quarter">quarter</option></select></label>
+    <div class="cat-rows" id="catRows"></div>
+    <div class="act"><button type="button" class="btn sm" id="catAdd">Add a reward</button><button type="button" class="btn sm" id="catDefault">Use the default catalog</button></div>
+    <div class="act"><span class="err" id="catErr"></span><button type="button" class="btn" id="catCancel">Cancel</button><button type="submit" class="btn pri" id="catSave">Save</button></div>
+  </form>
+</dialog>
 <dialog id="coachDlg" aria-labelledby="coachTitle">
   <form class="dlg" id="coachForm" method="dialog">
     <h2 id="coachTitle">Coaching plan</h2>
@@ -453,6 +466,22 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     if (budgetEditing) $('#budgetSave').onclick = async () => { try { budget = await engine.setBudget(+$('#budgetVal').value || 0); budgetEditing = false; renderBudget(); toast(budget.capped ? `Budget set to ${budget.monthly.toLocaleString()} pts a month` : 'Budget cap removed'); } catch (e) { toast(e.message); } };
   }
   $('#budgetEdit').addEventListener('click', () => { budgetEditing = !budgetEditing; renderBudget(); });
+  // Reward catalog editor: what is on offer, what it costs, and how often balances reset. Saved per team.
+  let catItems = [];
+  function renderCatRows(){ $('#catRows').innerHTML = catItems.map((it, i) => `<div class="cat-row"><input data-i="${i}" data-k="name" value="${esc(it.name)}" maxlength="60" placeholder="Reward" aria-label="Reward name"><input data-i="${i}" data-k="cost" type="number" min="1" step="1" value="${it.cost}" aria-label="Cost in points"><button type="button" class="btn sm" data-del="${i}" aria-label="Remove">×</button></div>`).join('') || '<div class="empty">No rewards. Add one.</div>'; }
+  $('#catEdit').addEventListener('click', async () => {
+    try { const s = await engine.rewardSettings(); catItems = s.items.map(it => Object.assign({}, it)); $('#catPeriod').value = s.balancePeriod; $('#catCtx').textContent = (s.source === 'team' ? `${engine.team || 'This team'} has its own catalog.` : 'Showing the default catalog.') + ' Agents spend points earned in the current period; approved rewards come off that balance.'; }
+    catch (e) { return toast(e.message); }
+    $('#catErr').textContent = ''; renderCatRows(); $('#catDlg').showModal();
+  });
+  $('#catRows').addEventListener('input', e => { const i = +e.target.dataset.i, k = e.target.dataset.k; if (k) catItems[i][k] = k === 'cost' ? +e.target.value : e.target.value; });
+  $('#catRows').addEventListener('click', e => { const d = e.target.closest('[data-del]'); if (d) { catItems.splice(+d.dataset.del, 1); renderCatRows(); } });
+  $('#catAdd').addEventListener('click', () => { catItems.push({ name: '', cost: 1000 }); renderCatRows(); $('#catRows input[data-k=name]:last-of-type') && [...$('#catRows').querySelectorAll('input[data-k=name]')].pop().focus(); });
+  $('#catDefault').addEventListener('click', async () => { try { const s = await engine.resetRewardSettings(); catItems = s.items.map(it => Object.assign({}, it)); $('#catPeriod').value = s.balancePeriod; renderCatRows(); toast('Default catalog restored'); } catch (e) { $('#catErr').textContent = e.message; } });
+  $('#catCancel').addEventListener('click', () => $('#catDlg').close());
+  $('#catForm').addEventListener('submit', async e => { e.preventDefault();
+    try { await engine.saveRewardSettings({ balancePeriod: $('#catPeriod').value, items: catItems }); $('#catDlg').close(); toast('Reward catalog saved'); loadSide(); }
+    catch (err) { $('#catErr').textContent = err.message; } });
   function rewardText(c){
     if (c.template === 'race') return (c.tiers || []).length ? 'prizes ' + c.tiers.map(t => t.reward).join(' / ') + ' pts' : `${c.reward} pts to the winner`;
     if (c.template === 'duel') return `${c.reward} pts to the winner`;

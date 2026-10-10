@@ -10,7 +10,9 @@ function fakeStore() {
     listTeamItems: async (team, prefix, limit, newest) => items.filter((i) => i.pk === 'TEAMITEMS#' + team && i.sk.startsWith(prefix)).sort((a, b) => (newest ? -1 : 1) * a.sk.localeCompare(b.sk)),
     putTeamItem: async (team, sk, item) => { items.push(Object.assign({ pk: 'TEAMITEMS#' + team, sk }, item)); return item; },
     updateTeamItem: async (team, sk, fields) => { const i = items.find((x) => x.pk === 'TEAMITEMS#' + team && x.sk === sk); if (!i) return null; Object.assign(i, fields); return i; },
-    spendPoints: async (arn, iso, cost) => { calls.push(['spendPoints', arn, cost]); },
+    spendPoints: async (arn, period, cost) => { calls.push(['spendPoints', arn, cost, period]); },
+    spent: {}, getSpent: async function (arn, period) { return this.spent[arn + '#' + period] || 0; },
+    rewardSettings: null, getRewardSettings: async function () { return this.rewardSettings; }, putRewardSettings: async function (team, s) { this.rewardSettings = s; }, deleteRewardSettings: async function () { this.rewardSettings = null; },
     getTeam: async (team, iso) => { calls.push(['getTeam', team, iso]); return [{ id: 'a1', name: 'priya', username: 'priya', today: 118, week: 900, handled: 4, ahtSum: 1200, evals: [92], autofails: 0, kudosReceived: 1, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 },
       { id: 'a2', name: 'Marcus Bell', username: 'marcus', today: 50, week: 300, handled: 2, ahtSum: 600, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Available', lastEvent: 1 }]; },
     // Day rows for today match the live agents above, so period-based challenges measure the same thing the old today-only ones did.
@@ -115,8 +117,8 @@ test('rewards: agent requests from token identity, needs enough points, supervis
   const poor = await h(Object.assign(req('POST', '/teams/t/rewards', { body: JSON.stringify({ catalogId: 'halfday' }) }), agentTok));
   assert.equal(poor.statusCode, 400); assert.match(JSON.parse(poor.body).error, /needs 5,000/);
   const ok = await h(Object.assign(req('POST', '/teams/t/rewards', { body: JSON.stringify({ catalogId: 'gift25', agentId: 'spoofed' }) }), Object.assign({}, agentTok)));
-  assert.equal(ok.statusCode, 400, 'gift25 costs 2500 and a1 has 900 this week');
-  s.getTeam = async () => [{ id: 'a1', name: 'priya', week: 3000, today: 0, handled: 0, evals: [], escalations: 0, kudosReceived: 0 }];
+  assert.equal(ok.statusCode, 400, 'gift25 costs 2500 and a1 has earned 118 this week');
+  s.getAgentDays = async () => [{ sk: 'DAY#2026-09-14', points: 2000 }, { sk: 'DAY#2026-09-15', points: 1000 }];
   const made = await h(Object.assign(req('POST', '/teams/t/rewards', { body: JSON.stringify({ catalogId: 'gift25', agentId: 'spoofed' }) }), agentTok));
   assert.equal(made.statusCode, 201); const rw = JSON.parse(made.body).reward;
   assert.equal(rw.agentId, 'a1', 'identity comes from the token, not the body'); assert.equal(rw.status, 'pending'); assert.equal(rw.cost, 2500);
@@ -124,7 +126,7 @@ test('rewards: agent requests from token identity, needs enough points, supervis
   assert.equal(pending.rewards.length, 1); assert.ok(pending.catalog.length >= 4);
   assert.equal((await h(Object.assign(req('PUT', '/teams/t/rewards/' + rw.id, { body: JSON.stringify({ status: 'approved' }) }), agentTokFor('PUT')))).statusCode, 403);
   const approved = await h(Object.assign(req('PUT', '/teams/t/rewards/' + rw.id, { body: JSON.stringify({ status: 'approved' }) }), supTok('PUT')));
-  assert.equal(JSON.parse(approved.body).reward.status, 'approved'); assert.deepEqual(s.calls.find((c) => c[0] === 'spendPoints'), ['spendPoints', 'a1', 2500]);
+  assert.equal(JSON.parse(approved.body).reward.status, 'approved'); assert.deepEqual(s.calls.find((c) => c[0] === 'spendPoints'), ['spendPoints', 'a1', 2500, '2026-W38']);
   assert.equal((await h(Object.assign(req('PUT', '/teams/t/rewards/' + rw.id, { body: JSON.stringify({ status: 'declined' }) }), supTok('PUT')))).statusCode, 409);
 });
 
@@ -360,7 +362,7 @@ test('kudos and reward events reach the team channels; a dead webhook never fail
   s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true, rewards: true, challenges: true, digest: true } };
   const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev.kind); if (ev.kind === 'rewardRequested') throw new Error('boom'); return ['slack']; } });
   assert.equal((await h(Object.assign(anon('POST', '/kudos', { body: JSON.stringify({ to: 'a2', note: 'nice' }) }), agentOn('t', 'a1', 'POST')))).statusCode, 201);
-  s.getTeam = async () => [{ id: 'a1', name: 'priya', week: 3000, today: 0, handled: 0, evals: [], escalations: 0, kudosReceived: 0 }];
+  s.getAgentDays = async () => [{ sk: 'DAY#2026-09-15', points: 3000 }];
   assert.equal((await h(Object.assign(req('POST', '/teams/t/rewards', { body: JSON.stringify({ catalogId: 'gift25' }) }), agentTok))).statusCode, 201, 'request succeeds although the webhook threw');
   assert.deepEqual(sent, ['kudos', 'rewardRequested']);
 });
@@ -501,4 +503,39 @@ test('personal best: an agent reads their own record and switches their panel; o
   assert.equal((await h(me('PUT', '/agents/a2/prefs', { personalBest: true }))).statusCode, 403);
   assert.equal((await h(Object.assign(req('PUT', '/agents/a9/prefs'), { body: '{"personalBest":true}' }))).statusCode, 404, 'unknown agent');
   assert.equal((await h(req('GET', '/agents/a1/best'))).statusCode, 200, 'supervisors may look');
+});
+
+test('reward catalog and balance period are per team; balances are earned minus approved, and reset by period', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  const supReq = (method, path, body) => Object.assign(req(method, path), { body: JSON.stringify(body || {}) });
+  const me = (method, path, body) => Object.assign(anon(method, path), { body: body ? JSON.stringify(body) : undefined, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } });
+  let b = JSON.parse((await h(supReq('GET', '/teams/t/rewards/settings'))).body).settings;
+  assert.equal(b.source, 'default'); assert.equal(b.balancePeriod, 'week'); assert.equal(b.items.length, 4);
+  assert.equal((await h(me('GET', '/teams/t/rewards/settings'))).statusCode, 403);
+  // Validation
+  assert.match(JSON.parse((await h(supReq('PUT', '/teams/t/rewards/settings', { balancePeriod: 'year' }))).body).error, /week, month or quarter/);
+  assert.match(JSON.parse((await h(supReq('PUT', '/teams/t/rewards/settings', { items: [{ name: 'Mug', cost: 0 }] }))).body).error, /between 1 and/);
+  // A team catalog with a monthly reset.
+  b = JSON.parse((await h(supReq('PUT', '/teams/t/rewards/settings', { balancePeriod: 'month', items: [{ name: 'Coffee on us', cost: 500 }, { name: 'Early finish', cost: 2000 }] }))).body).settings;
+  assert.equal(b.source, 'team'); assert.deepEqual(b.items.map((i) => i.id), ['coffee-on-us', 'early-finish']);
+  const list = JSON.parse((await h(me('GET', '/teams/t/rewards'))).body);
+  assert.equal(list.catalog[0].name, 'Coffee on us'); assert.equal(list.balancePeriod, 'month');
+  // Balance: the fake has 300 + 120 + 118 points in September 2026, nothing spent.
+  s.live.a1 = { pk: 'AGENT#a1', team: 't' };
+  let bal = JSON.parse((await h(me('GET', '/agents/a1/balance'))).body).balance;
+  assert.deepEqual(bal, { period: 'month', periodStart: '2026-09-01', resetsOn: '2026-10-01', earned: 538, spent: 0, balance: 538 });
+  assert.equal((await h(me('GET', '/agents/a2/balance'))).statusCode, 403);
+  // Request coffee (500): allowed; approve it: spend is recorded against 2026-09 and the balance drops.
+  let r = await h(me('POST', '/teams/t/rewards', { catalogId: 'coffee-on-us' }));
+  assert.equal(r.statusCode, 201); const rw = JSON.parse(r.body).reward; assert.equal(rw.cost, 500);
+  r = await h(supReq('PUT', '/teams/t/rewards/' + rw.id, { status: 'approved' }));
+  assert.equal(r.statusCode, 200); assert.deepEqual(s.calls.find((c) => c[0] === 'spendPoints').slice(1), ['a1', 500, '2026-09']);
+  s.spent['a1#2026-09'] = 500;
+  bal = JSON.parse((await h(me('GET', '/agents/a1/balance'))).body).balance;
+  assert.equal(bal.spent, 500); assert.equal(bal.balance, 38);
+  r = await h(me('POST', '/teams/t/rewards', { catalogId: 'coffee-on-us' }));
+  assert.equal(r.statusCode, 400); assert.match(JSON.parse(r.body).error, /has 38 to spend this month/);
+  // Back to the default catalog.
+  b = JSON.parse((await h(supReq('PUT', '/teams/t/rewards/settings', { useDefault: true }))).body).settings;
+  assert.equal(b.source, 'default'); assert.equal(b.items[0].id, 'gift25');
 });

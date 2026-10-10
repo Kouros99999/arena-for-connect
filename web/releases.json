@@ -1,5 +1,25 @@
 [
   {
+    "version": "0.10.0",
+    "date": "2026-10-10",
+    "title": "Your own reward catalog, and balances that reset",
+    "summary": "Supervisors edit the rewards on offer per team, and agents spend from a balance that resets weekly, monthly or quarterly so newcomers can catch up.",
+    "changes": [
+      "Reward catalog: a Catalog button on the console's reward approvals card edits the rewards and their point costs, up to 20 per team, with a one-click return to the default catalog.",
+      "Balance period: choose whether spendable balances reset every week, month or quarter. A balance is the points earned in the period minus rewards approved in it. Earned points, levels and leaderboards are unchanged.",
+      "The agent panel shows the balance, the period and the reset date, and lists the team's own catalog.",
+      "Approving a reward no longer subtracts from the agent's weekly points; it is recorded against their balance instead, so leaderboards show what was earned."
+    ],
+    "upgrade": [
+      "No action is needed. Every team starts on the default catalog with weekly balances, which matches how rewards worked before.",
+      "Rewards approved before this update were subtracted from weekly points at the time; they are not re-counted against the new balances."
+    ],
+    "docs": [
+      "challenges-rewards-kudos",
+      "how-scoring-works"
+    ]
+  },
+  {
     "version": "0.9.0",
     "date": "2026-10-10",
     "title": "History on day one, evaluation acknowledgements, and a free trial",

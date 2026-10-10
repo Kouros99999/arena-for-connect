@@ -42,7 +42,7 @@ When an agent opens an evaluation in Amazon Connect and acknowledges it, Arena p
 
 ## Today and this week
 
-The agent panel shows points for today and for this week. Rewards are priced against this week's points. Days, weeks and months change at midnight in the stack's `Timezone` setting (UTC unless you set one), so a late shift's points stay on the day it was worked.
+The agent panel shows points for today and for this week. Rewards are paid from a spendable balance that resets every week, month or quarter, as the supervisor chooses; see [challenges, rewards and kudos](kb.html?a=challenges-rewards-kudos). Days, weeks and months change at midnight in the stack's `Timezone` setting (UTC unless you set one), so a late shift's points stay on the day it was worked.
 
 ## Schedule adherence
 

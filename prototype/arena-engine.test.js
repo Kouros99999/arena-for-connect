@@ -90,8 +90,9 @@ test('local engine: challenges, rewards and kudos feed', async () => {
   const pending = await e.rewards('pending'); assert.equal(pending.length, 2);
   await assert.rejects(() => e.requestReward(e.agents[0].id, 'lunch'), /needs 8,000/);
   const rw = await e.requestReward(e.agents[3].id, 'parking'); assert.equal(rw.status, 'pending');
-  const before = e.agents[3].week;
-  await e.decideReward(rw.id, 'approved', 'Dana'); assert.equal(e.agents[3].week, before - 1500);
+  const before = (await e.balance(e.agents[3].id)).balance, week = e.agents[3].week;
+  await e.decideReward(rw.id, 'approved', 'Dana');
+  assert.equal((await e.balance(e.agents[3].id)).balance, before - 1500, 'the spend comes off the balance'); assert.equal(e.agents[3].week, week, 'earned points stay');
   assert.equal(await e.kudos(e.agents[1].id, 'nice', 'Priya'), true);
   const feed = await e.kudosFeed(5); assert.equal(feed[0].note, 'nice'); assert.equal(feed[0].toName, e.agents[1].name);
   assert.equal(e.stats().escalationRate !== null, true);
@@ -245,4 +246,17 @@ test('personal best compares an agent with their own record', () => {
 test('acknowledging an evaluation pays a small quality-weighted bonus', () => {
   assert.equal(Arena.scoreEvent('EVALUATION_ACKNOWLEDGED', { Score: 92 }, Arena.DEFAULT_MIX), 5);
   assert.equal(Arena.scoreEvent('EVALUATION_ACKNOWLEDGED', { Score: 92 }, { quality: 100, productivity: 0, adherence: 0 }), 10);
+});
+
+test('reward settings validate and normalise; periods key and bound correctly', () => {
+  const s = Arena.normalizeRewardSettings({ balancePeriod: 'quarter', items: [{ name: 'Mug', cost: 300.4 }, { name: 'Mug', cost: 200 }] });
+  assert.equal(s.balancePeriod, 'quarter'); assert.deepEqual(s.items, [{ id: 'mug', name: 'Mug', cost: 300 }, { id: 'mug2', name: 'Mug', cost: 200 }]);
+  assert.throws(() => Arena.normalizeRewardSettings({ items: [] }), /at least one/);
+  assert.throws(() => Arena.normalizeRewardSettings({ items: [{ name: '', cost: 5 }] }), /name/);
+  assert.equal(Arena.normalizeRewardSettings({}, Arena.REWARD_DEFAULTS).items.length, 4);
+  assert.equal(Arena.periodKey('week', '2026-09-15'), '2026-W38'); assert.equal(Arena.periodKey('month', '2026-09-15'), '2026-09'); assert.equal(Arena.periodKey('quarter', '2026-09-15'), '2026-Q3');
+  assert.deepEqual(Arena.periodBounds('week', '2026-09-15'), { start: '2026-09-14', resetsOn: '2026-09-21' });
+  assert.deepEqual(Arena.periodBounds('month', '2026-12-31'), { start: '2026-12-01', resetsOn: '2027-01-01' });
+  assert.deepEqual(Arena.periodBounds('quarter', '2026-11-05'), { start: '2026-10-01', resetsOn: '2027-01-01' });
+  assert.deepEqual(Arena.balanceSummary('week', '2026-09-15', 900, 2500), { period: 'week', periodStart: '2026-09-14', resetsOn: '2026-09-21', earned: 900, spent: 2500, balance: 0 });
 });

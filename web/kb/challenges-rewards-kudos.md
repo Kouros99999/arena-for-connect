@@ -30,9 +30,15 @@ Progress shows in the console, the agent panel and on wallboards. Challenge star
 
 ## Rewards
 
-Agents redeem this week's points against a catalog from their panel. Each request waits for a supervisor's approval in the console, which deducts the points. Declining returns nothing to the agent, since nothing was taken.
+Agents redeem points against a catalog from their panel. Each request waits for a supervisor's approval in the console. Declining returns nothing to the agent, since nothing was taken. Fulfilling an approved reward is up to you.
 
-The catalog in this version is fixed: a $25 gift card, a half-day Friday, a team lunch and a week's prime parking, at set point prices. Fulfilling an approved reward is up to you.
+### The catalog
+
+The **Catalog** button on the console's reward approvals card opens the team's catalog: each reward's name and cost in points, up to 20 of them. The default is a $25 gift card, a half-day Friday, a team lunch and a week's prime parking. Each team can have its own catalog, and **Use the default catalog** puts a team back on the shared one.
+
+### Balances and resets
+
+What an agent can spend is the points they earned in the current period minus the rewards approved in it. The period is set in the same dialog: **week** (Monday to Sunday, the default), **month** or **quarter**. When the period turns, everyone starts from zero, which is what lets a newcomer catch up with a long-tenured agent. Earned points, levels and leaderboards are not touched by a reset; only the spendable balance is. The agent panel shows the balance, the period and the date it resets.
 
 ### Monthly reward budget
 

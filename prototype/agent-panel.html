@@ -78,6 +78,7 @@ button{font:inherit;cursor:pointer}
 .section h3 span{margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;font-size:12px}
 
 .board{display:flex;flex-direction:column}
+#balNote{margin-left:6px;color:var(--muted);font-size:11px}
 .pb{margin-left:10px;font-weight:400;letter-spacing:0;text-transform:none;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;cursor:pointer}
 .best{display:grid;gap:10px;padding:4px 0}
 .best .row{display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px}
@@ -210,7 +211,7 @@ button{font:inherit;cursor:pointer}
       </div>
 
       <div class="section">
-        <h3>Redeem points <span><span id="weekPts" class="num">0</span> pts this week</span></h3>
+        <h3>Redeem points <span><span id="weekPts" class="num">0</span> pts to spend<small id="balNote"></small></span></h3>
         <div class="act"><select id="redeemItem" aria-label="Reward"></select><button id="redeemBtn" class="btn">Request</button></div>
         <div class="msg" id="msg" hidden></div>
       </div>
@@ -252,7 +253,7 @@ button{font:inherit;cursor:pointer}
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
   let YOU = conn.remote ? null : engine.agents[0];
-  let range = 'today', feed = [], lastRank = {}, chal = null, plans = [], pbMode = false, best = null;
+  let range = 'today', feed = [], lastRank = {}, chal = null, plans = [], pbMode = false, best = null, catalog = Arena.CATALOG, bal = null;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
   const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
@@ -359,9 +360,11 @@ button{font:inherit;cursor:pointer}
     const sel = $('#kudosTo'), cur = sel.value;
     sel.innerHTML = engine.agents.filter(a => a !== YOU).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('') || '<option value="">No teammates yet</option>';
     if (cur) sel.value = cur;
-    $('#weekPts').textContent = YOU.week.toLocaleString();
+    const have = bal ? bal.balance : YOU.week;
+    $('#weekPts').textContent = have.toLocaleString();
+    $('#balNote').textContent = bal ? `this ${bal.period} · resets ${bal.resetsOn}` : 'this week';
     const rs = $('#redeemItem'), rcur = rs.value;
-    rs.innerHTML = Arena.CATALOG.map(c => `<option value="${c.id}" ${YOU.week < c.cost ? 'disabled' : ''}>${esc(c.name)} · ${c.cost.toLocaleString()} pts${YOU.week < c.cost ? ' (not yet)' : ''}</option>`).join('');
+    rs.innerHTML = catalog.map(c => `<option value="${c.id}" ${have < c.cost ? 'disabled' : ''}>${esc(c.name)} · ${c.cost.toLocaleString()} pts${have < c.cost ? ' (not yet)' : ''}</option>`).join('');
     if (rcur) rs.value = rcur;
   }
 
@@ -376,9 +379,9 @@ button{font:inherit;cursor:pointer}
     catch (e) { note('Could not send kudos: ' + e.message, true); }
   });
   $('#redeemBtn').addEventListener('click', async () => {
-    const item = Arena.CATALOG.find(c => c.id === $('#redeemItem').value);
+    const item = catalog.find(c => c.id === $('#redeemItem').value);
     if (!item) return;
-    try { await engine.requestReward(YOU.id, item.id, YOU.name); note(`Requested ${item.name}. Your supervisor will approve it; ${item.cost.toLocaleString()} pts come off once approved.`); }
+    try { await engine.requestReward(YOU.id, item.id, YOU.name); note(`Requested ${item.name}. Your supervisor will approve it; ${item.cost.toLocaleString()} pts come off once approved.`); loadRewards(); }
     catch (e) { note('Not requested: ' + e.message, true); }
   });
   if (sim) {
@@ -390,6 +393,9 @@ button{font:inherit;cursor:pointer}
     document.querySelector('.contact .note').textContent = 'Live data from the Arena API. The pane refreshes every five seconds from DynamoDB, fed by the agent event stream.';
   }
   $('#pbMode').addEventListener('change', async e => { pbMode = e.target.checked; render(); if (!best) loadBest(); try { if (YOU) await engine.savePrefs(YOU.id, { personalBest: pbMode }); } catch (err) { note('Could not save the preference: ' + err.message, true); } });
+  // The team's catalog and this agent's spendable balance (points this period minus approved rewards).
+  async function loadRewards(){ if (!YOU) return; try { catalog = await engine.catalog(); bal = await engine.balance(YOU.id); } catch (e) {} render(); }
+  setInterval(loadRewards, 60000);
   async function loadPrefs(){ if (!YOU) return; try { const p = await engine.prefs(YOU.id); pbMode = !!p.personalBest; $('#pbMode').checked = pbMode; if (pbMode) await loadBest(); render(); } catch (e) {} }
   setInterval(() => { if (pbMode) loadBest(); }, 60000);
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
@@ -397,7 +403,7 @@ button{font:inherit;cursor:pointer}
 
   if (sim) {
     feed = [{words:'Evaluation scored <b>92%</b>', pts:20, t:'09:12'},{words:'Handled <b>Billing</b> contact, 5 min', pts:10, t:'09:05'},{words:'Streak bonus, day 7', pts:Arena.BASE.streakDay, t:'08:31'}];
-    render(); loadChallenge(); loadCoaching(); loadPrefs(); sim.start();
+    render(); loadChallenge(); loadCoaching(); loadPrefs(); loadRewards(); sim.start();
   } else {
     const words = e => e.type==='CONTACT_HANDLED' ? `Handled <b>${esc(e.queue||'a')}</b> contact, ${Math.round((e.handleTime||0)/60)} min`
       : e.type==='EVALUATION_SUBMITTED' ? (e.autoFail ? 'Evaluation <b>auto-fail</b>' : `Evaluation scored <b>${e.score}%</b>`)
@@ -409,7 +415,7 @@ button{font:inherit;cursor:pointer}
       : e.type==='EVALUATION_ACKNOWLEDGED' ? `Acknowledged your <b>${e.score != null ? e.score + '%' : ''}</b> evaluation`
       : e.type==='BACKFILL_DAY' ? `History: <b>${e.handled || 0}</b> contacts` : e.type;
     async function loadFeed(){ const evs = await engine.events(YOU.id, 6); feed = evs.filter(e => e.points).map(e => ({ words: words(e), pts: e.points, t: e.at.slice(11,16) })); render(); }
-    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); loadPrefs(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
+    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); loadPrefs(); loadRewards(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
     engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); });
   }
 })();

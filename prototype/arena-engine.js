@@ -91,6 +91,51 @@
     { id: 'parking', name: 'Prime parking spot, one week', cost: 1500 },
   ];
 
+  // ---------- rewards: an editable catalog and a balance that resets by period ----------
+  const BALANCE_PERIODS = ['week', 'month', 'quarter'];
+  const REWARD_DEFAULTS = { balancePeriod: 'week', items: CATALOG };
+  const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item';
+  /** Validate and normalise reward settings from a supervisor. Throws with a message a person can act on. */
+  function normalizeRewardSettings(input, current) {
+    const cur = Object.assign({}, REWARD_DEFAULTS, current || {}), inp = input || {};
+    const balancePeriod = inp.balancePeriod !== undefined ? String(inp.balancePeriod) : cur.balancePeriod;
+    if (!BALANCE_PERIODS.includes(balancePeriod)) throw new Error('balancePeriod must be week, month or quarter');
+    const raw = inp.items !== undefined ? inp.items : cur.items;
+    if (!Array.isArray(raw) || !raw.length) throw new Error('the catalog needs at least one reward');
+    if (raw.length > 20) throw new Error('at most 20 rewards');
+    const ids = new Set(), items = [];
+    for (const it of raw) {
+      const name = String((it && it.name) || '').trim(), cost = Math.round(Number(it && it.cost));
+      if (!name || name.length > 60) throw new Error('each reward needs a name of up to 60 characters');
+      if (!Number.isFinite(cost) || cost < 1 || cost > 1000000) throw new Error(`"${name}" needs a cost between 1 and 1,000,000 points`);
+      let id = (it && it.id) ? String(it.id).slice(0, 40) : slug(name);
+      while (ids.has(id)) id += '2';
+      ids.add(id); items.push({ id, name, cost });
+    }
+    return { balancePeriod, items };
+  }
+  /** Key of the balance period a day falls in: 2026-W38, 2026-09 or 2026-Q3. */
+  function periodKey(period, day) {
+    if (period === 'month') return day.slice(0, 7);
+    if (period === 'quarter') return day.slice(0, 4) + '-Q' + (Math.floor((+day.slice(5, 7) - 1) / 3) + 1);
+    return isoWeek(day);
+  }
+  const addDaysStr = (day, n) => new Date(Date.parse(day + 'T00:00:00.000Z') + n * 86400000).toISOString().slice(0, 10);
+  /** First day of the period a day falls in, and the day the next one starts (when the balance resets). */
+  function periodBounds(period, day) {
+    const y = +day.slice(0, 4), m = +day.slice(5, 7);
+    if (period === 'month') return { start: day.slice(0, 8) + '01', resetsOn: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10) };
+    if (period === 'quarter') { const q = Math.floor((m - 1) / 3); return { start: new Date(Date.UTC(y, q * 3, 1)).toISOString().slice(0, 10), resetsOn: new Date(Date.UTC(y, q * 3 + 3, 1)).toISOString().slice(0, 10) }; }
+    const d = new Date(Date.parse(day + 'T00:00:00.000Z')), wd = d.getUTCDay() || 7;
+    const start = addDaysStr(day, 1 - wd);
+    return { start, resetsOn: addDaysStr(start, 7) };
+  }
+  /** What an agent may spend: points earned in the period minus approved rewards in it. Pure. */
+  function balanceSummary(period, day, earned, spent) {
+    const b = periodBounds(period, day);
+    return { period, periodStart: b.start, resetsOn: b.resetsOn, earned: Math.max(0, Math.round(earned || 0)), spent: Math.max(0, Math.round(spent || 0)), balance: Math.max(0, Math.round((earned || 0) - (spent || 0))) };
+  }
+
   /** ISO week (YYYY-Www) of a YYYY-MM-DD. Pure date arithmetic. */
   function isoWeek(day) {
     const d = new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)));
@@ -523,14 +568,22 @@
     const saveNotifications = async (n) => { for (const k of ['slackUrl', 'teamsUrl', 'email']) if (typeof n[k] === 'string' && !n[k].startsWith('…')) local.notifications[k] = n[k]; if (n.digestHour !== undefined) local.notifications.digestHour = +n.digestHour; if (n.events) Object.assign(local.notifications.events, n.events); return notifications(); };
     const testNotification = async () => ({ ok: true, sent: ['slackUrl', 'teamsUrl'].filter((k) => local.notifications[k]).map((k) => k.replace('Url', '')), note: 'demo: nothing is posted' });
     const rewards = async (status) => local.rewards.filter((r) => !status || r.status === status);
+    // Catalog and balance period are per team; the demo keeps one set in memory. Spent points are tracked per agent and period.
+    local.rewardSettings = { balancePeriod: 'week', items: CATALOG.map((c) => Object.assign({}, c)) }; local.spent = {};
+    const rewardSettings = async () => Object.assign({ source: local.ownRewards ? 'team' : 'default' }, local.rewardSettings);
+    const saveRewardSettings = async (s) => { local.rewardSettings = normalizeRewardSettings(s, local.rewardSettings); local.ownRewards = true; return rewardSettings(); };
+    const resetRewardSettings = async () => { local.rewardSettings = { balancePeriod: 'week', items: CATALOG.map((c) => Object.assign({}, c)) }; local.ownRewards = false; return rewardSettings(); };
+    const catalog = async () => local.rewardSettings.items;
+    const balance = async (agentId) => { const a = byId(agentId); const today = new Date().toISOString().slice(0, 10), p = local.rewardSettings.balancePeriod; const earned = p === 'week' ? (a ? a.week : 0) : (a ? a.week * (p === 'month' ? 3 : 9) : 0); return balanceSummary(p, today, earned, local.spent[agentId + '#' + periodKey(p, today)] || 0); };
     const requestReward = async (agentId, catalogId, by) => {
-      const a = byId(agentId), item = CATALOG.find((c) => c.id === catalogId);
+      const a = byId(agentId), item = local.rewardSettings.items.find((c) => c.id === catalogId);
       if (!a || !item) throw new Error('unknown agent or reward');
-      if (a.week < item.cost) throw new Error(`needs ${item.cost.toLocaleString()} pts, has ${a.week.toLocaleString()}`);
+      const bal = await balance(agentId);
+      if (bal.balance < item.cost) throw new Error(`needs ${item.cost.toLocaleString()} pts, has ${bal.balance.toLocaleString()}`);
       const r = { id: newId(), agentId, agentName: a.name, catalogId, what: item.name, cost: item.cost, status: 'pending', requestedAt: new Date().toISOString(), requestedBy: by || a.name };
       local.rewards.unshift(r); return r;
     };
-    const decideReward = async (id, status, by) => { const r = local.rewards.find((x) => x.id === id); if (!r) throw new Error('unknown reward'); r.status = status; r.decidedAt = new Date().toISOString(); r.decidedBy = by || 'supervisor'; if (status === 'approved') { if (local.budget.monthly && local.budget.spent + r.cost > local.budget.monthly) { r.status = 'pending'; delete r.decidedAt; throw new Error('monthly reward budget would be exceeded'); } local.budget.spent += r.cost; const a = byId(r.agentId); if (a) a.week -= r.cost; } return r; };
+    const decideReward = async (id, status, by) => { const r = local.rewards.find((x) => x.id === id); if (!r) throw new Error('unknown reward'); r.status = status; r.decidedAt = new Date().toISOString(); r.decidedBy = by || 'supervisor'; if (status === 'approved') { if (local.budget.monthly && local.budget.spent + r.cost > local.budget.monthly) { r.status = 'pending'; delete r.decidedAt; throw new Error('monthly reward budget would be exceeded'); } local.budget.spent += r.cost; const k = r.agentId + '#' + periodKey(local.rewardSettings.balancePeriod, new Date().toISOString().slice(0, 10)); local.spent[k] = (local.spent[k] || 0) + r.cost; } return r; };
     const kudosFeed = async (limit) => local.kudos.slice(0, limit || 10);
     // Reward budget: a monthly cap in points. The demo starts with a cap and some spend so the console shows the bar.
     local.budget = { monthly: 20000, spent: 7500 };
@@ -587,7 +640,7 @@
       savePrefs: async (agentId, p) => { local.prefs[agentId] = Object.assign({}, local.prefs[agentId] || {}, p); return local.prefs[agentId]; },
       flags: (a) => flagsFor(a, agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
-      challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget,
+      challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance,
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
@@ -738,6 +791,11 @@
     const decideReward = async (id, status) => (await call('PUT', `${teamPath()}/rewards/${encodeURIComponent(id)}`, { status })).reward;
     const kudosFeed = async (limit) => (await call('GET', readPath('kudos') + `?limit=${limit || 10}`)).kudos;
     const budget = async () => (await call('GET', `${teamPath()}/budget`)).budget;
+    const rewardSettings = async () => (await call('GET', `${teamPath()}/rewards/settings`)).settings;
+    const saveRewardSettings = async (s) => (await call('PUT', `${teamPath()}/rewards/settings`, s)).settings;
+    const resetRewardSettings = async () => (await call('PUT', `${teamPath()}/rewards/settings`, { useDefault: true })).settings;
+    const catalog = async () => (await call('GET', `${teamPath()}/rewards?status=none`)).catalog;
+    const balance = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/balance`)).balance;
     const setBudget = async (monthly) => (await call('PUT', `${teamPath()}/budget`, { monthly })).budget;
     const kiosks = async () => (await call('GET', `${teamPath()}/kiosk`)).kiosks;
     const createKiosk = async (label, days) => (await call('POST', `${teamPath()}/kiosk`, { label, days })).kiosk;
@@ -754,7 +812,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
@@ -791,6 +849,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });
