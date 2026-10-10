@@ -57,7 +57,7 @@ function registeredPage(c) {
 <p class="muted">Opens the CloudFormation console in ${esc(c.region)} with the template and your subscription pre-filled. Keep this page: the link stays valid for your subscription.</p>
 <h2>What happens next</h2>
 <ol>
-<li><b>Deploy.</b> Review the parameters (your license and account are pre-filled), tick the IAM acknowledgement, and create the stack. About ten minutes, most of it CloudFront.</li>
+<li><b>Deploy.</b> Review the parameters (your license and account are pre-filled), tick <b>all three</b> acknowledgement boxes at the bottom (IAM resources, IAM resources with custom names, and <code>CAPABILITY_AUTO_EXPAND</code>), and create the stack. If a box is missed the button does nothing and the console shows only a small notice. About ten minutes, most of it CloudFront.</li>
 <li><b>Point Amazon Connect at Arena.</b> In the Connect console, under Data streaming, set the agent event stream to the <code>StreamArn</code> the stack outputs.</li>
 <li><b>Add the panel to the agent workspace.</b> Register <code>&lt;SiteUrl&gt;/agent-panel.html</code> as a third-party application and grant it on your agents' security profiles.</li>
 <li><b>Create sign-ins.</b> Add your agents and supervisors to the Cognito user pool the stack created (the <code>UserPoolId</code> output), with the <code>custom:agentArn</code> and <code>custom:team</code> attributes. The <code>sync-users</code> script in the docs does this from your Connect directory in one command.</li>

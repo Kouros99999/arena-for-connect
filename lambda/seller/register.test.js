@@ -29,7 +29,7 @@ const req = (method, body) => ({ rawPath: '/register', requestContext: { http: {
 test('POST with a valid token resolves the customer, records them, and shows the launch page', async () => {
   const f = fake({ LicenseArn: 'arn:aws:license-manager::111122223333:license:l-1', CustomerIdentifier: 'cust-1', ProductCode: 'prod-1', CustomerAWSAccountId: '111122223333' });
   const r = await handler(req('POST', 'x-amzn-marketplace-token=tok'), {}, { clients: f.clients, now: () => new Date('2026-09-26T10:00:00Z') });
-  assert.equal(r.statusCode, 200); assert.match(r.body, /Launch Arena in CloudFormation/); assert.match(r.body, /111122223333/); assert.match(r.body, /param_MarketplaceLicenseArn=arn/);
+  assert.equal(r.statusCode, 200); assert.match(r.body, /Launch Arena in CloudFormation/); assert.match(r.body, /all three<\/b> acknowledgement/); assert.match(r.body, /111122223333/); assert.match(r.body, /param_MarketplaceLicenseArn=arn/);
   assert.equal(f.writes[0].Key.licenseArn, 'arn:aws:license-manager::111122223333:license:l-1'); assert.equal(f.writes[0].ExpressionAttributeValues[':a'], '111122223333');
 });
 
