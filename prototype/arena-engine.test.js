@@ -289,3 +289,18 @@ test('recommended challenges follow the team numbers and prefill the form', () =
   assert.deepEqual(Arena.recommendChallenges([]), []);
   assert.ok(Arena.recommendChallenges([...escalating, ...lowQa, ...quiet]).length <= 3);
 });
+
+test('theme settings validate; brand colours derive readable companions', () => {
+  const t = Arena.normalizeTheme({ name: ' Acme Support ', accent: '#1a56db', highlight: '#F59E0B', logoUrl: '/brand/logo-abc.png' });
+  assert.deepEqual(t, { name: 'Acme Support', accent: '#1A56DB', highlight: '#F59E0B', logoUrl: '/brand/logo-abc.png' });
+  assert.throws(() => Arena.normalizeTheme({ accent: 'blue' }), /hex colour/);
+  assert.throws(() => Arena.normalizeTheme({ logoUrl: 'http://evil.example/x.png' }), /https URL/);
+  assert.equal(Arena.normalizeTheme({}, { name: 'Kept' }).name, 'Kept');
+  assert.equal(Arena.normalizeTheme({ name: '' }).name, 'Arena');
+  // applyBrand on a tiny fake document
+  const vars = {}, nodes = [{ textContent: 'Arena', title: '', appendChild(n) { this.kids = (this.kids || []).concat([n]); } }];
+  const doc = { title: 'Arena console', documentElement: { style: { setProperty: (k, v) => { vars[k] = v; } }, getAttribute: () => 'light' }, querySelectorAll: () => nodes, createElement: (tag) => ({ tag }), createTextNode: (s) => ({ text: s }) };
+  Arena.ui.applyBrand(doc, t, { title: true });
+  assert.equal(vars['--accent'], '#1A56DB'); assert.equal(vars['--gold'], '#F59E0B'); assert.equal(vars['--accent-ink'], '#FFFFFF'); assert.match(vars['--accent-soft'], /^#/);
+  assert.equal(doc.title, 'Acme Support console'); assert.equal(nodes[0].kids[0].tag, 'img'); assert.equal(nodes[0].kids[1].text, '');
+});

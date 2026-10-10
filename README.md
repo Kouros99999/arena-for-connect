@@ -132,6 +132,8 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
 
+**Look and feel.** `Arena.ui` (engine) applies the per-browser light/dark mode (`data-theme`), the stack brand (`--accent`, `--gold` and companions, header mark with logo) and wallboard display prefs. The brand is `CONFIG / THEME` (`GET/PUT /config/theme`, `GET /kiosk/{token}/theme`); `POST /config/logo` stores a data-URL image in the site bucket under `brand/logo-<ts>.<ext>` (immutable cache) and sets `logoUrl`.
+
 **Spotlights and suggestions.** `Arena.recommendChallenges(agents)` is pure and runs in the console from the live agents. `lambda/src/spotlight.js` writes a `KD#` feed item from "Arena" (`auto: true`) and a `spotlight` notification (switch `events.spotlights`) when the evaluations handler sees a score at or above `SPOTLIGHTS.evalScore`, the streak job hits one of `SPOTLIGHTS.streakDays`, or the digest job's first run after local midnight finds a personal best day (`Arena.isBestDay`, marked per team and day).
 
 **People.** `lambda/src/admin.js` wraps the stack's Cognito pool (`USER_POOL_ID`): `GET/POST /admin/users`, `PUT/DELETE /admin/users/{username}`, `POST /admin/users/{username}/password`. Supervisors only; 409 when `AuthMode` is external. Invitations go by email when one is given, otherwise a temporary password is returned once. Every action logs an audit line.

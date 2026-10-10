@@ -22,6 +22,8 @@
  *   GET/POST /data/keys, DELETE /data/keys/{key} data keys for warehouses and BI tools (supervisors)
  *   GET  /data/{key}/days?from&to[&team]        read API: per-agent per-day rows, authenticated by a data key (no sign-in); same rows the nightly export writes
  *   GET  /export/days?from&to[&team]            the same rows for a signed-in supervisor
+ *   GET /config/theme (anyone signed in; /kiosk/{token}/theme for wallboards), PUT /config/theme { name, accent, highlight, logoUrl } (supervisors)
+ *   POST /config/logo { dataUrl }                 stores the company logo on the site (brand/logo-<ts>.<ext>, 300 KB max) and sets logoUrl (supervisors)
  *   GET/PUT /teams/{team}/budget                monthly reward budget in points; approvals stop at the cap, alerts at 25/50/75/100% (supervisors)
  *   Days, weeks and months are calendar periods in the stack's Timezone (clock.js).
  *   Challenges run over their whole period; races, duels and team-vs-team carry standings; ending one freezes results and pays prizes.
@@ -44,6 +46,12 @@ const exporter = require('./export.js');
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const KUDOS_DAILY_LIMIT = Math.max(1, +(process.env.KUDOS_DAILY_LIMIT || 5));
 const DISPLAY_NAMES = process.env.DISPLAY_NAMES || 'full';   // full | first | initials, for sign-in-free wallboards
+const SITE_BUCKET = process.env.SITE_BUCKET || '';           // where an uploaded company logo is stored, served by the same CloudFront as the pages
+let s3c;
+async function putObject(Bucket, Key, Body, ContentType) {
+  if (!s3c) { const sdk = require('@aws-sdk/client-s3'); s3c = { client: new sdk.S3Client({}), PutObjectCommand: sdk.PutObjectCommand }; }
+  await s3c.client.send(new s3c.PutObjectCommand({ Bucket, Key, Body, ContentType, CacheControl: 'public, max-age=31536000, immutable' }));
+}
 const json = (status, body) => ({ statusCode: status, headers: { 'content-type': 'application/json', 'access-control-allow-origin': ORIGIN, 'cache-control': 'no-store' }, body: JSON.stringify(body) });
 
 function route(method, path) {
@@ -84,12 +92,15 @@ function route(method, path) {
   if (method === 'GET' && path === '/export/days') return { name: 'exportDays' };
   if (method === 'DELETE' && (x = m(/^\/agents\/(.+)$/))) return { name: 'deleteAgent', arn: decodeURIComponent(x[1]) };
   // Kiosk: unauthenticated at the gateway, the token is the credential. Read-only, wallboard only.
-  if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
+  if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos|theme)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/events$/))) return { name: 'agentEvents', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/best$/))) return { name: 'agentBest', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/balance$/))) return { name: 'agentBalance', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/prefs$/))) return { name: 'getPrefs', arn: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/agents\/(.+)\/prefs$/))) return { name: 'putPrefs', arn: decodeURIComponent(x[1]) };
+  if (method === 'GET' && path === '/config/theme') return { name: 'getTheme' };
+  if (method === 'PUT' && path === '/config/theme') return { name: 'putTheme' };
+  if (method === 'POST' && path === '/config/logo') return { name: 'putLogo' };
   if (method === 'GET' && path === '/config/mix') return { name: 'getMix' };
   if (method === 'PUT' && path === '/config/mix') return { name: 'putMix' };
   if (method === 'POST' && path === '/kudos') return { name: 'kudos' };
@@ -101,6 +112,7 @@ function makeHandler(deps) {
   const s = deps.store || store, now = deps.now || (() => new Date());
   const sendFn = deps.send || notify.send;
   const admin = deps.admin || adminMod.makeAdmin({});
+  const putObject = deps.putObject || ((...a) => exports.putObject(...a));
   /** Date range for the export routes: from..to inclusive, defaults to yesterday, capped. */
   const rangeOf = (q) => { const today = clock.dayKey(now()); const to = clock.isDay(q.to) && q.to <= today ? q.to : clock.addDays(today, -1); let from = clock.isDay(q.from) ? q.from : to; if (from > to) from = to; if (clock.addDays(from, exporter.MAX_DAYS - 1) < to) from = clock.addDays(to, 1 - exporter.MAX_DAYS); return { from, to }; };
   // Fire-and-forget notifications: a dead webhook must never fail the request that triggered it.
@@ -153,6 +165,30 @@ function makeHandler(deps) {
           const limit = Math.min(100, +(qs.limit || 20));
           const items = await s.listEvents(r.arn, limit);
           return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day, adherence: i.Adherence, handled: i.Handled })) });
+        }
+        case 'getTheme': return json(200, { theme: Object.assign({}, Arena.THEME_DEFAULTS, (await s.getTheme()) || {}) });
+        case 'putTheme': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          let theme;
+          try { theme = Arena.normalizeTheme(parse(event), await s.getTheme()); } catch (e) { return json(400, { error: e.message }); }
+          await s.putTheme(theme);
+          console.info(JSON.stringify({ audit: 'putTheme', by: who(claims), name: theme.name }));
+          return json(200, { theme });
+        }
+        case 'putLogo': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const b = parse(event), m2 = /^data:(image\/(png|jpeg|svg\+xml|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(b.dataUrl || ''));
+          if (!m2) return json(400, { error: 'send a PNG, JPEG, SVG or WebP image as a data URL' });
+          const buf = Buffer.from(m2[3], 'base64');
+          if (buf.length > 300 * 1024) return json(400, { error: 'the logo must be 300 KB or smaller' });
+          if (!SITE_BUCKET) return json(409, { error: 'this stack has no site bucket to store a logo in' });
+          const ext = { png: 'png', jpeg: 'jpg', 'svg+xml': 'svg', webp: 'webp' }[m2[2]];
+          const key = `brand/logo-${now().getTime().toString(36)}.${ext}`;
+          await putObject(SITE_BUCKET, key, buf, m2[1]);
+          const theme = Arena.normalizeTheme({ logoUrl: '/' + key }, await s.getTheme());
+          await s.putTheme(theme);
+          console.info(JSON.stringify({ audit: 'putLogo', by: who(claims), key, bytes: buf.length }));
+          return json(200, { theme });
         }
         case 'getMix': {
           const team = qs.team || '';
@@ -303,6 +339,7 @@ function makeHandler(deps) {
           const k = await s.getKiosk(r.token);
           if (!k || k.kind === 'data' || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'kiosk link is invalid or expired' });
           const iso = now().toISOString();
+          if (r.what === 'theme') return json(200, { theme: Object.assign({}, Arena.THEME_DEFAULTS, (await s.getTheme()) || {}) });
           if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: (await s.getTeam(k.team, iso)).filter((a) => !a.hidden).map(forWallboard) });
           if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip).map((k2) => Object.assign({}, k2, { from: displayName(k2.from), toName: displayName(k2.toName) })) });
           const list = (await maskHidden(k.team, await challenges.challengesFor(s, k.team, now(), { supervisor: false }), null)).map((c) => (c.progress && c.progress.standings ? Object.assign({}, c, { progress: Object.assign({}, c.progress, { standings: { metrics: c.progress.standings.metrics, rows: c.progress.standings.rows.map((row) => Object.assign({}, row, { name: displayName(row.name) })) } }) }) : c));
@@ -553,6 +590,7 @@ function isSupervisor(claims) {
   return list.includes('supervisors') || process.env.AUTH_MODE === 'none';
 }
 
+exports.putObject = putObject;
 exports.handler = makeHandler({});
 exports.makeHandler = makeHandler;
 exports.route = route;

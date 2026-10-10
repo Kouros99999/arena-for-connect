@@ -48,6 +48,15 @@ button{font:inherit;cursor:pointer}
 /* The third-party app pane */
 .pane{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .pane-head{padding:14px 16px 0;display:flex;align-items:center;gap:10px}
+:root[data-theme=dark]{
+  --bg:#0F1218; --panel:#171B23; --sub:#1E232D; --ink:#EEF1F5; --ink-2:#C2C9D4; --muted:#8C96A6; --line:#2A3140;
+  --accent-soft:#17332F; --gold-soft:#3A2E14; --you:#15302C;
+  --good:#5FD38D; --good-bg:#15301F; --warn:#E3B04B; --warn-bg:#352A12; --bad:#F07A7A; --bad-bg:#3A1C1C; --flash:#2E2B16; --up:#5FD38D; --down:#F07A7A;
+  --grid:#2A3140; --ref:#8C96A6;
+  --chrome:#0B0E13; --chrome-ink:#E9EDF2; --chrome-muted:#8C96A6;
+}
+.brand-logo{height:22px;max-width:140px;vertical-align:middle;margin-right:6px;object-fit:contain}
+.theme-btn{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:2px 8px;font:inherit;cursor:pointer}
 .pane-head .app{font-family:Manrope,sans-serif;font-weight:800;font-size:15px;letter-spacing:-.01em}
 .pane-head .tabs{margin-left:auto;display:flex;gap:2px;background:var(--sub);border-radius:6px;padding:2px}
 .tabs button{border:0;background:transparent;color:var(--muted);padding:4px 10px;border-radius:4px;font-weight:600;font-size:12.5px}
@@ -166,6 +175,7 @@ button{font:inherit;cursor:pointer}
         <button role="tab" aria-selected="true" data-range="today">Today</button>
         <button role="tab" aria-selected="false" data-range="week">This week</button>
       </div>
+      <button class="theme-btn" id="themeBtn" title="Switch between light and dark">◐</button>
     </div>
 
     <div class="scroll">
@@ -249,7 +259,12 @@ button{font:inherit;cursor:pointer}
 <script src="arena-engine.js"></script>
 <script>
 (function(){
+  Arena.ui.applyMode(document);
   const conn = Arena.connect();
+  let brand = null;
+  const applyBrand = () => Arena.ui.applyBrand(document, brand, { mark: '.pane-head .app', title: true });
+  document.getElementById('themeBtn').addEventListener('click', () => { Arena.ui.cycle(document); applyBrand(); });
+  conn.engine.theme().then(t => { brand = t; applyBrand(); }).catch(() => {});
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
   let YOU = conn.remote ? null : engine.agents[0];

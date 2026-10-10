@@ -601,3 +601,28 @@ test('data keys open the read API without a sign-in, and are not wallboard keys'
   assert.equal((await h(req('DELETE', '/data/keys/' + key))).statusCode, 200);
   assert.equal((await h(anon('GET', `/data/${key}/days`))).statusCode, 401);
 });
+
+test('brand: anyone signed in reads it, wallboards read it by key, supervisors save it and upload a logo', async () => {
+  const s = fakeStore(); const puts = [];
+  s.theme = null; s.getTheme = async () => s.theme; s.putTheme = async (t) => { s.theme = t; };
+  s.getKiosk = async (t) => (t === 'tv' ? { token: 'tv', team: 't', expiresAt: '2099-01-01T00:00:00.000Z' } : null);
+  process.env.SITE_BUCKET = 'site-bucket';
+  delete require.cache[require.resolve('./api.js')]; const { makeHandler: mk } = require('./api.js');
+  const h = mk({ store: s, now: fixed, putObject: async (b, k, body, type) => puts.push({ b, k, len: body.length, type }) });
+  delete process.env.SITE_BUCKET;
+  const me = (method, path, body) => Object.assign(anon(method, path), { body: body ? JSON.stringify(body) : undefined, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } });
+  assert.equal(JSON.parse((await h(me('GET', '/config/theme'))).body).theme.name, 'Arena');
+  assert.equal((await h(me('PUT', '/config/theme', { name: 'X' }))).statusCode, 403);
+  let r = await h(Object.assign(req('PUT', '/config/theme'), { body: JSON.stringify({ name: 'Acme', accent: '#1A56DB', highlight: '#F59E0B' }) }));
+  assert.equal(r.statusCode, 200); assert.equal(JSON.parse(r.body).theme.accent, '#1A56DB');
+  assert.equal((await h(Object.assign(req('PUT', '/config/theme'), { body: JSON.stringify({ accent: 'red' }) }))).statusCode, 400);
+  const png = 'data:image/png;base64,' + Buffer.from('fakepng').toString('base64');
+  r = await h(Object.assign(req('POST', '/config/logo'), { body: JSON.stringify({ dataUrl: png }) }));
+  assert.equal(r.statusCode, 200); const theme = JSON.parse(r.body).theme;
+  assert.match(theme.logoUrl, /^\/brand\/logo-[a-z0-9]+\.png$/); assert.equal(theme.name, 'Acme', 'logo keeps the rest');
+  assert.equal(puts[0].b, 'site-bucket'); assert.equal(puts[0].type, 'image/png'); assert.equal(puts[0].len, 7);
+  assert.equal((await h(Object.assign(req('POST', '/config/logo'), { body: JSON.stringify({ dataUrl: 'data:text/html;base64,AAAA' }) }))).statusCode, 400);
+  assert.equal((await h(Object.assign(req('POST', '/config/logo'), { body: JSON.stringify({ dataUrl: 'data:image/png;base64,' + Buffer.alloc(301 * 1024).toString('base64') }) }))).statusCode, 400);
+  assert.equal(JSON.parse((await h(anon('GET', '/kiosk/tv/theme'))).body).theme.logoUrl, theme.logoUrl, 'wallboards get the brand by key');
+  assert.equal((await h(anon('GET', '/kiosk/nope/theme'))).statusCode, 401);
+});

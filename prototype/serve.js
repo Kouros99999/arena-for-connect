@@ -35,6 +35,9 @@ async function api(req, res, p) {
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/notifications\/test$/))) return json(res, 200, await engine.testNotification());
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/budget$/))) return json(res, 200, { budget: await engine.budget() });
     if (req.method === 'PUT' && (m = p.match(/^\/teams\/([^/]+)\/budget$/))) { const b = await body(req); return json(res, 200, { budget: await engine.setBudget(b.monthly) }); }
+    if (req.method === 'GET' && p === '/config/theme') return json(res, 200, { theme: await engine.theme() });
+    if (req.method === 'PUT' && p === '/config/theme') { try { return json(res, 200, { theme: await engine.saveTheme(await body(req)) }); } catch (e) { return json(res, 400, { error: e.message }); } }
+    if (req.method === 'POST' && p === '/config/logo') { const b = await body(req); return json(res, 200, { theme: await engine.uploadLogo(b.dataUrl) }); }
     if (req.method === 'GET' && p === '/admin/users') return json(res, 200, { users: await engine.users() });
     if (req.method === 'POST' && p === '/admin/users') { try { return json(res, 201, await engine.createUser(await body(req))); } catch (e) { return json(res, 400, { error: e.message }); } }
     if (req.method === 'POST' && (m = p.match(/^\/admin\/users\/([^/]+)\/password$/))) return json(res, 200, await engine.resetPassword(decodeURIComponent(m[1])));

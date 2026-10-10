@@ -30,6 +30,15 @@ button{cursor:pointer}
 .num{font-variant-numeric:tabular-nums}
 h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0}
 
+:root[data-theme=dark]{
+  --bg:#0F1218; --panel:#171B23; --sub:#1E232D; --ink:#EEF1F5; --ink-2:#C2C9D4; --muted:#8C96A6; --line:#2A3140;
+  --accent-soft:#17332F; --gold-soft:#3A2E14; --you:#15302C;
+  --good:#5FD38D; --good-bg:#15301F; --warn:#E3B04B; --warn-bg:#352A12; --bad:#F07A7A; --bad-bg:#3A1C1C; --flash:#2E2B16; --up:#5FD38D; --down:#F07A7A;
+  --grid:#2A3140; --ref:#8C96A6;
+  --chrome:#0B0E13; --chrome-ink:#E9EDF2; --chrome-muted:#8C96A6;
+}
+.brand-logo{height:22px;max-width:140px;vertical-align:middle;margin-right:6px;object-fit:contain}
+.theme-btn{background:transparent;border:1px solid rgba(255,255,255,.25);color:var(--chrome-ink);border-radius:6px;padding:2px 8px;font:inherit;cursor:pointer}
 .chrome{background:var(--chrome);color:var(--chrome-ink);height:44px;display:flex;align-items:center;gap:18px;padding:0 20px;font-size:13px}
 .chrome .brand{font-family:Manrope,sans-serif;font-weight:800;letter-spacing:-.01em;font-size:15px}
 .chrome .crumb{color:var(--chrome-muted)}
@@ -156,6 +165,9 @@ tr.flash td{background:var(--flash)}
 dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;width:min(520px,calc(100vw - 32px))}
 dialog::backdrop{background:rgba(10,14,20,.55)}
 dialog.wide{width:min(760px,calc(100vw - 32px))}
+.brand-preview{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px;border:1px dashed var(--line);border-radius:6px;font-family:Manrope,sans-serif;font-weight:800;font-size:15px}
+.brand-preview img{height:28px;max-width:160px;object-fit:contain}
+.brand-preview .sw{width:18px;height:18px;border-radius:4px}
 .people{display:grid;gap:4px;margin:8px 0;max-height:280px;overflow:auto}
 .person{display:grid;grid-template-columns:1.2fr 1fr 90px 1fr auto;gap:8px;align-items:center;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)}
 .person small{display:block;color:var(--muted);font-size:11px}
@@ -191,9 +203,11 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
   <a class="link" href="report.html" id="reportLink">Results report</a>
   <a class="link" href="https://arenaforconnect.com/kb.html" target="_blank" rel="noopener">Help</a>
   <a class="link" href="wallboard.html" target="_blank" rel="noopener" id="wallLink">Open wallboard</a>
+  <button class="btn sm" id="brandBtn" title="Company name, colours and logo on every page">Brand</button>
   <button class="btn sm" id="peopleBtn" title="Sign-ins for agents and supervisors">People</button>
   <button class="btn sm" id="dataBtn" title="Keys and files for your warehouse or BI tool">Data</button>
   <button class="btn sm" id="kioskBtn" title="Create a sign-in-free link for a floor TV">TV link</button>
+  <button class="theme-btn" id="themeBtn" title="Switch between light and dark">◐</button>
   <span class="crumb" id="clock">09:41</span>
 </div>
 
@@ -308,6 +322,21 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
 
   <div class="demo"><span class="l">Demo</span> Simulated event stream · <span id="evCount">0</span> events since load · <label>speed <input type="range" id="speed" min="1" max="10" value="4" style="vertical-align:middle;width:100px"></label></div>
 </div>
+<dialog id="brandDlg" aria-labelledby="brandTitle">
+  <form class="dlg" id="brandForm" method="dialog">
+    <h2 id="brandTitle">Brand</h2>
+    <div class="ctx">Applies to the agent panel, this console, the report and wallboards for everyone on this stack. Each person still picks light or dark for themselves with the ◐ button.</div>
+    <label>Company or programme name<input id="bName" maxlength="40" placeholder="Arena"></label>
+    <div class="grid2">
+      <label>Accent colour<input id="bAccent" type="color" value="#0F766E"></label>
+      <label>Highlight colour (prizes, streaks)<input id="bHighlight" type="color" value="#B7791F"></label>
+    </div>
+    <label>Company logo (PNG, JPEG, SVG or WebP, up to 300 KB)<input id="bLogo" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label>
+    <div class="brand-preview" id="bPreview"></div>
+    <div class="act"><button type="button" class="btn sm" id="bRemoveLogo">Remove logo</button><button type="button" class="btn sm" id="bReset">Back to Arena defaults</button></div>
+    <div class="act"><span class="err" id="bErr"></span><button type="button" class="btn" id="bCancel">Cancel</button><button type="submit" class="btn pri" id="bSave">Save</button></div>
+  </form>
+</dialog>
 <dialog id="peopleDlg" aria-labelledby="peopleTitle" class="wide">
   <form class="dlg" id="peopleForm" method="dialog">
     <h2 id="peopleTitle">People</h2>
@@ -365,7 +394,12 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
 <script src="arena-engine.js"></script>
 <script>
 (function(){
+  Arena.ui.applyMode(document);
   const conn = Arena.connect();
+  let brand = null;
+  const applyBrand = () => Arena.ui.applyBrand(document, brand, { title: true });
+  document.getElementById('themeBtn').addEventListener('click', () => { Arena.ui.cycle(document); applyBrand(); });
+  conn.engine.theme().then(t => { brand = t; applyBrand(); }).catch(() => {});
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4, exclude: ['agent-7'], fullNames: true }); // Liam stays quiet so the console has something to show
   let chals = [], rewards = [], kudos = [], coach = [], budget = null;
@@ -512,6 +546,28 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
     if (budgetEditing) $('#budgetSave').onclick = async () => { try { budget = await engine.setBudget(+$('#budgetVal').value || 0); budgetEditing = false; renderBudget(); toast(budget.capped ? `Budget set to ${budget.monthly.toLocaleString()} pts a month` : 'Budget cap removed'); } catch (e) { toast(e.message); } };
   }
   $('#budgetEdit').addEventListener('click', () => { budgetEditing = !budgetEditing; renderBudget(); });
+  // Brand: name, colours and logo for every page on the stack. The logo is uploaded to the site under brand/.
+  let brandDraft = null;
+  function renderBrandPreview(){ const t = brandDraft; $('#bPreview').innerHTML = `${t.logoUrl ? `<img src="${esc(t.logoUrl)}" alt="">` : ''}<span>${esc(t.name || 'Arena')}</span><span class="sw" style="background:${esc(t.accent)}" title="accent"></span><span class="sw" style="background:${esc(t.highlight)}" title="highlight"></span>`; }
+  $('#brandBtn').addEventListener('click', async () => {
+    if (!conn.isSupervisor && engine.remote) return toast('Supervisors only');
+    try { brandDraft = Object.assign({}, Arena.THEME_DEFAULTS, await engine.theme()); } catch (e) { return toast(e.message); }
+    $('#bName').value = brandDraft.name; $('#bAccent').value = brandDraft.accent; $('#bHighlight').value = brandDraft.highlight; $('#bLogo').value = ''; $('#bErr').textContent = ''; renderBrandPreview(); $('#brandDlg').showModal();
+  });
+  ['#bName', '#bAccent', '#bHighlight'].forEach(id => $(id).addEventListener('input', () => { brandDraft.name = $('#bName').value.trim() || 'Arena'; brandDraft.accent = $('#bAccent').value.toUpperCase(); brandDraft.highlight = $('#bHighlight').value.toUpperCase(); renderBrandPreview(); }));
+  $('#bLogo').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    if (f.size > 300 * 1024) { $('#bErr').textContent = 'The logo must be 300 KB or smaller.'; e.target.value = ''; return; }
+    const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+    try { const t = await engine.uploadLogo(dataUrl); brandDraft.logoUrl = t.logoUrl; $('#bErr').textContent = ''; renderBrandPreview(); toast('Logo uploaded'); } catch (err) { $('#bErr').textContent = err.message; }
+  });
+  $('#bRemoveLogo').addEventListener('click', () => { brandDraft.logoUrl = ''; renderBrandPreview(); });
+  $('#bReset').addEventListener('click', () => { brandDraft = Object.assign({}, Arena.THEME_DEFAULTS); $('#bName').value = brandDraft.name; $('#bAccent').value = brandDraft.accent; $('#bHighlight').value = brandDraft.highlight; renderBrandPreview(); });
+  $('#bCancel').addEventListener('click', () => $('#brandDlg').close());
+  $('#brandForm').addEventListener('submit', async e => { e.preventDefault();
+    try { brand = await engine.saveTheme({ name: brandDraft.name, accent: brandDraft.accent, highlight: brandDraft.highlight, logoUrl: brandDraft.logoUrl }); applyBrand(); $('#brandDlg').close(); toast('Brand saved for every page'); }
+    catch (err) { $('#bErr').textContent = err.message; } });
+
   // People: sign-ins in the stack's Cognito pool. Supervisors only; with an external identity provider the API says so.
   let people = [];
   function renderPeople(){

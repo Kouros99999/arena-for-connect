@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.14.0",
+    "date": "2026-10-10",
+    "title": "Light or dark, your colours, your logo",
+    "summary": "Everyone picks light or dark for themselves, supervisors set the company name, colours and logo for every page, and wallboards get larger text and high contrast.",
+    "changes": [
+      "Light and dark: a ◐ button in every header switches the agent panel, console, report and wallboard; the choice is remembered per browser and follows the system setting by default.",
+      "Brand: a Brand dialog in the console sets the name, accent and highlight colours, and uploads a company logo (PNG, JPEG, SVG or WebP, 300 KB) that appears in every header, wallboards included. Colours adapt to light and dark so text stays readable.",
+      "Wallboard display: larger text and high contrast switches, remembered per TV."
+    ],
+    "upgrade": [
+      "No action is needed. Pages keep their current look until someone chooses otherwise."
+    ],
+    "docs": [
+      "branding-and-themes"
+    ]
+  },
+  {
     "version": "0.13.0",
     "date": "2026-10-10",
     "title": "Suggested challenges and spotlights",

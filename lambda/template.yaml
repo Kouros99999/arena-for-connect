@@ -629,9 +629,11 @@ Resources:
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           AUTH_MODE: jwt
           USER_POOL_ID: !If [UseCognito, !Ref UserPool, '']
+          SITE_BUCKET: !Ref SiteBucket
       Policies:
         - SNSPublishMessagePolicy: { TopicName: !GetAtt DigestTopic.TopicName }
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - S3WritePolicy: { BucketName: !Ref SiteBucket }   # the company logo, under brand/
         - Statement:
             - Effect: Allow   # People in the console: list, invite, edit, reset and remove sign-ins in the stack's own pool
               Action: [cognito-idp:ListUsers, cognito-idp:ListUsersInGroup, cognito-idp:AdminGetUser, cognito-idp:AdminListGroupsForUser, cognito-idp:AdminCreateUser, cognito-idp:AdminUpdateUserAttributes, cognito-idp:AdminAddUserToGroup, cognito-idp:AdminRemoveUserFromGroup, cognito-idp:AdminSetUserPassword, cognito-idp:AdminDeleteUser]

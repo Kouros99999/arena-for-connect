@@ -91,6 +91,55 @@
     { id: 'parking', name: 'Prime parking spot, one week', cost: 1500 },
   ];
 
+  // ---------- look and feel: a per-person light/dark choice and a per-stack brand (name, colours, logo) ----------
+  const THEME_DEFAULTS = { name: 'Arena', accent: '#0F766E', highlight: '#B7791F', logoUrl: '' };
+  const HEX = /^#[0-9a-fA-F]{6}$/;
+  /** Validate what a supervisor saved. Throws with a message a person can act on. */
+  function normalizeTheme(input, current) {
+    const cur = Object.assign({}, THEME_DEFAULTS, current || {}), inp = input || {}, out = {};
+    out.name = inp.name !== undefined ? String(inp.name).trim().slice(0, 40) || THEME_DEFAULTS.name : cur.name;
+    for (const k of ['accent', 'highlight']) {
+      const v = inp[k] !== undefined ? String(inp[k]).trim() : cur[k];
+      if (!HEX.test(v)) throw new Error(`${k} must be a hex colour like #0F766E`);
+      out[k] = v.toUpperCase();
+    }
+    const logo = inp.logoUrl !== undefined ? String(inp.logoUrl).trim() : cur.logoUrl;
+    if (logo && !/^(\/brand\/[A-Za-z0-9._-]+|https:\/\/[^\s"'<>]+|data:image\/(png|jpeg|svg\+xml|webp);base64,[A-Za-z0-9+/=]+)$/.test(logo)) throw new Error('logoUrl must be an https URL or a brand file on this site');
+    if (logo.length > 420000) throw new Error('the logo is too large; upload a file of 300 KB or less');
+    out.logoUrl = logo;
+    return out;
+  }
+  const hexToRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const mix2 = (a, b, t) => '#' + hexToRgb(a).map((x, i) => Math.round(x + (hexToRgb(b)[i] - x) * t).toString(16).padStart(2, '0')).join('');
+  /** Relative luminance, for picking readable text on a brand colour. */
+  const luma = (h) => { const [r, g, b] = hexToRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ui = {
+    /** Light, dark or auto: the person's own choice, kept in this browser. */
+    getMode() { try { return localStorage.getItem('arena.theme') || 'auto'; } catch { return 'auto'; } },
+    setMode(m) { try { localStorage.setItem('arena.theme', m); } catch {} },
+    /** What applies right now, resolving auto through the system preference. `dark` is the page's native look for the wallboard. */
+    resolve(mode, nativeDark) { if (mode === 'light' || mode === 'dark') return mode; const prefers = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches; return nativeDark ? (prefers ? 'dark' : 'dark') : (prefers ? 'dark' : 'light'); },
+    applyMode(doc, nativeDark) { const mode = ui.resolve(ui.getMode(), nativeDark); doc.documentElement.setAttribute('data-theme', mode); return mode; },
+    cycle(doc, nativeDark) { const cur = ui.resolve(ui.getMode(), nativeDark); const next = cur === 'dark' ? 'light' : 'dark'; ui.setMode(next); return ui.applyMode(doc, nativeDark); },
+    /** Brand colours and logo onto a page: CSS variables plus the header mark. Pure of network; the caller fetched the theme. */
+    applyBrand(doc, theme, opts) {
+      const t = Object.assign({}, THEME_DEFAULTS, theme || {}), dark = (doc.documentElement.getAttribute('data-theme') || 'light') === 'dark', st = doc.documentElement.style;
+      const accent = dark ? mix2(t.accent, '#FFFFFF', 0.25) : t.accent, hi = dark ? mix2(t.highlight, '#FFFFFF', 0.3) : t.highlight;
+      st.setProperty('--accent', accent); st.setProperty('--accent-soft', mix2(t.accent, dark ? '#12161D' : '#FFFFFF', 0.85)); st.setProperty('--accent-dim', mix2(t.accent, '#000000', 0.5)); st.setProperty('--accent-ink', luma(accent) > 0.45 ? '#15181E' : '#FFFFFF');
+      st.setProperty('--gold', hi); st.setProperty('--gold-soft', mix2(t.highlight, dark ? '#12161D' : '#FFFFFF', 0.85));
+      for (const el of doc.querySelectorAll((opts && opts.mark) || '.brand, .pane-head .app')) {
+        el.textContent = ''; if (t.logoUrl) { const img = doc.createElement('img'); img.src = t.logoUrl; img.alt = t.name; img.className = 'brand-logo'; el.appendChild(img); }
+        el.appendChild(doc.createTextNode(t.logoUrl && !(opts && opts.nameWithLogo) ? '' : t.name)); el.title = t.name;
+      }
+      if (opts && opts.title && t.name !== 'Arena') doc.title = doc.title.replace(/Arena/, t.name);
+      return t;
+    },
+    /** Wallboard display preferences for one TV: text size and contrast, kept in that browser. */
+    getWall() { try { return JSON.parse(localStorage.getItem('arena.wall') || '{}'); } catch { return {}; } },
+    setWall(p) { try { localStorage.setItem('arena.wall', JSON.stringify(Object.assign(ui.getWall(), p))); } catch {} },
+    applyWall(doc) { const p = ui.getWall(); doc.documentElement.setAttribute('data-size', p.size === 'large' ? 'large' : 'normal'); doc.documentElement.setAttribute('data-contrast', p.contrast === 'high' ? 'high' : 'normal'); return p; },
+  };
+
   // ---------- spotlights: recognition Arena writes itself, no points attached ----------
   const SPOTLIGHTS = { evalScore: 95, streakDays: [5, 10, 20, 50], minPriorDays: 3 };
   /** Pure: the line a spotlight carries, or null when the moment does not qualify. */
@@ -629,6 +678,10 @@
     local.budget = { monthly: 20000, spent: 7500 };
     const budgetView = () => budgetSummary(local.budget.monthly, local.budget.spent, new Date().toISOString().slice(0, 7));
     const budget = async () => budgetView();
+    local.theme = Object.assign({}, THEME_DEFAULTS);
+    const theme = async () => Object.assign({}, local.theme);
+    const saveTheme = async (t) => { local.theme = normalizeTheme(t, local.theme); return theme(); };
+    const uploadLogo = async (dataUrl) => { local.theme.logoUrl = dataUrl; return theme(); };
     // People and data keys exist only against the live API; the demo shows the shape.
     local.users = agents.slice(0, 4).map((a, i) => ({ username: a.name.toLowerCase().replace(/[^a-z]+/g, '.'), name: a.name, email: '', team: 'Billing team', agentArn: a.id, role: i === 0 ? 'supervisor' : 'agent', status: 'CONFIRMED', enabled: true }));
     const users = async () => local.users;
@@ -695,7 +748,7 @@
       suggestions: () => recommendChallenges(agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance,
-      users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase,
+      users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo,
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
@@ -862,6 +915,10 @@
     const revokeDataKey = async (key) => call('DELETE', `${base}/data/keys/${encodeURIComponent(key)}`);
     const exportDays = async (from, to, teamName) => call('GET', `${base}/export/days?from=${from}&to=${to}` + (teamName ? '&team=' + encodeURIComponent(teamName) : ''));
     const apiBase = () => base;
+    const theme = async () => (await call('GET', kiosk ? `${base}/kiosk/${encodeURIComponent(kiosk)}/theme` : `${base}/config/theme`)).theme;
+    const saveTheme = async (t) => (await call('PUT', `${base}/config/theme`, t)).theme;
+    /** dataUrl: a data: URL from a FileReader (png, jpeg, svg, webp, at most 300 KB). */
+    const uploadLogo = async (dataUrl) => (await call('POST', `${base}/config/logo`, { dataUrl })).theme;
     const setBudget = async (monthly) => (await call('PUT', `${teamPath()}/budget`, { monthly })).budget;
     const kiosks = async () => (await call('GET', `${teamPath()}/kiosk`)).kiosks;
     const createKiosk = async (label, days) => (await call('POST', `${teamPath()}/kiosk`, { label, days })).kiosk;
@@ -878,7 +935,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       suggestions: () => recommendChallenges(engine.agents),
@@ -916,6 +973,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeTheme, THEME_DEFAULTS, ui, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

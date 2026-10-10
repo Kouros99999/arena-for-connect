@@ -32,6 +32,15 @@ button{cursor:pointer}
 .num{font-variant-numeric:tabular-nums}
 h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0}
 
+:root[data-theme=dark]{
+  --bg:#0F1218; --panel:#171B23; --sub:#1E232D; --ink:#EEF1F5; --ink-2:#C2C9D4; --muted:#8C96A6; --line:#2A3140;
+  --accent-soft:#17332F; --gold-soft:#3A2E14; --you:#15302C;
+  --good:#5FD38D; --good-bg:#15301F; --warn:#E3B04B; --warn-bg:#352A12; --bad:#F07A7A; --bad-bg:#3A1C1C; --flash:#2E2B16; --up:#5FD38D; --down:#F07A7A;
+  --grid:#2A3140; --ref:#8C96A6;
+  --chrome:#0B0E13; --chrome-ink:#E9EDF2; --chrome-muted:#8C96A6;
+}
+.brand-logo{height:22px;max-width:140px;vertical-align:middle;margin-right:6px;object-fit:contain}
+.theme-btn{background:transparent;border:1px solid rgba(255,255,255,.25);color:var(--chrome-ink);border-radius:6px;padding:2px 8px;font:inherit;cursor:pointer}
 .chrome{background:var(--chrome);color:var(--chrome-ink);min-height:44px;display:flex;align-items:center;gap:14px;padding:6px 20px;font-size:13px;flex-wrap:wrap}
 .chrome .brand{font-family:Manrope,sans-serif;font-weight:800;letter-spacing:-.01em;font-size:15px}
 .chrome .crumb{color:var(--chrome-muted)}
@@ -145,7 +154,12 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;padding:10px 14
 <script src="arena-engine.js"></script>
 <script>
 (function(){
+  Arena.ui.applyMode(document);
   const conn = Arena.connect();
+  let brand = null;
+  const applyBrand = () => Arena.ui.applyBrand(document, brand, { title: true });
+  document.getElementById('themeBtn').addEventListener('click', () => { Arena.ui.cycle(document); applyBrand(); });
+  conn.engine.theme().then(t => { brand = t; applyBrand(); }).catch(() => {});
   const engine = conn.engine;
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

@@ -48,6 +48,12 @@
     "updated": "0.5.0"
   },
   {
+    "slug": "branding-and-themes",
+    "title": "Look and feel: themes and your logo",
+    "summary": "Light or dark per person, your company name, colours and logo on every page, and wallboard text size and contrast.",
+    "updated": "0.14.0"
+  },
+  {
     "slug": "users-and-sign-in",
     "title": "Users and sign-in",
     "summary": "Managing agent and supervisor sign-ins from the console, bulk sync from Connect, using your own identity provider, and who can see what.",

@@ -15,6 +15,18 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
 .wall{height:100vh;display:grid;grid-template-rows:auto 1fr auto;gap:1.6vh;padding:2.2vh 2.4vw}
 
+:root[data-theme=light]{
+  --bg:#EEF0F3; --panel:#FFFFFF; --panel-2:#F5F6F8; --ink:#15181E; --ink-2:#4A5362; --muted:#7C8697; --line:#DCE0E6;
+  --accent:#0F766E; --accent-dim:#9FD6CF; --gold:#B7791F; --silver:#7C8697; --bronze:#A8743E;
+  --good:#2E7D4F; --bad:#A83A3A; --flash:#FFF6D6;
+}
+:root[data-contrast=high]{ --bg:#000; --panel:#000; --panel-2:#0A0A0A; --ink:#FFFFFF; --ink-2:#FFFFFF; --muted:#D7DBE2; --line:#7A8290; --good:#7CFFA8; --bad:#FF9A9A }
+:root[data-contrast=high][data-theme=light]{ --bg:#FFFFFF; --panel:#FFFFFF; --panel-2:#F2F2F2; --ink:#000; --ink-2:#000; --muted:#333; --line:#777 }
+:root[data-size=large] .main{zoom:1.22}
+.brand-logo{height:4.2vh;max-width:28vw;vertical-align:middle;margin-right:1vw;object-fit:contain}
+.wall-ctl{margin-left:1.5vw;display:flex;gap:.6vw;opacity:.35;transition:opacity .3s}
+.wall-ctl:hover{opacity:1}
+.wall-ctl button{background:transparent;border:1px solid var(--line);color:var(--ink-2);border-radius:.8vh;padding:.3vh 1vh;font:inherit;font-size:1.8vh;cursor:pointer}
 .top{display:flex;align-items:baseline;gap:2vw}
 .top .team{font-family:Manrope,sans-serif;font-weight:800;font-size:4.2vh;letter-spacing:-.02em}
 .top .sub{color:var(--muted);font-size:2.2vh;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
@@ -72,7 +84,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 <div class="wall">
   <div class="top">
     <span class="team">Billing team</span>
-    <span class="sub">Arena · today</span>
+    <span class="sub"><span class="brand">Arena</span> · today</span>
+    <span class="wall-ctl"><button id="themeBtn" title="Light or dark">◐</button><button id="sizeBtn" title="Larger text">A+</button><button id="contrastBtn" title="High contrast">◑</button></span>
     <span class="clock num" id="clock">09:41</span>
   </div>
 
@@ -112,7 +125,14 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 <script src="arena-engine.js"></script>
 <script>
 (function(){
+  Arena.ui.applyMode(document, true); Arena.ui.applyWall(document);
   const conn = Arena.connect();
+  let brand = null;
+  const applyBrand = () => Arena.ui.applyBrand(document, brand, { mark: '.brand', nameWithLogo: true, title: true });
+  document.getElementById('themeBtn').addEventListener('click', () => { Arena.ui.cycle(document, true); applyBrand(); });
+  document.getElementById('sizeBtn').addEventListener('click', () => { Arena.ui.setWall({ size: Arena.ui.getWall().size === 'large' ? 'normal' : 'large' }); Arena.ui.applyWall(document); });
+  document.getElementById('contrastBtn').addEventListener('click', () => { Arena.ui.setWall({ contrast: Arena.ui.getWall().contrast === 'high' ? 'normal' : 'high' }); Arena.ui.applyWall(document); });
+  conn.engine.theme().then(t => { brand = t; applyBrand(); }).catch(() => {});
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
   let kudos = [], goal = null;

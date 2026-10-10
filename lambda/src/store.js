@@ -356,6 +356,10 @@ async function getMixes(team) {
   return { team: own.Item ? own.Item.mix : null, default: def.Item ? def.Item.mix : null };
 }
 /** The mix that applies to a team: its own profile, else the default, else null (the engine's built-in weights). */
+// ---------- look and feel: one brand per stack (CONFIG / THEME) ----------
+async function getTheme() { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'THEME' } })); return r.Item ? r.Item.theme : null; }
+async function putTheme(theme) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'THEME', theme, updatedAt: new Date().toISOString() } })); }
+
 async function getMix(team) { const m = await getMixes(team); return m.team || m.default || null; }
 async function putMix(mix, team) {
   await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: mixKey(team), team: team || undefined, mix, updatedAt: new Date().toISOString() } }));
@@ -372,7 +376,7 @@ async function putAgentPrefs(arn, prefs) {
   } catch (e) { if (e.name === 'ConditionalCheckFailedException') return false; throw e; }
 }
 
-module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, getMixes, putMix, deleteMix, putAgentPrefs, seedLive, putAck, deleteAck, listAcks, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
+module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getTheme, putTheme, getMix, getMixes, putMix, deleteMix, putAgentPrefs, seedLive, putAck, deleteAck, listAcks, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
   getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount, getNotify, putNotify, getDigestMark, putDigestMark, listTeams,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, getSpent, getRewardSettings, putRewardSettings, deleteRewardSettings, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };
