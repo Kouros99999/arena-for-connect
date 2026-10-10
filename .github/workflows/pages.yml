@@ -27,7 +27,11 @@ jobs:
           mkdir -p site
           cp prototype/*.html prototype/arena-engine.js prototype/arena-auth.js site/
           echo 'window.ARENA_CONFIG = {};' > site/config.js
-          cp -r web/* site/ && rm -f site/make-logo.py site/make-video.js site/make-shots.js site/releases.test.js
+          cp -r web/* site/ && rm -f site/make-logo.py site/make-video.js site/make-shots.js site/make-og.py site/releases.test.js site/build-site.js
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Render help center, release notes, sitemap and social tags
+        run: npm install --no-save marked@12.0.2 && node web/build-site.js site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
