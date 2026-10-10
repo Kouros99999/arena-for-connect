@@ -4,7 +4,7 @@
 
 Arena is billed through AWS Marketplace by the **active agent-day**: one unit for each agent who had scored activity on a day, in UTC. An agent who takes no contacts on a day costs nothing that day. Your stack reports the count once a night, and the charge appears on your AWS bill with your other Marketplace subscriptions.
 
-The listing shows the price per agent-day. For a full-time agent that comes to about 22 agent-days a month.
+The listing shows the price per agent-day. For a full-time agent that comes to about 22 agent-days a month, so at $0.75 per agent-day about $16 a month.
 
 ## Infrastructure
 
