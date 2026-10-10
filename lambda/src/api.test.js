@@ -539,3 +539,26 @@ test('reward catalog and balance period are per team; balances are earned minus 
   b = JSON.parse((await h(supReq('PUT', '/teams/t/rewards/settings', { useDefault: true }))).body).settings;
   assert.equal(b.source, 'default'); assert.equal(b.items[0].id, 'gift25');
 });
+
+test('leaderboard opt-out: hidden agents are kept from teammates and wallboards, shown to supervisors and to themselves', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  s.live.a2 = { pk: 'AGENT#a2', team: 't' };
+  const me = (who, method, path, body) => Object.assign(anon(method, path), { body: body ? JSON.stringify(body) : undefined, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': who } } } } });
+  assert.equal(JSON.parse((await h(me('a2', 'PUT', '/agents/a2/prefs', { hideFromBoard: true }))).body).prefs.hideFromBoard, true);
+  const base = s.getTeam; s.getTeam = async (...a) => (await base(...a)).map((x) => Object.assign({}, x, { hidden: x.id === 'a2' }));
+  s.getTeamLive = async () => [{ pk: 'AGENT#a1', displayName: 'priya', username: 'priya' }, { pk: 'AGENT#a2', displayName: 'Marcus Bell', username: 'marcus', prefs: { hideFromBoard: true } }];
+  assert.deepEqual(JSON.parse((await h(me('a1', 'GET', '/teams/t/agents'))).body).agents.map((a) => a.id), ['a1'], 'a teammate does not see a2');
+  assert.deepEqual(JSON.parse((await h(me('a2', 'GET', '/teams/t/agents'))).body).agents.map((a) => a.id), ['a1', 'a2'], 'a2 still sees themselves');
+  const sup = JSON.parse((await h(req('GET', '/teams/t/agents'))).body).agents;
+  assert.deepEqual(sup.map((a) => a.id), ['a1', 'a2']); assert.equal(sup[1].hidden, true, 'supervisors see everyone, flagged');
+  // A race's standings name a2 only to supervisors and to a2.
+  await s.putTeamItem('t', 'CH#2026-09-10T00:00:00.000Z#r1', { id: 'r1', template: 'race', title: 'Race', metrics: [{ key: 'points', weight: 1 }], minContacts: 0, tiers: [], anonymize: false, excluded: [], startsAt: '2026-09-15', endsAt: '2026-09-20', state: 'active', createdAt: '2026-09-10T00:00:00.000Z' });
+  const rows = (res) => JSON.parse(res.body).challenges.find((c) => c.id === 'r1').progress.standings.rows.map((r) => r.name);
+  assert.deepEqual(rows(await h(me('a1', 'GET', '/teams/t/challenges'))), ['priya', 'A teammate']);
+  assert.deepEqual(rows(await h(me('a2', 'GET', '/teams/t/challenges'))), ['priya', 'Marcus Bell']);
+  assert.deepEqual(rows(await h(req('GET', '/teams/t/challenges'))), ['priya', 'Marcus Bell']);
+  // Wallboard: a2 is absent from the agents list and unnamed in standings.
+  s.getKiosk = async () => ({ team: 't', expiresAt: '2099-01-01T00:00:00.000Z' });
+  assert.deepEqual(JSON.parse((await h(anon('GET', '/kiosk/tok/agents'))).body).agents.map((a) => a.name), ['priya']);
+  assert.deepEqual(rows(await h(anon('GET', '/kiosk/tok/challenges'))), ['priya', 'A teammate']);
+});

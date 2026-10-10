@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.11.0",
+    "date": "2026-10-10",
+    "title": "Leaderboard opt-out and a security write-up for reviewers",
+    "summary": "An agent can keep themselves off teammates' boards and wallboards, and the help center now has a full security and architecture write-up for the people who review software before a centre may use it.",
+    "changes": [
+      "Hide me from others: a tick box in the agent panel removes the agent from teammates' leaderboards, wallboards and the standings teammates see. Supervisors still see everyone, marked \"hidden\" in the console, and the agent still sees themselves.",
+      "Security and your data: the help center article is now a complete write-up covering architecture, what is stored, what leaves the account, who sees what, least privilege per function, encryption, retention, deletion and shared responsibility. Linked from every page footer and the pricing FAQ."
+    ],
+    "upgrade": [
+      "No action is needed."
+    ],
+    "docs": [
+      "security-and-data",
+      "how-scoring-works"
+    ]
+  },
+  {
     "version": "0.10.0",
     "date": "2026-10-10",
     "title": "Your own reward catalog, and balances that reset",

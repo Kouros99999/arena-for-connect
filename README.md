@@ -130,6 +130,8 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
 
+**Leaderboard opt-out.** `PUT /agents/{arn}/prefs { hideFromBoard: true }` keeps an agent out of teammates' team-agents responses, kiosk responses and the standings teammates or wallboards see (rows become "A teammate"); supervisors get everyone with `hidden: true`.
+
 **Reward catalog and balances.** `CONFIG / REWARDS#<team>` holds a team's catalog (`items`, up to 20) and `balancePeriod` (`week`, `month`, `quarter`), edited with `GET/PUT /teams/{team}/rewards/settings`; absent, `Arena.REWARD_DEFAULTS` applies. A balance (`GET /agents/{arn}/balance`) is the sum of the agent's DAY rows from the period start minus `SPEND#<periodKey>` on their partition, which an approval adds to. Points earned are never decremented.
 
 **Backfill.** With `ConnectInstanceArn` set and `BackfillDays` > 0, `lambda/src/backfill.js` runs hourly until a `MARK / BACKFILL#done` row exists: it lists the instance's users (`ListUsers`, `DescribeUser`, `DescribeRoutingProfile`) and seeds a LIVE row per agent without a `lastEvent`, then reads `GetMetricDataV2` per agent and day (`CONTACTS_HANDLED`, `SUM_HANDLE_TIME`, `EVALUATIONS_PERFORMED`, `AVG_EVALUATION_SCORE`) and writes one `BACKFILL_DAY` event per agent-day with contacts, worth what the engine would have scored them. Days that already have a row are skipped; today never is.

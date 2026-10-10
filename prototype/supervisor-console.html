@@ -353,7 +353,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
       const qpill = q===null ? '<span class="pill mute">no evals</span>' : `<span class="pill ${q>=85?'good':q>=75?'warn':'bad'}">${q}%</span>`;
       return `<tr class="${changed===a?'flash':''}" data-id="${a.id}">
         <td class="rk num">${r.rank}</td>
-        <td><span class="who"><span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>${esc(a.name)}</span></td>
+        <td><span class="who"><span class="av" style="background:hsl(${a.hue} 45% 45%)">${a.initials}</span>${esc(a.name)}${a.hidden ? ' <span class="pill" title="This agent chose not to appear on teammates\' boards or wallboards">hidden</span>' : ''}</span></td>
         <td class="r num" style="font-family:Manrope;font-weight:800">${r.points.toLocaleString()}</td>
         <td class="r num">${a.handled}</td>
         <td class="r num mono">${Math.floor(r.aht/60)}:${pad(r.aht%60)}</td>

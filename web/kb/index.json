@@ -9,7 +9,7 @@
     "slug": "how-scoring-works",
     "title": "How scoring works",
     "summary": "Where points come from, why quality outweighs speed, and what the scoring mix changes.",
-    "updated": "0.10.0"
+    "updated": "0.11.0"
   },
   {
     "slug": "sentiment-and-surveys",
@@ -56,8 +56,8 @@
   {
     "slug": "security-and-data",
     "title": "Security and your data",
-    "summary": "What Arena stores, where it lives, how to delete it, and what we never see.",
-    "updated": "0.5.0"
+    "summary": "For security and procurement reviewers: architecture, data stored, what leaves your account, access, least privilege, encryption, retention and deletion.",
+    "updated": "0.11.0"
   },
   {
     "slug": "settings-reference",

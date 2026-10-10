@@ -6,7 +6,7 @@
  *   GET  /config/mix?team=T                     the mix that applies: the team's own profile or the default ({ mix, source, team, default })
  *   PUT  /config/mix?team=T                     { quality, productivity, adherence } saves a profile for that team; { useDefault: true } removes it; without ?team it sets the default (supervisors)
  *   GET  /agents/{arn}/best?days=90             personal best: best day and week on record and how today compares (the agent or a supervisor)
- *   GET/PUT /agents/{arn}/prefs                 { personalBest } the agent's own view preference
+ *   GET/PUT /agents/{arn}/prefs                 { personalBest, hideFromBoard } the agent's own view preferences; hideFromBoard keeps them off teammates' boards and wallboards (supervisors still see everyone)
  *   POST /kudos                                 { to, from, note, team } scores and stores a KUDOS event
  *   GET  /teams/{team}/history?days=30          results report: this period against the one before (supervisors)
  *   GET  /teams/{team}/coaching                 coaching plans; agents see only their own, without the supervisor's private note
@@ -87,6 +87,13 @@ function makeHandler(deps) {
   const tell = async (team, ev) => { try { const cfg = await s.getNotify(team); if (cfg) await sendFn(cfg, ev, deps); } catch (e) { console.warn('notify failed', e.message); } };
     /** The mix a team is scored with and where it comes from. */
   const mixInfo = async (team) => { const m = await s.getMixes(team || undefined); return { team: team || undefined, mix: m.team || m.default || Arena.DEFAULT_MIX, source: m.team ? 'team' : 'default', default: m.default || Arena.DEFAULT_MIX }; };
+  /** Strip names from standings rows of agents who opted out of boards, for teammates and wallboards. The viewer still sees their own row. */
+  const maskHidden = async (team, list, viewer) => {
+    const hidden = new Set((await s.getTeamLive(team)).filter((l) => l.prefs && l.prefs.hideFromBoard).map((l) => l.pk.replace(/^AGENT#/, '')));
+    if (!hidden.size) return list;
+    const mask = (row) => (hidden.has(row.agentId) && row.agentId !== viewer ? { rank: row.rank, score: row.score, values: row.values, qualified: row.qualified, excluded: row.excluded, measured: row.measured, name: 'A teammate' } : row);
+    return list.map((c) => (c.progress && c.progress.standings ? Object.assign({}, c, { progress: Object.assign({}, c.progress, { standings: Object.assign({}, c.progress.standings, { rows: c.progress.standings.rows.map(mask) }) }) }) : c));
+  };
   /** The team's catalog and balance period, with defaults, and where they come from. */
   const rewardSettingsFor = async (team) => { const own = await s.getRewardSettings(team); return Object.assign({ source: own ? 'team' : 'default' }, Arena.normalizeRewardSettings(own || {}, Arena.REWARD_DEFAULTS)); };
   /** What an agent may spend right now: points earned in the team's balance period minus rewards approved in it. */
@@ -116,7 +123,9 @@ function makeHandler(deps) {
         case 'teamAgents': {
           // A requested date is a local day; it is read at local noon so the day and week keys land on that day.
           const iso = (qs.date && clock.isDay(qs.date) ? new Date(clock.startOfDay(qs.date) + 12 * 3600000).toISOString() : now().toISOString());
-          const agents = await s.getTeam(r.team, iso);
+          const all = await s.getTeam(r.team, iso);
+          // Agents who opted out of the leaderboard are shown to supervisors (flagged) and to themselves, not to teammates.
+          const agents = isSupervisor(claims) ? all : all.filter((a) => !a.hidden || a.id === claims['custom:agentArn']);
           return json(200, { team: r.team, date: store.dayKey(iso), week: store.weekKey(iso), timezone: clock.TZ, agents });
         }
         case 'agentEvents': {
@@ -149,18 +158,18 @@ function makeHandler(deps) {
         case 'getPrefs': {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
           const live = await s.getLive(r.arn);
-          return json(200, { agent: r.arn, prefs: Object.assign({ personalBest: false }, (live && live.prefs) || {}) });
+          return json(200, { agent: r.arn, prefs: Object.assign({ personalBest: false, hideFromBoard: false }, (live && live.prefs) || {}) });
         }
         case 'putPrefs': {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
           const b = parse(event), live = await s.getLive(r.arn);
-          const prefs = Object.assign({ personalBest: false }, (live && live.prefs) || {}, b.personalBest !== undefined ? { personalBest: !!b.personalBest } : {});
+          const prefs = Object.assign({ personalBest: false, hideFromBoard: false }, (live && live.prefs) || {}, b.personalBest !== undefined ? { personalBest: !!b.personalBest } : {}, b.hideFromBoard !== undefined ? { hideFromBoard: !!b.hideFromBoard } : {});
           if (!(await s.putAgentPrefs(r.arn, prefs))) return json(404, { error: 'agent has no activity yet' });
           return json(200, { agent: r.arn, prefs });
         }
         case 'listChallenges': {
           const list = await challenges.challengesFor(s, r.team, now(), { supervisor: isSupervisor(claims), viewer: claims['custom:agentArn'] });
-          return json(200, { team: r.team, challenges: list });
+          return json(200, { team: r.team, challenges: isSupervisor(claims) ? list : await maskHidden(r.team, list, claims['custom:agentArn']) });
         }
         case 'createChallenge': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
@@ -274,9 +283,9 @@ function makeHandler(deps) {
           const k = await s.getKiosk(r.token);
           if (!k || (k.expiresAt && k.expiresAt < now().toISOString())) return json(401, { error: 'kiosk link is invalid or expired' });
           const iso = now().toISOString();
-          if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: (await s.getTeam(k.team, iso)).map(forWallboard) });
+          if (r.what === 'agents') return json(200, { team: k.team, date: store.dayKey(iso), week: store.weekKey(iso), agents: (await s.getTeam(k.team, iso)).filter((a) => !a.hidden).map(forWallboard) });
           if (r.what === 'kudos') return json(200, { team: k.team, kudos: (await s.listTeamItems(k.team, 'KD#', Math.min(50, +(qs.limit || 10)), true)).map(strip).map((k2) => Object.assign({}, k2, { from: displayName(k2.from), toName: displayName(k2.toName) })) });
-          const list = (await challenges.challengesFor(s, k.team, now(), { supervisor: false })).map((c) => (c.progress && c.progress.standings ? Object.assign({}, c, { progress: Object.assign({}, c.progress, { standings: { metrics: c.progress.standings.metrics, rows: c.progress.standings.rows.map((row) => Object.assign({}, row, { name: displayName(row.name) })) } }) }) : c));
+          const list = (await maskHidden(k.team, await challenges.challengesFor(s, k.team, now(), { supervisor: false }), null)).map((c) => (c.progress && c.progress.standings ? Object.assign({}, c, { progress: Object.assign({}, c.progress, { standings: { metrics: c.progress.standings.metrics, rows: c.progress.standings.rows.map((row) => Object.assign({}, row, { name: displayName(row.name) })) } }) }) : c));
           return json(200, { team: k.team, challenges: list });
         }
         case 'history': {

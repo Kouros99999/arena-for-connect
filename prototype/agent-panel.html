@@ -196,7 +196,7 @@ button{font:inherit;cursor:pointer}
       </div>
 
       <div class="section">
-        <h3><span id="boardTitle" style="margin:0">Team leaderboard</span> <label class="pb"><input type="checkbox" id="pbMode"> my own best</label><span id="boardRange">today</span></h3>
+        <h3><span id="boardTitle" style="margin:0">Team leaderboard</span> <label class="pb"><input type="checkbox" id="pbMode"> my own best</label><label class="pb" title="Teammates and wallboards will not list you. Your supervisor still sees you."><input type="checkbox" id="hideMe"> hide me from others</label><span id="boardRange">today</span></h3>
         <div class="board" id="board"></div>
       </div>
 
@@ -396,7 +396,8 @@ button{font:inherit;cursor:pointer}
   // The team's catalog and this agent's spendable balance (points this period minus approved rewards).
   async function loadRewards(){ if (!YOU) return; try { catalog = await engine.catalog(); bal = await engine.balance(YOU.id); } catch (e) {} render(); }
   setInterval(loadRewards, 60000);
-  async function loadPrefs(){ if (!YOU) return; try { const p = await engine.prefs(YOU.id); pbMode = !!p.personalBest; $('#pbMode').checked = pbMode; if (pbMode) await loadBest(); render(); } catch (e) {} }
+  async function loadPrefs(){ if (!YOU) return; try { const p = await engine.prefs(YOU.id); pbMode = !!p.personalBest; $('#pbMode').checked = pbMode; $('#hideMe').checked = !!p.hideFromBoard; if (pbMode) await loadBest(); render(); } catch (e) {} }
+  $('#hideMe').addEventListener('change', async e => { try { if (YOU) await engine.savePrefs(YOU.id, { hideFromBoard: e.target.checked }); note(e.target.checked ? 'Teammates and wallboards will no longer list you. Your supervisor still sees you.' : 'You are back on the team boards.'); } catch (err) { note('Could not save the preference: ' + err.message, true); } });
   setInterval(() => { if (pbMode) loadBest(); }, 60000);
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
   setInterval(loadChallenge, 30000); setInterval(loadCoaching, 30000);

@@ -52,6 +52,8 @@ Amazon Connect measures adherence itself when forecasting, capacity planning and
 
 An agent who would rather not race the team can tick **my own best** above the leaderboard in their panel. The panel then shows today against their best day on record and this week against their best week, with their average active day, and the rank in the header becomes a percentage of their best day. The choice is saved on their profile and only they and supervisors see the view. They still count in team totals and on the supervisor's leaderboard, since those are team data; the change is to what the agent is shown.
 
+A second tick box, **hide me from others**, takes the agent off their teammates' leaderboards and off wallboards, and leaves their name out of challenge standings that teammates see. Supervisors still see them, with a "hidden" tag in the console, and the agent still sees themselves. Team totals and challenge results are unchanged.
+
 ## Flags
 
 The console flags situations worth a look, from the same data:
