@@ -64,7 +64,8 @@ section.alt{background:var(--bg-alt)}
 .feature ul{padding-left:1.1rem;color:var(--ink-2);margin:0 0 1rem}
 .feature li{margin:.3rem 0}
 .feature .shot img{aspect-ratio:16/10;object-fit:cover;object-position:top}
-.feature .shot.tall img{aspect-ratio:3/5;object-position:top}
+.feature .shot.tall{max-width:400px;margin:0 auto}
+.feature .shot.tall img{aspect-ratio:4/5;max-height:520px;object-position:top}
 @media (max-width:900px){.feature,.feature.flip{grid-template-columns:1fr}.feature.flip .text{order:0}}
 .pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.2rem}
 .pillar{padding:1.3rem;border-radius:12px;background:#fff;border:1px solid var(--line)}
