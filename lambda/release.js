@@ -28,6 +28,15 @@ if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) {
   console.error(`No release notes for ${version}.\nAdd an entry at the top of web/releases.json (version, date, title, summary, changes, upgrade) and run this again.\nThe notes page at arenaforconnect.com/releases.html and the landing page's "latest version" line come from that file.`);
   process.exit(1);
 }
+// Help-center articles the release touched must exist and be marked current for this version.
+if (!Array.isArray(entry.docs)) { console.error(`The ${version} entry in web/releases.json needs a "docs" list: the help-center article slugs this release changed (an empty list is allowed when nothing changed).`); process.exit(1); }
+const kb = JSON.parse(fs.readFileSync(path.join(root, 'web', 'kb', 'index.json'), 'utf8'));
+for (const slug of entry.docs) {
+  const a = kb.find((x) => x.slug === slug);
+  if (!a) { console.error(`Release notes name help-center article "${slug}" but web/kb/index.json has no such article.`); process.exit(1); }
+  if (a.updated !== version) { console.error(`Help-center article "${slug}" is listed as changed in ${version} but web/kb/index.json marks it current as of ${a.updated}. Update the article and set "updated" to ${version}.`); process.exit(1); }
+  if (!fs.existsSync(path.join(root, 'web', 'kb', slug + '.md'))) { console.error(`web/kb/${slug}.md is missing.`); process.exit(1); }
+}
 if (notes[0].version !== version && !args.includes('--allow-older')) { console.error(`web/releases.json lists ${notes[0].version} first, not ${version}. Put the newest version at the top, or pass --allow-older to rebuild an earlier one.`); process.exit(1); }
 const out = path.join(root, 'release', version);
 fs.rmSync(out, { recursive: true, force: true }); fs.mkdirSync(out, { recursive: true });
@@ -73,7 +82,7 @@ if (upload) {
   for (const f of fs.readdirSync(out)) aws('s3', 'cp', path.join(out, f), `s3://${bucket}/arena/${version}/${f}`, '--cache-control', 'public, max-age=31536000, immutable');
   console.log(`published to s3://${bucket}/arena/${version}/`);
   console.log(`template URL: https://${bucket}.s3.${region}.amazonaws.com/arena/${version}/template.yaml`);
-  console.log(`\nNext: commit and push. The push publishes the ${version} notes to https://arenaforconnect.com/releases.html.`);
+  console.log(`\nNext: commit and push. The push publishes the ${version} notes to https://arenaforconnect.com/releases.html and the help center at https://arenaforconnect.com/kb.html.`);
 } else if (bucket) console.log('upload skipped (--no-upload)');
 else console.log('no --bucket given: template references ./arena.zip; run `aws cloudformation package` on it or pass --bucket to publish');
 

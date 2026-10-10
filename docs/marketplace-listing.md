@@ -47,6 +47,10 @@ Entered in the stored listing on 2026-10-03 (Save updates request succeeded 11:1
 - **Free trial:** 30 days, up to 25 agents
 - **Refund policy text:** Cancel any time from AWS Marketplace; usage is billed monthly in arrears for agent-days already reported, and no further usage is reported after cancellation.
 
+## Submitted (2026-10-09)
+
+Submitted for limited visibility on 2026-10-09 at 9:47 PM PDT (request "Publish to Limited"). Status: Limited. Only allowlisted accounts can see it; price is still the test price. Next: buyer-path test from 533267257907, then an update request for public visibility with the real price.
+
 ## Draft state (2026-09-29)
 
 All eight wizard steps entered and validated, saved with **Save and exit** (not submitted). Allowlist: 533267257907 (our own account, for testing the subscribe flow). Resume from the product page → **Resume product creation**. Still to put into the wizard before submitting: support email and privacy policy URL below, once the domain resolves.

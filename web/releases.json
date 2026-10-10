@@ -14,6 +14,14 @@
       "No action is needed; existing settings keep their behaviour.",
       "If you use your own identity provider (AuthMode external), its tokens must carry the custom:team and custom:agentArn claims, as the sign-in guide already requires. Agents without a team claim are now refused on team pages.",
       "Set KudosDailyLimit to change the cap, and WallboardNames to first or initials for floor TVs in shared spaces."
+    ],
+    "docs": [
+      "users-and-sign-in",
+      "challenges-rewards-kudos",
+      "wallboard",
+      "security-and-data",
+      "settings-reference",
+      "how-scoring-works"
     ]
   },
   {
@@ -33,6 +41,11 @@
       "No action is needed to keep existing behaviour.",
       "To score customer sentiment, set the new AnalysisBucket setting to the bucket Connect writes Contact Lens analysis to, and turn on EventBridge notifications for that bucket.",
       "To score survey answers from Connect, send contact records to the Arena stream and set CsatAttribute to the contact attribute your survey writes."
+    ],
+    "docs": [
+      "sentiment-and-surveys",
+      "coaching",
+      "results-report"
     ]
   },
   {
@@ -47,6 +60,9 @@
     ],
     "upgrade": [
       "Stack settings changed: MarketplaceLicenseArn and MarketplaceCustomerAccountId replace MarketplaceCustomerId. Launch from the registration page so they are filled in for you."
+    ],
+    "docs": [
+      "billing"
     ]
   },
   {
@@ -62,7 +78,8 @@
       "Quality streaks are assessed every night, with a bonus from the second clean day.",
       "Wallboard TV links: a supervisor creates a sign-in-free link for a floor display, valid for 90 days and revocable."
     ],
-    "upgrade": []
+    "upgrade": [],
+    "docs": []
   },
   {
     "version": "0.1.0",
@@ -78,6 +95,7 @@
       "Sign-in through a user pool created in your account, or your own identity provider.",
       "Everything deploys as one CloudFormation stack into your own AWS account."
     ],
-    "upgrade": []
+    "upgrade": [],
+    "docs": []
   }
 ]
