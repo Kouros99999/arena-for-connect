@@ -15,7 +15,7 @@ You need:
 1. On the Arena listing in AWS Marketplace, choose **View purchase options**, then **Subscribe**.
 2. Choose **Set up your account**. Marketplace brings you to the Arena registration page, which confirms your subscription and shows a **Launch Arena in CloudFormation** button.
 3. The launch page opens in your AWS console with the template and your subscription prefilled. Review the settings. The ones most people change are the alarm email, the evaluation and analysis buckets, and the wallboard name style. Every setting is explained in the [settings reference](kb.html?a=settings-reference).
-4. Tick the acknowledgement that the stack creates IAM resources, then **Create stack**. Expect about ten minutes, most of it CloudFront.
+4. Tick **all three** acknowledgement boxes at the bottom of the page: IAM resources, IAM resources with custom names, and the `CAPABILITY_AUTO_EXPAND` capability. The console only shows a small "Please acknowledge all checkboxes" notice if one is missed and the button does nothing. Then choose **Create stack**. Expect about ten minutes, most of it CloudFront.
 
 When the stack shows `CREATE_COMPLETE`, open its **Outputs** tab. You will use `StreamArn`, `SiteUrl` and `UserPoolId`.
 
