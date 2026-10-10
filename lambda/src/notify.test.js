@@ -38,3 +38,10 @@ test('send posts to each configured channel, honours the event switches, and ema
   assert.deepEqual(d, ['slack', 'teams', 'email']); assert.equal(published.length, 1); assert.match(published[0].Subject, /daily digest/); assert.equal(published[0].MessageAttributes.to.StringValue, 'lead@example.com');
   await assert.rejects(() => notify.send(cfg, { kind: 'test', team: 't' }, { fetch: async () => ({ ok: false, status: 404 }) }), /404/);
 });
+
+test('budget alerts render and sit under the rewards switch', () => {
+  const m = notify.message({ kind: 'budgetAlert', pct: 75, spent: 7600, monthly: 10000, month: '2026-10' });
+  assert.equal(m.title, 'Reward budget 75% used'); assert.match(m.lines[0], /7,600 of 10,000 pts/);
+  assert.match(notify.message({ kind: 'budgetAlert', pct: 100, spent: 10000, monthly: 10000, month: '2026-10' }).lines[0], /blocked until/);
+  assert.equal(notify.eventKey('budgetAlert'), 'rewards');
+});

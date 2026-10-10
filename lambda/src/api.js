@@ -13,6 +13,8 @@
  *   POST /teams/{team}/metrics                  { agentId, metric: csat|sentiment, score, contactId? } for survey tools without a stream (supervisors)
  *   GET/PUT /teams/{team}/notifications         Slack and Teams webhooks, digest email and hour, event switches (supervisors)
  *   POST /teams/{team}/notifications/test       posts "Arena connected" to the configured channels (supervisors)
+ *   GET/PUT /teams/{team}/budget                monthly reward budget in points; approvals stop at the cap, alerts at 25/50/75/100% (supervisors)
+ *   Days, weeks and months are calendar periods in the stack's Timezone (clock.js).
  *   Challenges run over their whole period; races, duels and team-vs-team carry standings; ending one freezes results and pays prizes.
  *
  * Auth: HTTP API JWT authorizer (Cognito or the customer's IdP) is configured in the template.
@@ -26,6 +28,7 @@ const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 const notify = require('./notify.js');
 const challenges = require('./challenges.js');
+const clock = require('./clock.js');
 
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const KUDOS_DAILY_LIMIT = Math.max(1, +(process.env.KUDOS_DAILY_LIMIT || 5));
@@ -54,6 +57,8 @@ function route(method, path) {
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/notifications$/))) return { name: 'getNotify', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/notifications$/))) return { name: 'putNotify', team: decodeURIComponent(x[1]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/notifications\/test$/))) return { name: 'testNotify', team: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/budget$/))) return { name: 'getBudget', team: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/budget$/))) return { name: 'putBudget', team: decodeURIComponent(x[1]) };
   if (method === 'DELETE' && (x = m(/^\/agents\/(.+)$/))) return { name: 'deleteAgent', arn: decodeURIComponent(x[1]) };
   // Kiosk: unauthenticated at the gateway, the token is the credential. Read-only, wallboard only.
   if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
@@ -70,6 +75,8 @@ function makeHandler(deps) {
   const sendFn = deps.send || notify.send;
   // Fire-and-forget notifications: a dead webhook must never fail the request that triggered it.
   const tell = async (team, ev) => { try { const cfg = await s.getNotify(team); if (cfg) await sendFn(cfg, ev, deps); } catch (e) { console.warn('notify failed', e.message); } };
+    /** Where the team's reward budget stands this month. */
+  const budgetFor = async (team) => { const b = await s.getBudget(team), month = clock.monthKey(now()); const sp = b && b.monthly ? await s.getSpend(team, month) : { spent: 0, alerted: [] }; return Object.assign(Arena.budgetSummary(b ? b.monthly : 0, sp.spent, month), { alerted: sp.alerted }); };
   return async (event) => {
     const method = event.requestContext && event.requestContext.http ? event.requestContext.http.method : event.httpMethod;
     const path = event.rawPath || event.path || '/';
@@ -84,9 +91,10 @@ function makeHandler(deps) {
       switch (r.name) {
         case 'health': return json(200, { ok: true, at: now().toISOString() });
         case 'teamAgents': {
-          const iso = (qs.date ? qs.date + 'T00:00:00.000Z' : now().toISOString());
+          // A requested date is a local day; it is read at local noon so the day and week keys land on that day.
+          const iso = (qs.date && clock.isDay(qs.date) ? new Date(clock.startOfDay(qs.date) + 12 * 3600000).toISOString() : now().toISOString());
           const agents = await s.getTeam(r.team, iso);
-          return json(200, { team: r.team, date: store.dayKey(iso), week: store.weekKey(iso), agents });
+          return json(200, { team: r.team, date: store.dayKey(iso), week: store.weekKey(iso), timezone: clock.TZ, agents });
         }
         case 'agentEvents': {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
@@ -112,7 +120,7 @@ function makeHandler(deps) {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
           const b = parse(event), t = Arena.TEMPLATES[b.template];
           if (!t) return json(400, { error: 'unknown template' });
-          const today = now().toISOString().slice(0, 10), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
+          const today = clock.dayKey(now()), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
           const v = challenges.challengeFields(b, t, today);
           if (!v.ok) return json(400, { error: v.error });
           if (b.template === 'duel') {
@@ -146,7 +154,8 @@ function makeHandler(deps) {
         case 'listRewards': {
           const status = qs.status;
           const items = (await s.listTeamItems(r.team, 'RW#', 100, true)).map(strip).filter((x) => !status || x.status === status);
-          return json(200, { team: r.team, rewards: items, catalog: Arena.CATALOG });
+          const budget = isSupervisor(claims) ? await budgetFor(r.team) : undefined;
+          return json(200, { team: r.team, rewards: items, catalog: Arena.CATALOG, budget });
         }
         case 'requestReward': {
           const b = parse(event);
@@ -169,10 +178,23 @@ function makeHandler(deps) {
           const item = (await s.listTeamItems(r.team, 'RW#', 100)).find((x) => x.id === r.id);
           if (!item) return json(404, { error: 'not found' });
           if (item.status !== 'pending') return json(409, { error: 'already ' + item.status });
+          let budget;
+          if (b.status === 'approved') {
+            // The monthly budget is a hard stop: raise it in the console if this reward should still go out.
+            budget = await budgetFor(r.team);
+            if (budget.capped && budget.spent + item.cost > budget.monthly) return json(409, { error: `approving this would put the team over its ${budget.monthly.toLocaleString()} pt reward budget for ${budget.month} (${budget.spent.toLocaleString()} spent)`, budget });
+          }
           const updated = await s.updateTeamItem(r.team, item.sk, { status: b.status, decidedAt: now().toISOString(), decidedBy: who(claims) });
-          if (b.status === 'approved') await s.spendPoints(item.agentId, now().toISOString(), item.cost);
+          if (b.status === 'approved') {
+            await s.spendPoints(item.agentId, now().toISOString(), item.cost);
+            if (budget.capped) {
+              const spent = await s.addSpend(r.team, budget.month, item.cost);
+              for (const pct of Arena.budgetAlerts(budget.monthly, spent, budget.alerted)) { await s.markBudgetAlert(r.team, budget.month, pct); await tell(r.team, { kind: 'budgetAlert', pct, spent, monthly: budget.monthly, month: budget.month }); }
+              budget = Arena.budgetSummary(budget.monthly, spent, budget.month);
+            }
+          }
           await tell(r.team, { kind: 'rewardDecided', agentName: item.agentName, what: item.what, status: b.status });
-          return json(200, { reward: strip(updated) });
+          return json(200, { reward: strip(updated), budget });
         }
         case 'kudosFeed': {
           const limit = Math.min(50, +(qs.limit || 10));
@@ -212,7 +234,7 @@ function makeHandler(deps) {
         case 'history': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
           const period = [7, 14, 30, 90].includes(+qs.days) ? +qs.days : 30;
-          const today = now().toISOString().slice(0, 10);
+          const today = clock.dayKey(now());
           const dates = []; for (let i = 2 * period - 1; i >= 0; i--) dates.push(addDays(today, -i));
           const [byDate, live] = await Promise.all([s.getTeamDays(r.team, dates), s.getTeamLive(r.team)]);
           const names = {}; for (const l of live) names[l.pk.replace(/^AGENT#/, '')] = l.displayName || l.username;
@@ -225,10 +247,10 @@ function makeHandler(deps) {
           if (!sup) items = mine ? items.filter((c) => c.agentId === mine).map(forAgent) : [];
           if (qs.status) items = items.filter((c) => c.status === qs.status);
           if (qs.agent) items = items.filter((c) => c.agentId === qs.agent);
-          const today = now().toISOString().slice(0, 10);
+          const today = clock.dayKey(now());
           // "since" is what the agent's numbers look like after the plan was opened: the evidence for closing it.
           const coaching = await Promise.all(items.slice(0, 100).map(async (c) => Object.assign({}, c, {
-            since: c.status === 'done' ? c.result || null : await windowFor(s, c.agentId, addDays(c.createdAt.slice(0, 10), 1), today) })));
+            since: c.status === 'done' ? c.result || null : await windowFor(s, c.agentId, addDays(clock.dayKey(c.createdAt), 1), today) })));
           return json(200, { team: r.team, coaching });
         }
         case 'createCoaching': {
@@ -237,7 +259,7 @@ function makeHandler(deps) {
           if (!b.agentId) return json(400, { error: 'agentId is required' });
           const agent = (await s.getTeam(r.team, now().toISOString())).find((a) => a.id === b.agentId);
           if (!agent) return json(404, { error: 'agent not on this team' });
-          const at = now().toISOString(), day = at.slice(0, 10), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
+          const at = now().toISOString(), day = clock.dayKey(now()), id = now().getTime().toString(36) + Math.random().toString(36).slice(2, 6);
           const item = { id, agentId: b.agentId, agentName: agent.name, reason: String(b.reason || '').slice(0, 200), note: String(b.note || '').slice(0, 2000),
             action: String(b.action || '').slice(0, 500), dueAt: isDay(b.dueAt) ? b.dueAt : '', status: 'open', createdAt: at, createdBy: who(claims),
             baseline: await windowFor(s, b.agentId, addDays(day, -13), day) };
@@ -257,7 +279,7 @@ function makeHandler(deps) {
             if (b.dueAt !== undefined) fields.dueAt = isDay(b.dueAt) ? b.dueAt : '';
             if (b.outcome !== undefined) fields.outcome = String(b.outcome).slice(0, 500);
             if (b.status === 'done' && item.status !== 'done') Object.assign(fields, { status: 'done', closedAt: at, closedBy: who(claims),
-              result: await windowFor(s, item.agentId, addDays(item.createdAt.slice(0, 10), 1), at.slice(0, 10)) });
+              result: await windowFor(s, item.agentId, addDays(clock.dayKey(item.createdAt), 1), clock.dayKey(at)) });
             if (b.status === 'open' && item.status === 'done') fields.status = 'open';
           }
           if (owner && b.acknowledged && !item.acknowledgedAt) fields.acknowledgedAt = at;
@@ -301,7 +323,7 @@ function makeHandler(deps) {
           const recipient = (await s.getTeam(team, now().toISOString())).find((a) => a.id === body.to);
           if (!recipient) return json(404, { error: 'recipient is not on this team' });
           const sender = claims.sub || me || claims['cognito:username'] || 'anonymous';
-          const day = now().toISOString().slice(0, 10);
+          const day = clock.dayKey(now());
           if (!(await s.bumpKudosCount(sender, day, KUDOS_DAILY_LIMIT, now().getTime()))) return json(429, { error: `kudos limit of ${KUDOS_DAILY_LIMIT} a day reached` });
           const from = claims.name || claims['cognito:username'] || claims.username || claims.sub || 'A teammate';
           const ev = { EventType: 'KUDOS', AgentARN: body.to, EventTimestamp: now().toISOString(), From: from, FromId: sender, Note: String(body.note).slice(0, 140), Team: team, Username: recipient.username, ToName: recipient.name };
@@ -321,6 +343,17 @@ function makeHandler(deps) {
           await s.putNotify(r.team, merged);
           return json(200, { team: r.team, notifications: notify.masked(merged) });
         }
+        case 'getBudget': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          return json(200, { team: r.team, budget: await budgetFor(r.team) });
+        }
+        case 'putBudget': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const b = parse(event), monthly = Math.round(Number(b.monthly));
+          if (!Number.isFinite(monthly) || monthly < 0 || monthly > 10000000) return json(400, { error: 'monthly must be a number of points, 0 to switch the cap off' });
+          await s.putBudget(r.team, monthly);
+          return json(200, { team: r.team, budget: await budgetFor(r.team) });
+        }
         case 'testNotify': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
           const cfg = await s.getNotify(r.team);
@@ -338,19 +371,18 @@ function makeHandler(deps) {
 
 function parse(event) { try { return JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body || '{}'); } catch { return {}; } }
 const strip = (item) => { const { pk, sk, ttl, ...rest } = item || {}; return rest; };
-const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
-const addDays = (day, n) => new Date(Date.parse(day + 'T00:00:00.000Z') + n * 86400000).toISOString().slice(0, 10);
+const isDay = clock.isDay, addDays = clock.addDays;
 /** A stored day row in the shape the engine's history functions read. */
 const dayRow = (row, names) => { const id = row.pk.replace(/^AGENT#/, ''); return { id, name: names[id] || row.username || id.split('/').pop(), points: row.points || 0, handled: row.handled || 0, ahtSum: row.ahtSum || 0,
   evals: row.evals || [], autofails: row.autofails || 0, escalations: row.escalations || 0, kudosReceived: row.kudosReceived || 0,
-  sentSum: row.sentSum || 0, sentCount: row.sentCount || 0, csatSum: row.csatSum || 0, csatCount: row.csatCount || 0 }; };
+  sentSum: row.sentSum || 0, sentCount: row.sentCount || 0, csatSum: row.csatSum || 0, csatCount: row.csatCount || 0, adherenceHours: row.adherenceHours || 0, adhSum: row.adhSum || 0, adhCount: row.adhCount || 0 }; };
 /** One agent's averages over a date window, or null when there is nothing in it. Used as a coaching baseline and as the "since" evidence. */
 async function windowFor(s, arn, from, to) {
   if (from > to) return null;
   const rows = await s.getAgentDays(arn, from, to);
   if (!rows.length) return null;
   const t = Arena.summarizeRows(rows.map((r) => dayRow(r, {})));
-  return { qa: t.qa, sentiment: t.sentiment, csat: t.csat, handled: t.handled, aht: t.aht, autofails: t.autofails, days: rows.length };
+  return { qa: t.qa, sentiment: t.sentiment, csat: t.csat, adherence: t.adherence, handled: t.handled, aht: t.aht, autofails: t.autofails, days: rows.length };
 }
 /** What the coached agent may see: everything except the supervisor's private note. */
 const forAgent = (c) => { const { note, ...rest } = c; return rest; };

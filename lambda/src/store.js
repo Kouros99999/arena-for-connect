@@ -17,6 +17,7 @@
 'use strict';
 
 const TABLE = process.env.TABLE || 'arena';
+const clock = require('./clock.js');
 const TTL_DAYS = +(process.env.TTL_DAYS || 90);
 
 let ddb, cmds;
@@ -30,15 +31,9 @@ function db() {
 }
 
 // ---------- pure helpers ----------
-function dayKey(iso) { return iso.slice(0, 10); }
-function weekKey(iso) {
-  const d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const y = d.getUTCFullYear();
-  const week = Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
-  return `${y}-W${String(week).padStart(2, '0')}`;
-}
+// Day and week keys are calendar periods in the stack's time zone (clock.js, ARENA_TZ; UTC by default).
+const dayKey = (iso) => clock.dayKey(iso);
+const weekKey = (iso) => clock.weekKey(iso);
 const keys = {
   agent: (arn) => 'AGENT#' + arn,
   team: (team, kind, period) => `TEAM#${team}#${kind}${period ? '#' + period : ''}`,
@@ -50,7 +45,7 @@ function planWrites(ev, points, now) {
   now = now || Date.now();
   const pk = keys.agent(ev.AgentARN), ts = ev.EventTimestamp, team = ev.Team || 'unassigned';
   const isContact = ev.EventType === 'CONTACT_HANDLED', isEval = ev.EventType === 'EVALUATION_SUBMITTED';
-  const isSent = ev.EventType === 'SENTIMENT_SCORED', isCsat = ev.EventType === 'CSAT_RECEIVED';
+  const isSent = ev.EventType === 'SENTIMENT_SCORED', isCsat = ev.EventType === 'CSAT_RECEIVED', isAdh = ev.EventType === 'ADHERENCE_SCORED';
   const writes = [];
 
   // Optional idempotency marker. A conditional put that fails aborts the rest of the plan.
@@ -68,16 +63,17 @@ function planWrites(ev, points, now) {
   // Kudos also land on a team feed so the console and wallboard can list them without scanning agents.
   if (ev.EventType === 'KUDOS') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Note, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
 
-  if (points !== 0 || isContact || isEval || isSent || isCsat || ev.EventType === 'KUDOS') {
+  if (points !== 0 || isContact || isEval || isSent || isCsat || isAdh || ev.EventType === 'KUDOS') {
     for (const [kind, period] of [['DAY', dayKey(ts)], ['WEEK', weekKey(ts)]]) {
       const values = { ':p': points, ':h': isContact ? 1 : 0, ':aht': isContact ? ev.HandleTime || 0 : 0,
         ':esc': isContact && ev.Escalated ? 1 : 0, ':af': isEval && ev.AutoFail ? 1 : 0, ':k': ev.EventType === 'KUDOS' ? 1 : 0,
         ':ss': isSent ? ev.Sentiment : 0, ':sc': isSent ? 1 : 0, ':cs': isCsat ? ev.Score : 0, ':cc': isCsat ? 1 : 0,
+        ':ah': isAdh ? ev.AdherentHours || 0 : 0, ':as': isAdh ? ev.Adherence || 0 : 0, ':ac': isAdh ? 1 : 0,
         ':g1': keys.team(team, kind, period), ':g2': pk, ':user': ev.Username || ev.AgentARN, ':empty': [] };
       let expr = 'SET gsi1pk = :g1, gsi1sk = :g2, username = if_not_exists(username, :user)';
       if (isEval) { expr += ', evals = list_append(if_not_exists(evals, :empty), :ev)'; values[':ev'] = [ev.AutoFail ? 0 : ev.Score]; }
       else expr += ', evals = if_not_exists(evals, :empty)';
-      expr += ' ADD points :p, handled :h, ahtSum :aht, escalations :esc, autofails :af, kudosReceived :k, sentSum :ss, sentCount :sc, csatSum :cs, csatCount :cc';
+      expr += ' ADD points :p, handled :h, ahtSum :aht, escalations :esc, autofails :af, kudosReceived :k, sentSum :ss, sentCount :sc, csatSum :cs, csatCount :cc, adherenceHours :ah, adhSum :as, adhCount :ac';
       writes.push({ op: 'update', key: { pk, sk: `${kind}#${period}` }, expr, values });
     }
   }
@@ -119,7 +115,7 @@ function mergeTeam(live, day, week) {
   const get = (pk) => { if (!byArn.has(pk)) byArn.set(pk, { id: pk.replace(/^AGENT#/, ''), today: 0, week: 0, handled: 0, ahtSum: 0, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Offline', lastEvent: 0 }); return byArn.get(pk); };
   for (const r of live) { const a = get(r.pk); a.name = r.displayName || r.username; a.username = r.username; a.state = r.agentState || 'Offline'; a.lastEvent = r.lastEvent ? Date.parse(r.lastEvent) : 0; a.streak = r.streak || 0; a.team = r.team; }
   for (const r of day) { const a = get(r.pk); Object.assign(a, { today: r.points || 0, handled: r.handled || 0, ahtSum: r.ahtSum || 0, evals: r.evals || [], autofails: r.autofails || 0, kudosReceived: r.kudosReceived || 0, escalations: r.escalations || 0,
-    sentSum: r.sentSum || 0, sentCount: r.sentCount || 0, csatSum: r.csatSum || 0, csatCount: r.csatCount || 0 }); a.name = a.name || r.username; }
+    sentSum: r.sentSum || 0, sentCount: r.sentCount || 0, csatSum: r.csatSum || 0, csatCount: r.csatCount || 0, adherenceHours: r.adherenceHours || 0, adhSum: r.adhSum || 0, adhCount: r.adhCount || 0 }); a.name = a.name || r.username; }
   for (const r of week) { const a = get(r.pk); a.week = r.points || 0; a.name = a.name || r.username; }
   return [...byArn.values()].map((a) => { a.name = a.name || a.id.split('/').pop(); return a; });
 }
@@ -292,6 +288,32 @@ async function listTeams() {
   return [...new Set(rows.map((r) => r.team).filter(Boolean))].sort();
 }
 
+// ---------- reward budgets: a monthly cap in points per team, spent on approval ----------
+async function getBudget(team) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'BUDGET#' + team } }));
+  return r.Item ? { monthly: r.Item.monthly || 0 } : null;
+}
+async function putBudget(team, monthly) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'BUDGET#' + team, team, monthly, updatedAt: new Date().toISOString() } }));
+}
+/** { spent, alerted: [pct...] } for a team's month, zeros when nothing was approved yet. */
+async function getSpend(team, month) {
+  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'BUDGET#' + team, sk: month } }));
+  return { spent: (r.Item && r.Item.spent) || 0, alerted: (r.Item && r.Item.alerted) || [] };
+}
+/** Adds an approved reward's cost to the month. Returns the new total. */
+async function addSpend(team, month, cost) {
+  const r = await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: 'BUDGET#' + team, sk: month }, UpdateExpression: 'ADD spent :c SET team = :t, #m = :m', ExpressionAttributeNames: { '#m': 'month' },
+    ExpressionAttributeValues: { ':c': cost, ':t': team, ':m': month }, ReturnValues: 'ALL_NEW' }));
+  return r.Attributes.spent;
+}
+async function markBudgetAlert(team, month, pct) {
+  await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: 'BUDGET#' + team, sk: month }, UpdateExpression: 'SET alerted = list_append(if_not_exists(alerted, :e), :p)', ExpressionAttributeValues: { ':e': [], ':p': [pct] } }));
+}
+/** Once-a-day job markers (adherence import and the like): { pk: MARK, sk: <job>#<day> }. */
+async function getMark(job, day) { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'MARK', sk: job + '#' + day } })); return r.Item || null; }
+async function putMark(job, day, fields) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'MARK', sk: job + '#' + day, job, day, at: new Date().toISOString(), ttl: Math.floor(Date.now() / 1000) + 14 * 86400 }, fields || {}) })); }
+
 async function getMix() {
   const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'MIX' } }));
   return r.Item ? r.Item.mix : null;
@@ -300,7 +322,7 @@ async function putMix(mix) {
   await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'MIX', mix, updatedAt: new Date().toISOString() } }));
 }
 
-module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix,
+module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
   getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount, getNotify, putNotify, getDigestMark, putDigestMark, listTeams,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };

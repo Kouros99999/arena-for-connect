@@ -12,12 +12,14 @@ These are the settings on the stack's launch page. Change any of them later by u
 | AnalysisBucket | empty | Bucket where Contact Lens writes conversational analytics. Turns on customer sentiment scoring. Enable EventBridge notifications on the bucket. |
 | AnalysisPrefix | `Analysis/` | Key prefix for analysis files. |
 | CsatAttribute | `csat` | Contact attribute your survey writes. Used only if contact records are sent to the Arena stream. |
+| ScheduleAdherence | `disabled` | `enabled` scores each agent's schedule adherence every night from Amazon Connect. Needs forecasting, capacity planning and scheduling enabled on the instance. See [how scoring works](kb.html?a=how-scoring-works). |
 | ShardCount | 1 | Kinesis shards. One handles thousands of agents. |
 
 ## People and display
 
 | Setting | Default | What it does |
 |---|---|---|
+| Timezone | `UTC` | IANA time zone your centre runs on, such as `America/New_York`. Sets when days, weeks and months start for points, streaks, challenge dates, the digest hour and reward budgets. Changing it later starts new day rows from that point. |
 | DefaultTeam | empty | Team the console and wallboard open on for a user with no team attribute. |
 | WallboardNames | `full` | How names appear on sign-in-free wallboards: `full`, `first` or `initials`. |
 | KudosDailyLimit | 5 | Kudos one person may send per day. |

@@ -206,3 +206,24 @@ test('kudos: a spike against the team mean is flagged, and the demo refuses self
   assert.equal(await e.kudos(a.id, 'to myself', a.name, a.id), false);
   assert.equal(await e.kudos(e.agents[1].id, 'to a teammate', a.name, a.id), true);
 });
+
+test('schedule adherence scores per adherent hour, weighted by the adherence slider, and never deducts', () => {
+  const m = Arena.DEFAULT_MIX;
+  assert.equal(Arena.scoreEvent('ADHERENCE_SCORED', { Adherence: 93, AdherentHours: 7.4 }, m), 37);
+  assert.equal(Arena.scoreEvent('ADHERENCE_SCORED', { Adherence: 40, AdherentHours: 0 }, m), 0);
+  assert.equal(Arena.scoreEvent('ADHERENCE_SCORED', { Adherence: 93, AdherentHours: 8 }, { quality: 50, productivity: 20, adherence: 30 }), 80);
+  assert.equal(Arena.metricOf('adherence', { adhSum: 187, adhCount: 2 }), 93.5);
+  assert.equal(Arena.metricOf('adherence', {}), null);
+  assert.equal(Arena.METRICS.adherence.fmt(93.5), '94%');
+  const t = Arena.summarizeRows([{ points: 1, adhSum: 90, adhCount: 1, adherenceHours: 7 }, { points: 1, adhSum: 80, adhCount: 1, adherenceHours: 6.5 }]);
+  assert.equal(t.adherence, 85); assert.equal(t.adherenceHours, 13.5);
+});
+
+test('reward budget maths', () => {
+  assert.deepEqual(Arena.budgetSummary(10000, 2500, '2026-10'), { month: '2026-10', monthly: 10000, spent: 2500, remaining: 7500, pct: 25, capped: true });
+  assert.deepEqual(Arena.budgetSummary(0, 2500, '2026-10'), { month: '2026-10', monthly: 0, spent: 2500, remaining: null, pct: 0, capped: false });
+  assert.deepEqual(Arena.budgetAlerts(10000, 2500, []), [25]);
+  assert.deepEqual(Arena.budgetAlerts(10000, 7600, [25, 50]), [75]);
+  assert.deepEqual(Arena.budgetAlerts(10000, 12000, [25, 50, 75]), [100]);
+  assert.deepEqual(Arena.budgetAlerts(0, 12000, []), []);
+});

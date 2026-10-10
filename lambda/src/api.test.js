@@ -23,6 +23,11 @@ function fakeStore() {
     listEvents: async (arn, limit) => { calls.push(['listEvents', arn, limit]); return [{ EventType: 'KUDOS', EventTimestamp: 'x', points: 8, From: 'm', Note: 'n' }]; },
     getMix: async () => null,
     putMix: async (m) => { calls.push(['putMix', m]); },
+    budget: null, spend: {},
+    getBudget: async function () { return this.budget; }, putBudget: async function (team, monthly) { this.budget = { monthly }; },
+    getSpend: async function (team, month) { return this.spend[month] || { spent: 0, alerted: [] }; },
+    addSpend: async function (team, month, cost) { const r = this.spend[month] || (this.spend[month] = { spent: 0, alerted: [] }); r.spent += cost; return r.spent; },
+    markBudgetAlert: async function (team, month, pct) { (this.spend[month] || (this.spend[month] = { spent: 0, alerted: [] })).alerted.push(pct); },
     apply: async (w) => { calls.push(['apply', w]); },
   };
 }
@@ -48,7 +53,7 @@ test('team agents returns engine-shaped agents with date and week', async () => 
 test('date query pins the day', async () => {
   const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
   await h(req('GET', '/teams/t/agents', { queryStringParameters: { date: '2026-09-01' } }));
-  assert.equal(s.calls[0][2], '2026-09-01T00:00:00.000Z');
+  assert.equal(s.calls[0][2], '2026-09-01T12:00:00.000Z');
 });
 
 test('agent events are flattened and capped at 100', async () => {
@@ -409,4 +414,45 @@ test('team vs team compares this team with the opponent over the same period', a
   assert.equal(made.statusCode, 201);
   const c = JSON.parse((await h(req('GET', '/teams/t/challenges'))).body).challenges[0];
   assert.equal(c.progress.value, '92% vs 70%'); assert.equal(c.progress.label, 'ahead of Support'); assert.equal(c.progress.onTrack, true);
+});
+
+test('reward budget: a monthly cap blocks approvals past it and announces 25/50/75/100%', async () => {
+  const s = fakeStore(); const sent = []; const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev); return ['slack']; } });
+  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { rewards: true } };
+  const supReq = (method, path, body) => Object.assign(req(method, path), { body: JSON.stringify(body || {}) });
+  // No cap by default; agents never see the budget.
+  let r = await h(req('GET', '/teams/t/rewards'));
+  assert.equal(JSON.parse(r.body).budget.capped, false);
+  r = await h(Object.assign(anon('GET', '/teams/t/rewards'), { requestContext: { http: { method: 'GET' }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } }));
+  assert.equal(JSON.parse(r.body).budget, undefined);
+  // Set a 5,000 pt cap for the month (fixed() is September 2026).
+  r = await h(supReq('PUT', '/teams/t/budget', { monthly: 5000 }));
+  assert.equal(r.statusCode, 200); assert.deepEqual(JSON.parse(r.body).budget, { month: '2026-09', monthly: 5000, spent: 0, remaining: 5000, pct: 0, capped: true, alerted: [] });
+  assert.equal((await h(supReq('PUT', '/teams/t/budget', { monthly: -1 }))).statusCode, 400);
+  // Two $25 cards (2,500 each) fit exactly and cross 50% then 100%; the third is refused.
+  for (let i = 0; i < 3; i++) await s.putTeamItem('t', `RW#2026-09-15T10:0${i}:00.000Z#r${i}`, { id: 'r' + i, agentId: 'a1', agentName: 'priya', what: '$25 gift card', cost: 2500, status: 'pending' });
+  r = await h(supReq('PUT', '/teams/t/rewards/r0', { status: 'approved' }));
+  assert.equal(r.statusCode, 200); assert.equal(JSON.parse(r.body).budget.spent, 2500);
+  assert.deepEqual(sent.filter((e) => e.kind === 'budgetAlert').map((e) => e.pct), [25, 50]);
+  r = await h(supReq('PUT', '/teams/t/rewards/r1', { status: 'approved' }));
+  assert.equal(r.statusCode, 200); assert.deepEqual(sent.filter((e) => e.kind === 'budgetAlert').map((e) => e.pct), [25, 50, 75, 100]);
+  r = await h(supReq('PUT', '/teams/t/rewards/r2', { status: 'approved' }));
+  assert.equal(r.statusCode, 409); assert.match(JSON.parse(r.body).error, /over its 5,000 pt reward budget/);
+  assert.equal(s.items.find((i) => i.id === 'r2').status, 'pending', 'refused approval leaves the request pending');
+  assert.equal(s.calls.filter((c) => c[0] === 'spendPoints').length, 2);
+  // Declining never touches the budget; removing the cap lets the third one through.
+  await s.putTeamItem('t', 'RW#2026-09-15T10:09:00.000Z#r9', { id: 'r9', agentId: 'a1', agentName: 'priya', what: 'Parking', cost: 1500, status: 'pending' });
+  assert.equal((await h(supReq('PUT', '/teams/t/rewards/r9', { status: 'declined' }))).statusCode, 200);
+  await h(supReq('PUT', '/teams/t/budget', { monthly: 0 }));
+  r = await h(supReq('PUT', '/teams/t/rewards/r2', { status: 'approved' }));
+  assert.equal(r.statusCode, 200); assert.equal(JSON.parse(r.body).budget.capped, false);
+  assert.equal((await h(Object.assign(anon('GET', '/teams/t/budget'), { requestContext: { http: { method: 'GET' }, authorizer: { jwt: { claims: { 'custom:team': 't' } } } } }))).statusCode, 403);
+});
+
+test('a requested date is a local day in the stack time zone', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  const r = await h(Object.assign(req('GET', '/teams/t/agents'), { queryStringParameters: { date: '2026-09-14' } }));
+  const b = JSON.parse(r.body);
+  assert.equal(b.date, '2026-09-14'); assert.equal(b.week, '2026-W38'); assert.equal(b.timezone, 'UTC');
+  assert.equal(s.calls[0][2], '2026-09-14T12:00:00.000Z');
 });

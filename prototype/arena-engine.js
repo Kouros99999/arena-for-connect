@@ -79,6 +79,7 @@
     aht: { label: 'Handle time', higher: false, fmt: (v) => Math.floor(v / 60) + ':' + String(Math.round(v) % 60).padStart(2, '0') },
     escRate: { label: 'Escalation rate', higher: false, fmt: (v) => (Math.round(v * 10) / 10).toFixed(1) + '%' },
     kudos: { label: 'Kudos received', higher: true, fmt: (v) => Math.round(v).toLocaleString() },
+    adherence: { label: 'Schedule adherence', higher: true, fmt: (v) => Math.round(v) + '%' },
   };
 
   // What points buy. Cost is in points; the supervisor approves each redemption.
@@ -89,6 +90,19 @@
     { id: 'parking', name: 'Prime parking spot, one week', cost: 1500 },
   ];
 
+  /** Where a team's monthly reward budget stands. Pure; the same shape is returned by the API and the demo. */
+  function budgetSummary(monthly, spent, month) {
+    monthly = Math.max(0, Math.round(Number(monthly) || 0)); spent = Math.max(0, Math.round(Number(spent) || 0));
+    const pct = monthly ? Math.round((spent / monthly) * 100) : 0;
+    return { month, monthly, spent, remaining: monthly ? Math.max(0, monthly - spent) : null, pct, capped: monthly > 0 };
+  }
+  /** Which of the 25/50/75/100% marks a new total crosses that were not announced yet. Pure. */
+  function budgetAlerts(monthly, spent, alerted) {
+    if (!monthly) return [];
+    const pct = (spent / monthly) * 100;
+    return [25, 50, 75, 100].filter((p) => pct >= p && !(alerted || []).includes(p));
+  }
+
   /** One agent's value for a metric, or null when there is nothing to measure. */
   function metricOf(key, a) {
     switch (key) {
@@ -97,6 +111,7 @@
       case 'qa': { const e = (a.evals || []).filter((x) => x > 0); return e.length ? e.reduce((s, x) => s + x, 0) / e.length : null; }
       case 'sentiment': return a.sentCount ? a.sentSum / a.sentCount : null;
       case 'csat': return a.csatCount ? a.csatSum / a.csatCount : null;
+      case 'adherence': return a.adhCount ? a.adhSum / a.adhCount : null;
       case 'aht': return a.handled ? a.ahtSum / a.handled : null;
       case 'escRate': return a.handled ? ((a.escalations || 0) / a.handled) * 100 : null;
       case 'kudos': return a.kudosReceived || 0;
@@ -153,6 +168,7 @@
       const a = by.get(r.id);
       a.name = r.name || a.name; a.today += r.points || 0; a.handled += r.handled || 0; a.ahtSum += r.ahtSum || 0; a.autofails += r.autofails || 0; a.kudosReceived += r.kudosReceived || 0; a.escalations += r.escalations || 0;
       a.sentSum += r.sentSum || 0; a.sentCount += r.sentCount || 0; a.csatSum += r.csatSum || 0; a.csatCount += r.csatCount || 0;
+      a.adherenceHours += r.adherenceHours || 0; a.adhSum = (a.adhSum || 0) + (r.adhSum || 0); a.adhCount = (a.adhCount || 0) + (r.adhCount || 0);
       for (const e of r.evals || []) a.evals.push(e);
     }
     return [...by.values()];
@@ -219,6 +235,7 @@
       case 'CONTACT_HANDLED': return Math.round(BASE.contact(data.HandleTime) * p);
       case 'EVALUATION_SUBMITTED': return data.AutoFail ? BASE.autofail : Math.round(BASE.evaluation(data.Score) * q);
       case 'ADHERENCE_HOUR': return Math.round(BASE.adherenceHour * a);
+      case 'ADHERENCE_SCORED': return Math.max(0, Math.round(BASE.adherenceHour * a * (Number(data.AdherentHours) || 0)));
       case 'SENTIMENT_SCORED': return Math.round(BASE.sentiment(data.Sentiment) * q);
       case 'CSAT_RECEIVED': return Math.round(BASE.csat(data.Score) * q);
       case 'KUDOS': return BASE.kudos;
@@ -256,18 +273,20 @@
   // ---------- History: the same aggregation runs in the browser demo and in the API ----------
   /** Roll any set of per-agent day rows up into one summary. Pure. Auto-fails are stored as a 0 evaluation and excluded from the average. */
   function summarizeRows(rows) {
-    let points = 0, handled = 0, ahtSum = 0, evalSum = 0, evalCount = 0, autofails = 0, escalations = 0, kudos = 0, sentSum = 0, sentCount = 0, csatSum = 0, csatCount = 0;
+    let points = 0, handled = 0, ahtSum = 0, evalSum = 0, evalCount = 0, autofails = 0, escalations = 0, kudos = 0, sentSum = 0, sentCount = 0, csatSum = 0, csatCount = 0, adhSum = 0, adhCount = 0, adherenceHours = 0;
     const active = new Set();
     for (const r of rows) {
       points += r.points || 0; handled += r.handled || 0; ahtSum += r.ahtSum || 0; autofails += r.autofails || 0; escalations += r.escalations || 0; kudos += r.kudosReceived || 0;
       for (const e of r.evals || []) if (e > 0) { evalSum += e; evalCount++; }
       sentSum += r.sentSum || 0; sentCount += r.sentCount || 0; csatSum += r.csatSum || 0; csatCount += r.csatCount || 0;
+      adhSum += r.adhSum || 0; adhCount += r.adhCount || 0; adherenceHours += r.adherenceHours || 0;
       if ((r.handled || 0) > 0 || (r.points || 0) !== 0) active.add(r.id);
     }
     return { points, handled, evaluations: evalCount, autofails, escalations, kudos, activeAgents: active.size,
       qa: evalCount ? Math.round(evalSum / evalCount) : null, aht: handled ? Math.round(ahtSum / handled) : null,
       escalationRate: handled ? round1((escalations / handled) * 100) : null,
-      sentiment: sentCount ? round1(sentSum / sentCount) : null, csat: csatCount ? round1(csatSum / csatCount) : null };
+      sentiment: sentCount ? round1(sentSum / sentCount) : null, csat: csatCount ? round1(csatSum / csatCount) : null,
+      adherence: adhCount ? Math.round(adhSum / adhCount) : null, adherenceHours: round1(adherenceHours) };
   }
 
   /**
@@ -373,6 +392,7 @@
       if (type === 'EVALUATION_SUBMITTED') { if (ev.AutoFail) { agent.autofails++; agent.evals.push(0); } else agent.evals.push(ev.Score); }
       if (type === 'KUDOS') { agent.kudosReceived++; local.kudos.unshift({ at: ev.EventTimestamp || new Date().toISOString(), from: ev.From, to: agent.id, toName: agent.name, note: ev.Note }); local.kudos.length = Math.min(local.kudos.length, 50); }
       if (type === 'ADHERENCE_HOUR') agent.adherenceHours++;
+      if (type === 'ADHERENCE_SCORED') { agent.adherenceHours = round1((agent.adherenceHours || 0) + (ev.AdherentHours || 0)); agent.adhSum = (agent.adhSum || 0) + (ev.Adherence || 0); agent.adhCount = (agent.adhCount || 0) + 1; }
       if (type === 'SENTIMENT_SCORED') { agent.sentSum = round1((agent.sentSum || 0) + ev.Sentiment); agent.sentCount = (agent.sentCount || 0) + 1; }
       if (type === 'CSAT_RECEIVED') { agent.csatSum = round1((agent.csatSum || 0) + ev.Score); agent.csatCount = (agent.csatCount || 0) + 1; }
       if (type === 'AGENT_STATE_CHANGE') agent.state = ev.State;
@@ -387,6 +407,7 @@
       if (type === 'EVALUATION_SUBMITTED') return ev.AutoFail ? `Evaluation <b>auto-fail</b>: ${ev.Reason || 'policy'}` : `Evaluation scored <b>${ev.Score}%</b>`;
       if (type === 'KUDOS') return `Kudos from <b>${ev.From}</b>: “${ev.Note}”`;
       if (type === 'ADHERENCE_HOUR') return 'Hour in adherence';
+      if (type === 'ADHERENCE_SCORED') return `Schedule adherence <b>${Math.round(ev.Adherence || 0)}%</b>, ${round1(ev.AdherentHours || 0)} h on schedule`;
       if (type === 'STREAK_DAY') return `Streak bonus, day ${ev.Day}`;
       if (type === 'CHALLENGE_WON') return `Challenge <b>${ev.Title || 'won'}</b>${ev.Place ? ', ' + ev.Place : ''}`;
       if (type === 'SENTIMENT_SCORED') return `Customer sentiment <b>${ev.Sentiment > 0 ? '+' : ''}${ev.Sentiment}</b> on a contact`;
@@ -444,8 +465,13 @@
       const r = { id: newId(), agentId, agentName: a.name, catalogId, what: item.name, cost: item.cost, status: 'pending', requestedAt: new Date().toISOString(), requestedBy: by || a.name };
       local.rewards.unshift(r); return r;
     };
-    const decideReward = async (id, status, by) => { const r = local.rewards.find((x) => x.id === id); if (!r) throw new Error('unknown reward'); r.status = status; r.decidedAt = new Date().toISOString(); r.decidedBy = by || 'supervisor'; if (status === 'approved') { const a = byId(r.agentId); if (a) a.week -= r.cost; } return r; };
+    const decideReward = async (id, status, by) => { const r = local.rewards.find((x) => x.id === id); if (!r) throw new Error('unknown reward'); r.status = status; r.decidedAt = new Date().toISOString(); r.decidedBy = by || 'supervisor'; if (status === 'approved') { if (local.budget.monthly && local.budget.spent + r.cost > local.budget.monthly) { r.status = 'pending'; delete r.decidedAt; throw new Error('monthly reward budget would be exceeded'); } local.budget.spent += r.cost; const a = byId(r.agentId); if (a) a.week -= r.cost; } return r; };
     const kudosFeed = async (limit) => local.kudos.slice(0, limit || 10);
+    // Reward budget: a monthly cap in points. The demo starts with a cap and some spend so the console shows the bar.
+    local.budget = { monthly: 20000, spent: 7500 };
+    const budgetView = () => budgetSummary(local.budget.monthly, local.budget.spent, new Date().toISOString().slice(0, 7));
+    const budget = async () => budgetView();
+    const setBudget = async (monthly) => { local.budget.monthly = Math.max(0, Math.round(Number(monthly) || 0)); return budgetView(); };
 
     // ---- coaching: a flag becomes a plan with an owner, an action and a follow-up date ----
     // `baseline` is the agent's numbers when the plan was opened and `since` their numbers after it, so the loop can be closed on evidence.
@@ -488,7 +514,7 @@
       setMix: (m) => { const v = validateMix(m); if (v.ok) mix = Object.assign({}, m); return v; },
       flags: (a) => flagsFor(a, agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
-      challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed,
+      challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget,
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
@@ -580,6 +606,7 @@
       if (!r.ok) throw new Error(r.status === 401 && kiosk ? 'wallboard link is invalid or expired' : 'arena api ' + r.status);
       const body = await r.json();
       if (kiosk && body.team) team = body.team;
+      if (body.timezone) engine.timezone = body.timezone;   // the stack's Timezone setting: when its days start
       engine.agents.length = 0;
       for (const a of body.agents) { a.hue = hueFor(a.id); a.initials = initials(a.name || '?'); engine.agents.push(a); }
       // The signed-in agent may have no rows yet (nothing scored today). Show them at zero rather than nothing.
@@ -629,6 +656,8 @@
     const requestReward = async (agentId, catalogId) => (await call('POST', `${teamPath()}/rewards`, { agentId, catalogId })).reward;
     const decideReward = async (id, status) => (await call('PUT', `${teamPath()}/rewards/${encodeURIComponent(id)}`, { status })).reward;
     const kudosFeed = async (limit) => (await call('GET', readPath('kudos') + `?limit=${limit || 10}`)).kudos;
+    const budget = async () => (await call('GET', `${teamPath()}/budget`)).budget;
+    const setBudget = async (monthly) => (await call('PUT', `${teamPath()}/budget`, { monthly })).budget;
     const kiosks = async () => (await call('GET', `${teamPath()}/kiosk`)).kiosks;
     const createKiosk = async (label, days) => (await call('POST', `${teamPath()}/kiosk`, { label, days })).kiosk;
     const revokeKiosk = async (token) => call('DELETE', `${teamPath()}/kiosk/${encodeURIComponent(token)}`);
@@ -644,7 +673,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       getMix: () => Object.assign({}, mix),
@@ -681,6 +710,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

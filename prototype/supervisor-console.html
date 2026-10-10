@@ -111,6 +111,11 @@ tr.flash td{background:var(--flash)}
 
 .rw{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .rw:last-child{border-bottom:0}
+.budget{font-size:12px;color:var(--muted);margin-bottom:8px}
+.budget .bar{margin-top:4px}
+.budget.over b{color:var(--bad)}
+.budget .edit{display:flex;gap:6px;align-items:center;margin-top:6px}
+.budget .edit input{width:110px}
 .rw small{display:block;color:var(--muted);font-size:12px}
 .rw .acts{display:flex;gap:4px}
 .empty{color:var(--muted);font-size:13px;padding:6px 0}
@@ -263,8 +268,11 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
       </div>
 
       <div class="card">
-        <div class="card-h"><h2>Reward approvals</h2></div>
-        <div class="card-b" id="rewards"></div>
+        <div class="card-h"><h2>Reward approvals</h2><button class="btn sm" id="budgetEdit" title="Monthly reward budget">Budget</button></div>
+        <div class="card-b">
+          <div class="budget" id="budget"></div>
+          <div id="rewards"></div>
+        </div>
       </div>
 
       <div class="card">
@@ -298,7 +306,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
   const conn = Arena.connect();
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4, exclude: ['agent-7'], fullNames: true }); // Liam stays quiet so the console has something to show
-  let chals = [], rewards = [], kudos = [], coach = [];
+  let chals = [], rewards = [], kudos = [], coach = [], budget = null;
   let sortKey = 'rank', sortDir = 1, evCount = 0;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
@@ -312,7 +320,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
 
   // Challenges, pending rewards and the kudos feed come from the engine: in-memory in the demo, the API when live.
   async function loadSide(){
-    try { [chals, rewards, kudos, coach] = await Promise.all([engine.challenges(), engine.rewards('pending'), engine.kudosFeed(6), engine.coaching({ status: 'open' })]); }
+    try { [chals, rewards, kudos, coach, budget] = await Promise.all([engine.challenges(), engine.rewards('pending'), engine.kudosFeed(6), engine.coaching({ status: 'open' }), engine.budget().catch(() => null)]); }
     catch (e) { toast('API error: ' + e.message); }
     render();   // flags depend on which agents already have a plan open
   }
@@ -370,6 +378,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     $('#rewards').innerHTML = rewards.length ? rewards.map(r => `<div class="rw"><div><b>${esc(r.agentName)}</b> · ${esc(r.what)}<small>${r.cost.toLocaleString()} pts · requested ${hm(r.requestedAt)}</small></div><div class="acts"><button class="btn sm pri" data-approve="${r.id}">Approve</button><button class="btn sm" data-decline="${r.id}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
     $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b>${esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
     $('#sRew').textContent = rewards.length;
+    renderBudget();
     const canEdit = conn.isSupervisor !== false;
     const overdue = coach.filter(c => c.dueAt && c.dueAt < today()).length;
     $('#coachCount').textContent = coach.length ? `${coach.length} open` + (overdue ? ` · ${overdue} past follow-up` : '') : '';
@@ -427,6 +436,19 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     const rows = st.rows.slice(0, c.template === 'duel' ? 2 : 6);
     return `<div class="stand">${rows.map(r => `<div class="sr ${r.you ? 'you' : ''} ${r.rank ? '' : 'out'}"><span class="rk num">${r.rank ? r.rank + '.' : '·'}</span><span>${r.you ? 'You' : esc(r.name || 'Agent')}${r.excluded ? ' <span class="pill bad">disqualified</span>' : r.qualified === false ? ` <span class="pill mute">under ${c.minContacts} contacts</span>` : ''}</span><span class="mono">${ms.map(m => fmt(m.key, r.values[m.key])).join(' · ')}${ms.length > 1 && r.rank ? ' · ' + r.score + ' pts' : ''}${r.prize ? ' · <b>+' + r.prize + '</b>' : ''}</span>${conn.isSupervisor !== false && c.state === 'active' && r.agentId ? `<button class="btn sm" data-dq="${c.id}" data-agent="${esc(r.agentId)}" data-on="${r.excluded ? 1 : 0}" title="${r.excluded ? 'Reinstate' : 'Disqualify'}">${r.excluded ? 'Reinstate' : 'DQ'}</button>` : '<span></span>'}</div>`).join('')}${st.rows.length > rows.length ? `<div class="sr out"><span></span><span>${st.rows.length - rows.length} more</span></div>` : ''}</div>`;
   }
+  let budgetEditing = false;
+  function renderBudget(){
+    const el = $('#budget'); if (!el) return;
+    if (!budget) { el.innerHTML = ''; return; }
+    const over = budget.capped && budget.pct >= 100;
+    el.className = 'budget' + (over ? ' over' : '');
+    const line = budget.capped ? `This month: <b>${budget.spent.toLocaleString()}</b> of ${budget.monthly.toLocaleString()} pts approved (${budget.pct}%)${over ? ' · budget used up' : ''}` : `No monthly reward budget set. Approvals are not capped.`;
+    const bar = budget.capped ? `<div class="bar ${budget.pct >= 75 ? 'gold' : ''}"><i style="width:${Math.min(100, budget.pct)}%"></i></div>` : '';
+    const edit = budgetEditing ? `<div class="edit"><input id="budgetVal" type="number" min="0" step="500" value="${budget.monthly || 0}" aria-label="Monthly budget in points"> pts a month <button class="btn sm pri" id="budgetSave">Save</button><span class="muted">0 removes the cap</span></div>` : '';
+    el.innerHTML = line + bar + edit;
+    if (budgetEditing) $('#budgetSave').onclick = async () => { try { budget = await engine.setBudget(+$('#budgetVal').value || 0); budgetEditing = false; renderBudget(); toast(budget.capped ? `Budget set to ${budget.monthly.toLocaleString()} pts a month` : 'Budget cap removed'); } catch (e) { toast(e.message); } };
+  }
+  $('#budgetEdit').addEventListener('click', () => { budgetEditing = !budgetEditing; renderBudget(); });
   function rewardText(c){
     if (c.template === 'race') return (c.tiers || []).length ? 'prizes ' + c.tiers.map(t => t.reward).join(' / ') + ' pts' : `${c.reward} pts to the winner`;
     if (c.template === 'duel') return `${c.reward} pts to the winner`;
@@ -436,13 +458,22 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
 
   // Notifications card
   async function loadNotif(){
-    try { const n = await engine.notifications(); $('#nSlack').value = n.slackUrl || ''; $('#nTeams').value = n.teamsUrl || ''; $('#nEmail').value = n.email || ''; $('#nHour').value = String(n.digestHour);
+    try { hourOptions(); const n = await engine.notifications(); $('#nSlack').value = n.slackUrl || ''; $('#nTeams').value = n.teamsUrl || ''; $('#nEmail').value = n.email || ''; $('#nHour').value = String(n.digestHour);
       $('#nKudos').checked = !!n.events.kudos; $('#nRewards').checked = !!n.events.rewards; $('#nChal').checked = !!n.events.challenges; $('#nDigest').checked = !!n.events.digest;
       $('#nStatus').textContent = (n.slackSet ? 'Slack on' : '') + (n.slackSet && n.teamsSet ? ', ' : '') + (n.teamsSet ? 'Teams on' : '') || 'No channel yet';
     } catch (e) { $('#nStatus').textContent = ''; }
   }
   const readNotif = () => ({ slackUrl: $('#nSlack').value.trim(), teamsUrl: $('#nTeams').value.trim(), email: $('#nEmail').value.trim(), digestHour: +$('#nHour').value, events: { kudos: $('#nKudos').checked, rewards: $('#nRewards').checked, challenges: $('#nChal').checked, digest: $('#nDigest').checked } });
-  $('#nHour').innerHTML = Array.from({ length: 24 }, (_, h) => { const local = new Date(Date.UTC(2026, 0, 1, h)).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); return `<option value="${h}">${String(h).padStart(2, '0')}:00 UTC (${local} here)</option>`; }).join('');
+  // Digest hours are in the stack's Timezone setting (UTC unless set). When that differs from this browser, show the local time beside each hour.
+  function hourOptions(){
+    const tz = engine.timezone || 'UTC', here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const keep = $('#nHour').value;
+    // The instant at which the stack's clock reads h:00 today, then shown on this browser's clock.
+    const wallToInstant = (h) => { const d = new Date(); d.setUTCHours(h, 0, 0, 0); const parts = {}; for (const x of new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(d)) parts[x.type] = +x.value; const offset = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - d.getTime(); return new Date(d.getTime() - offset); };
+    $('#nHour').innerHTML = Array.from({ length: 24 }, (_, h) => { const hint = tz !== here ? ` (${wallToInstant(h).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} here)` : ''; return `<option value="${h}">${String(h).padStart(2, '0')}:00 ${tz === 'UTC' ? 'UTC' : tz.split('/').pop().replace(/_/g, ' ')}${hint}</option>`; }).join('');
+    if (keep) $('#nHour').value = keep;
+  }
+  hourOptions();
   $('#nSave').addEventListener('click', async () => { try { await engine.saveNotifications(readNotif()); toast('Notification settings saved'); loadNotif(); } catch (e) { toast('Not saved: ' + e.message); } });
   $('#nTest').addEventListener('click', async () => { try { const r = await engine.testNotification(); toast(r.sent && r.sent.length ? 'Test sent to ' + r.sent.join(' and ') + (r.note ? ' (' + r.note + ')' : '') : 'Nothing to send to yet'); } catch (e) { toast('Test failed: ' + e.message); } });
 
@@ -451,7 +482,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     $('#mQv').textContent = m.quality+'%'; $('#mPv').textContent = m.productivity+'%'; $('#mAv').textContent = m.adherence+'%';
     const v = Arena.validateMix(m); $('#mixWarn').textContent = v.message;
     const p = engine.preview(m);
-    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Customer sentiment strongly positive</span><b>+${p.sentimentGood} pts</b><span>Survey answer 5 of 5</span><b>+${p.csat5} pts</b><span>Hour in adherence <small style="color:var(--muted)">(needs a WFM feed, not yet scored)</small></span><b>+${p.adherenceHour} pts</b>`;
+    $('#mixPv').innerHTML = `<span>Evaluation at 90%</span><b>+${p.eval90} pts</b><span>Contact handled, 7 min AHT</span><b>+${p.contact7min} pts</b><span>Evaluation auto-fail</span><b>${p.autofail} pts</b><span>Customer sentiment strongly positive</span><b>+${p.sentimentGood} pts</b><span>Survey answer 5 of 5</span><b>+${p.csat5} pts</b><span>Hour on schedule <small style="color:var(--muted)">(with ScheduleAdherence enabled)</small></span><b>+${p.adherenceHour} pts</b>`;
     return v.ok;
   }
 
@@ -511,7 +542,7 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     const ap = e.target.closest('[data-approve]'), dc = e.target.closest('[data-decline]'), rv = e.target.closest('[data-review]'), en = e.target.closest('[data-end]');
     const ce = e.target.closest('[data-coach-edit]'), cc = e.target.closest('[data-coach-close]'), dq = e.target.closest('[data-dq]');
     try {
-      if (ap || dc) { const id = (ap || dc).dataset[ap ? 'approve' : 'decline']; const r = await engine.decideReward(id, ap ? 'approved' : 'declined'); toast(`${ap ? 'Approved' : 'Declined'} ${r.what} for ${r.agentName}`); if (engine.remote) await engine.refresh(); render(); loadSide(); }
+      if (ap || dc) { const id = (ap || dc).dataset[ap ? 'approve' : 'decline']; let r; try { r = await engine.decideReward(id, ap ? 'approved' : 'declined'); } catch (e) { toast(e.message); return; } toast(`${ap ? 'Approved' : 'Declined'} ${r.what} for ${r.agentName}`); if (engine.remote) await engine.refresh(); render(); loadSide(); }
       if (en) { const r = await engine.endChallenge(en.dataset.end); const won = r && r.results && r.results.prizes; toast(won && won.length ? `Challenge ended · ${won.length} prize${won.length === 1 ? '' : 's'} paid` : 'Challenge ended'); loadSide(); }
       if (dq) { const c = chals.find(x => x.id === dq.dataset.dq); if (!c) return; const ex = new Set(c.excluded || []); if (dq.dataset.on === '1') ex.delete(dq.dataset.agent); else ex.add(dq.dataset.agent);
         await engine.updateChallenge(c.id, { excluded: [...ex] }); toast(dq.dataset.on === '1' ? 'Reinstated' : 'Disqualified from this challenge'); loadSide(); }

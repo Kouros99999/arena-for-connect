@@ -1,5 +1,6 @@
 /*
- * Nightly streak job. Runs after midnight UTC on the same schedule as metering.
+ * Streak job. Runs hourly; the first run after local midnight (the stack's Timezone) assesses yesterday,
+ * later runs that day find every agent already assessed and do nothing.
  *
  * A "clean day" is: at least one contact handled, no evaluation auto-fail, and every
  * evaluation that day at or above STREAK_QA (default 85). A clean day extends the agent's
@@ -14,6 +15,7 @@
 'use strict';
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
+const clock = require('./clock.js');
 
 const STREAK_QA = +(process.env.STREAK_QA || 85);
 
@@ -29,7 +31,7 @@ function assessDay(dayRow, streak) {
 async function runFor(now, deps) {
   const s = (deps && deps.store) || store;
   const nowMs = typeof now === 'number' ? now : now.getTime();
-  const yesterday = new Date(nowMs - 86400000).toISOString().slice(0, 10);
+  const yesterday = clock.addDays(clock.dayKey(nowMs), -1);
   const rows = await s.scanLiveFull();
   let assessed = 0, extended = 0, reset = 0, held = 0, bonuses = 0;
   for (const live of rows) {

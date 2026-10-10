@@ -48,6 +48,7 @@ function message(ev) {
   switch (ev.kind) {
     case 'kudos': return { title: 'Kudos', lines: [`${ev.from} → ${ev.to}: “${ev.note}”`] };
     case 'rewardRequested': return { title: 'Reward requested', lines: [`${ev.agentName} asked for ${ev.what} (${ev.cost.toLocaleString()} pts). Approve it in the console.`] };
+    case 'budgetAlert': return { title: ev.pct >= 100 ? 'Reward budget used up' : `Reward budget ${ev.pct}% used`, lines: [`${ev.spent.toLocaleString()} of ${ev.monthly.toLocaleString()} pts approved so far in ${ev.month}.` + (ev.pct >= 100 ? ' Further approvals are blocked until the budget is raised or the month turns.' : '')] };
     case 'rewardDecided': return { title: ev.status === 'approved' ? 'Reward approved' : 'Reward declined', lines: [`${ev.agentName}: ${ev.what}${ev.status === 'approved' ? '. Time to make it happen.' : '.'}`] };
     case 'challengeStarted': return { title: 'New challenge', lines: [`${ev.challenge.title} · ${ev.challenge.startsAt === ev.challenge.endsAt ? ev.challenge.endsAt : ev.challenge.startsAt + ' to ' + ev.challenge.endsAt}`] };
     case 'challengeEnded': {
@@ -70,7 +71,7 @@ function message(ev) {
   }
 }
 /** Which event switch covers an event kind. Pure. */
-const eventKey = (kind) => ({ kudos: 'kudos', rewardRequested: 'rewards', rewardDecided: 'rewards', challengeStarted: 'challenges', challengeEnded: 'challenges', digest: 'digest', test: null })[kind];
+const eventKey = (kind) => ({ kudos: 'kudos', rewardRequested: 'rewards', rewardDecided: 'rewards', budgetAlert: 'rewards', challengeStarted: 'challenges', challengeEnded: 'challenges', digest: 'digest', test: null })[kind];
 
 // ---------- channels ----------
 const renderSlack = (m) => ({ text: `*${m.title}*\n` + m.lines.join('\n') });

@@ -1,5 +1,30 @@
 [
   {
+    "version": "0.7.0",
+    "date": "2026-10-10",
+    "title": "Schedule adherence, reward budgets, and your own time zone",
+    "summary": "Adherence from Amazon Connect now earns points, each team can carry a monthly reward budget, and every day in Arena starts at midnight where your centre is.",
+    "changes": [
+      "Schedule adherence: with the new ScheduleAdherence setting enabled, Arena reads yesterday's adherence for every agent from Amazon Connect each night and awards 5 points per hour spent on schedule, weighted by the adherence slider. Agents without a schedule that day get nothing and lose nothing.",
+      "Adherence is a measure for races and head-to-heads, shows in each agent's feed with the percentage and hours, and appears as a team average in the results report.",
+      "Monthly reward budget per team, set from the Budget button on the console's reward approvals card. An approval that would go over the budget is refused and the request stays pending. The card shows how much of the month is used.",
+      "Budget alerts in Slack, Teams and the digest channels at 25%, 50%, 75% and 100% of the month's budget, under the reward requests switch.",
+      "Timezone setting: days, weeks and months now start at local midnight for points, streaks, challenge dates, the digest hour and budgets. Before this release everything rolled over at midnight UTC, which cut a US evening shift's work in two.",
+      "The streak job now runs hourly and acts once per local day, so streak bonuses arrive after your midnight rather than after UTC midnight."
+    ],
+    "upgrade": [
+      "Set Timezone when you update the stack. Day and week totals from before the change were keyed to UTC days and stay as they are; new totals start from the change. A change made at the end of a shift is least noticeable.",
+      "To score adherence, set ScheduleAdherence to enabled. Your Connect instance needs forecasting, capacity planning and scheduling enabled; without them the nightly import finds no schedules and writes nothing.",
+      "Budgets are off until a supervisor sets one, so nothing changes about approvals unless you choose to."
+    ],
+    "docs": [
+      "how-scoring-works",
+      "challenges-rewards-kudos",
+      "notifications",
+      "settings-reference"
+    ]
+  },
+  {
     "version": "0.6.0",
     "date": "2026-10-10",
     "title": "Notifications, contest rules, and head-to-head",

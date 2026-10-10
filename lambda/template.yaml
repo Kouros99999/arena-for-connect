@@ -49,6 +49,15 @@ Parameters:
     Default: full
     AllowedValues: [full, first, initials]
     Description: How agent names appear on sign-in-free wallboards. full shows the name as in Connect, first shows the first name and last initial, initials shows initials only.
+  Timezone:
+    Type: String
+    Default: UTC
+    Description: IANA time zone the contact centre runs on, e.g. America/New_York. Decides when a day, a week and a month start for points, streaks, challenges, the digest hour and reward budgets. Changing it later starts new day rows from the change onward.
+  ScheduleAdherence:
+    Type: String
+    Default: disabled
+    AllowedValues: [enabled, disabled]
+    Description: Score schedule adherence from Amazon Connect each night (needs forecasting, capacity planning and scheduling enabled on the instance). Points per adherent hour, weighted by the adherence slider.
   KudosDailyLimit:
     Type: Number
     Default: 5
@@ -96,6 +105,7 @@ Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
   HasDigestEmail: !Not [!Equals [!Ref DigestEmail, '']]
   InstallSite: !Not [!Equals [!Ref SiteArchiveUrl, '']]
+  UseAdherence: !Equals [!Ref ScheduleAdherence, enabled]
 
 Globals:
   Function:
@@ -107,6 +117,7 @@ Globals:
       Variables:
         TABLE: !Ref Table
         TTL_DAYS: '90'
+        ARENA_TZ: !Ref Timezone
 
 Resources:
   AgentEventStream:
@@ -292,8 +303,29 @@ Resources:
         Nightly:
           Type: Schedule
           Properties:
-            Schedule: cron(30 0 * * ? *)   # 00:30 UTC: assess yesterday, pay streak bonuses into today
+            Schedule: cron(30 * * * ? *)   # half past every hour; the first run after local midnight assesses yesterday, the rest are no-ops
             Description: Assess each agent's previous day and update quality streaks
+
+  AdherenceFunction:
+    Type: AWS::Serverless::Function
+    Condition: UseAdherence
+    Properties:
+      FunctionName: !Sub arena-adherence-${AWS::StackName}
+      CodeUri: src/            # per function: aws cloudformation package ignores Globals.CodeUri
+      Handler: adherence.handler
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: connect:GetMetricDataV2
+              Resource: !Sub arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/*
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(45 * * * ? *)   # quarter to every hour; the first run after local midnight imports yesterday's adherence
+            Description: Score yesterday's schedule adherence from Amazon Connect
 
   # ---------- Operations: alarms and where they go ----------
   AlarmTopic:

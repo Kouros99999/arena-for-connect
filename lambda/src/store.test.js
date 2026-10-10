@@ -85,3 +85,17 @@ test('mergeTeam carries sentiment and survey sums into the agent shape', () => {
   const b = store.mergeTeam([{ pk, username: 'priya' }], [{ pk, points: 10 }], [])[0];
   assert.equal(b.sentCount, 0); assert.equal(b.csatSum, 0);
 });
+
+test('an adherence day adds hours and the percentage to the day and week rows', () => {
+  const ev = { EventType: 'ADHERENCE_SCORED', AgentARN: 'arn:a', EventTimestamp: '2026-09-15T23:59:59.000Z', Team: 'Billing', Adherence: 93.5, AdherentHours: 7.4, ScheduledHours: 8, DedupKey: 'ADH#2026-09-15#a' };
+  const w = store.planWrites(ev, 37, 0);
+  assert.equal(w[0].item.sk, 'SEEN#ADH#2026-09-15#a');
+  const day = w.find((x) => x.key && x.key.sk === 'DAY#2026-09-15');
+  assert.ok(day); assert.equal(day.values[':ah'], 7.4); assert.equal(day.values[':as'], 93.5); assert.equal(day.values[':ac'], 1); assert.equal(day.values[':p'], 37);
+  assert.match(day.expr, /adherenceHours :ah, adhSum :as, adhCount :ac/);
+  // Other events leave the adherence columns at zero.
+  const c = store.planWrites({ EventType: 'CONTACT_HANDLED', AgentARN: 'arn:a', EventTimestamp: '2026-09-15T10:00:00.000Z', HandleTime: 300 }, 9, 0).find((x) => x.key && x.key.sk === 'DAY#2026-09-15');
+  assert.equal(c.values[':ah'], 0); assert.equal(c.values[':ac'], 0);
+  const merged = store.mergeTeam([], [{ pk: 'AGENT#arn:a', points: 37, adherenceHours: 7.4, adhSum: 93.5, adhCount: 1 }], []);
+  assert.equal(merged[0].adherenceHours, 7.4); assert.equal(merged[0].adhSum, 93.5);
+});

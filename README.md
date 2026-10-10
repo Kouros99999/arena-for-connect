@@ -17,7 +17,9 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `lambda/src/ingest.js` | Lambda on the Connect agent event stream (Kinesis) |
 | `lambda/src/evaluations.js` | Lambda on Contact Lens evaluation output (S3 via EventBridge), deduped per evaluation |
 | `lambda/src/sentiment.js` | Lambda on Contact Lens conversational analytics output: customer sentiment per contact, deduped per contact |
-| `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos, challenges, rewards, history, coaching, metric import |
+| `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos, challenges, rewards and budgets, history, coaching, metric import |
+| `lambda/src/adherence.js` | Nightly schedule adherence import from Connect (GetMetricDataV2) |
+| `lambda/src/clock.js` | Local time: day, week and month keys in the stack's Timezone |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
 | `web/` | Public site for arenaforconnect.com: landing page, support, privacy policy (deployed with the demo by GitHub Pages) |
@@ -37,7 +39,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/clock.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -125,7 +127,13 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
 
-**Streaks.** A nightly job at 00:30 UTC assesses each agent's previous day: at least one contact, no auto-fail, every evaluation at or above 85 extends the quality streak; a miss resets it; a day with no contacts holds it. From day two each clean day pays the streak bonus into the new day. Adherence remains in the scoring mix but is not scored until a workforce-management feed exists, and the console says so.
+**Time zone.** `Timezone` (an IANA name, default `UTC`) decides when a day, an ISO week and a month begin for day rows, streaks, challenge dates, the digest hour and reward budgets; `lambda/src/clock.js` is the only place that knows. Jobs that act "once a day" run hourly and act on the first run after local midnight.
+
+**Schedule adherence.** With `ScheduleAdherence=enabled`, `lambda/src/adherence.js` runs hourly and, once per local day, calls Connect `GetMetricDataV2` (`AGENT_SCHEDULE_ADHERENCE`, `AGENT_ADHERENT_TIME`, `AGENT_SCHEDULED_TIME`) for yesterday, grouped by agent, for every agent with a LIVE row. Each scheduled agent gets one `ADHERENCE_SCORED` event (percent, adherent hours) worth `BASE.adherenceHour` per adherent hour times the adherence weight, deduped per agent and day. The instance ARN comes from the agent ARNs, so there is nothing else to configure, but the instance must have forecasting, capacity planning and scheduling enabled.
+
+**Reward budgets.** `GET/PUT /teams/{team}/budget` sets a monthly cap in points per team (`CONFIG / BUDGET#team`); approvals add to `BUDGET#team / YYYY-MM` and are refused with 409 when they would cross the cap. Crossing 25/50/75/100% posts a `budgetAlert` to the team's channels once each.
+
+**Streaks.** A job that runs hourly, and acts once after local midnight, assesses each agent's previous day: at least one contact, no auto-fail, every evaluation at or above 85 extends the quality streak; a miss resets it; a day with no contacts holds it. From day two each clean day pays the streak bonus into the new day.
 
 **Wallboard on a TV.** A supervisor clicks "TV link" in the console. That mints a kiosk token, valid 90 days, and copies a wallboard URL that needs no sign-in. Kiosk routes are read-only and served under `/kiosk/{token}/…` with the token as the only credential; a supervisor can list and revoke tokens through the API. Because anyone walking past can read a TV, `WallboardNames` controls how people appear there: `full` (as in Connect), `first` (first name and last initial) or `initials`. Signed-in pages always show full names. The DynamoDB table keeps 35 days of point-in-time backups.
 

@@ -9,6 +9,7 @@
 'use strict';
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
+const clock = require('./clock.js');
 const notify = require('./notify.js');
 const challenges = require('./challenges.js');
 
@@ -25,7 +26,7 @@ async function runFor(now, deps) {
   deps = deps || {};
   const s = deps.store || store, sendFn = deps.send || notify.send;
   const nowDate = typeof now === 'number' ? new Date(now) : now;
-  const today = nowDate.toISOString().slice(0, 10), hour = nowDate.getUTCHours();
+  const today = clock.dayKey(nowDate), hour = clock.hourOf(nowDate);   // the team's digest hour is local time
   const teams = await s.listTeams();
   const out = { teams: teams.length, digests: 0, finalized: 0, prizes: 0 };
   for (const team of teams) {

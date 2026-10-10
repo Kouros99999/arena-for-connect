@@ -34,6 +34,10 @@ Agents redeem this week's points against a catalog from their panel. Each reques
 
 The catalog in this version is fixed: a $25 gift card, a half-day Friday, a team lunch and a week's prime parking, at set point prices. Fulfilling an approved reward is up to you.
 
+### Monthly reward budget
+
+Each team can carry a monthly budget in points, set from the **Budget** button on the console's reward approvals card. Approvals add to the month's total; an approval that would take the team over the budget is refused with a message, and the request stays pending until the budget is raised or the month turns. The card shows how much of the month's budget is used. Set the budget to 0 to remove the cap. When notifications are on, the team channel hears when 25%, 50%, 75% and 100% of the budget are used. Months follow the stack's `Timezone` setting.
+
 ## Kudos
 
 Agents send kudos to a teammate from their panel with a short note. The recipient earns 8 points and the note appears on the team feed in the console and on wallboards.

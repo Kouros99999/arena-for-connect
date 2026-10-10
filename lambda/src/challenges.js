@@ -9,12 +9,12 @@
 'use strict';
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
+const clock = require('./clock.js');
 
 const MAX_DAYS = 92;
-const addDays = (day, n) => new Date(Date.parse(day + 'T00:00:00.000Z') + n * 86400000).toISOString().slice(0, 10);
-const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const addDays = clock.addDays, isDay = clock.isDay;
 const dayRow = (row, names) => { const id = row.pk.replace(/^AGENT#/, ''); return { id, name: (names && names[id]) || row.username || id.split('/').pop(), points: row.points || 0, handled: row.handled || 0, ahtSum: row.ahtSum || 0,
-  evals: row.evals || [], autofails: row.autofails || 0, escalations: row.escalations || 0, kudosReceived: row.kudosReceived || 0, sentSum: row.sentSum || 0, sentCount: row.sentCount || 0, csatSum: row.csatSum || 0, csatCount: row.csatCount || 0 }; };
+  evals: row.evals || [], autofails: row.autofails || 0, escalations: row.escalations || 0, kudosReceived: row.kudosReceived || 0, sentSum: row.sentSum || 0, sentCount: row.sentCount || 0, csatSum: row.csatSum || 0, csatCount: row.csatCount || 0, adherenceHours: row.adherenceHours || 0, adhSum: row.adhSum || 0, adhCount: row.adhCount || 0 }; };
 const stateOf = (c, today) => (c.state === 'ended' || c.results ? 'ended' : c.startsAt > today ? 'scheduled' : c.endsAt < today ? 'ended' : 'active');
 
 /** Day rows for a team between two dates, keyed by date, with display names applied. */
@@ -34,7 +34,7 @@ function periodAgents(days, c, today) {
 /** Every challenge for a team with state, progress and (for races and duels) standings measured over its period. */
 async function challengesFor(s, team, now, opts) {
   opts = opts || {};
-  const today = now.toISOString().slice(0, 10);
+  const today = clock.dayKey(now);
   const items = (await s.listTeamItems(team, 'CH#', 50, true)).map((i) => { const { pk, sk, ttl, ...rest } = i; return Object.assign(rest, { _sk: sk }); });
   const live = items.filter((c) => !c.results && c.startsAt <= today);
   const from = live.length ? live.reduce((m, c) => (c.startsAt < m ? c.startsAt : m), today) : today;
@@ -78,7 +78,7 @@ const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['t
 /** Freeze a challenge's result and pay prizes once. Returns the stored results, or null if it was already final. */
 async function finalize(s, team, c, now, deps) {
   if (c.results) return null;
-  const today = now.toISOString().slice(0, 10);
+  const today = clock.dayKey(now);
   const days = await teamDays(s, team, c.startsAt, c.endsAt < today ? c.endsAt : today);
   const agents = Arena.aggregateAgents(days);
   const withOpp = c.template === 'teams' && c.opponent ? Object.assign({}, c, { opponentAgents: Arena.aggregateAgents(await teamDays(s, c.opponent, c.startsAt, c.endsAt < today ? c.endsAt : today)) }) : c;
