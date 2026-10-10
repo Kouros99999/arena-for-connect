@@ -111,6 +111,9 @@ tr.flash td{background:var(--flash)}
 
 .rw{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .rw:last-child{border-bottom:0}
+.scope{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px}
+.scope select{margin-left:6px}
+.scope a{margin-left:auto;color:var(--accent)}
 .budget{font-size:12px;color:var(--muted);margin-bottom:8px}
 .budget .bar{margin-top:4px}
 .budget.over b{color:var(--bad)}
@@ -234,9 +237,10 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
 
     <div class="col">
       <div class="card">
-        <div class="card-h"><h2>Scoring mix</h2><span class="sub">applies to Billing team</span>
+        <div class="card-h"><h2>Scoring mix</h2><span class="sub" id="mixSub">applies to every team</span>
           <div class="r"><button class="btn sm" id="saveMix">Save</button></div></div>
         <div class="card-b mix">
+          <div class="scope"><label>Save for<select id="mixScope"><option value="default">every team (the default)</option><option value="team">this team only</option></select></label><a href="#" id="mixClear" hidden>Use the default again</a></div>
           <label>Quality<input type="range" id="mQ" min="0" max="100" value="50"><span class="pct" id="mQv">50%</span></label>
           <label>Productivity<input type="range" id="mP" min="0" max="100" value="35"><span class="pct" id="mPv">35%</span></label>
           <label>Adherence<input type="range" id="mA" min="0" max="100" value="15"><span class="pct" id="mAv">15%</span></label>
@@ -495,9 +499,18 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
     if (!conn.isSupervisor) { $('#saveMix').disabled = true; $('#saveMix').title = 'Supervisors only'; $('#mixWarn').textContent = 'Read only: your account is not in the supervisors group.'; $('#newChal').hidden = true; }
   }
   ['mQ','mP','mA'].forEach(id => $('#'+id).addEventListener('input', renderMix));
+  // Per-team scoring profiles: the card shows which mix applies to this team and lets a supervisor save a profile for it or for every team.
+  function showMixInfo(info){
+    $('#mQ').value = info.mix.quality; $('#mP').value = info.mix.productivity; $('#mA').value = info.mix.adherence; renderMix();
+    const own = info.source === 'team', t = engine.team || info.team || 'this team';
+    $('#mixSub').textContent = own ? `${t} has its own mix` : 'applies to every team';
+    $('#mixScope').value = own ? 'team' : 'default'; $('#mixClear').hidden = !own;
+  }
   $('#saveMix').addEventListener('click', async () => { if (!renderMix()) return;
-    if (engine.remote) { const r = await engine.saveMix(readMix()); toast(r.ok ? 'Scoring mix saved' : 'Not saved: ' + r.message); }
-    else { engine.setMix(readMix()); toast('Scoring mix saved'); } });
+    const scope = $('#mixScope').value;
+    try { const r = await engine.saveMix(readMix(), scope); if (!r.ok) return toast('Not saved: ' + r.message); toast(scope === 'team' ? `Scoring mix saved for ${engine.team || 'this team'}` : 'Default scoring mix saved'); showMixInfo(await engine.mixInfo()); }
+    catch (e) { toast('Not saved: ' + e.message); } });
+  $('#mixClear').addEventListener('click', async (e) => { e.preventDefault(); try { showMixInfo(await engine.clearMix()); toast('This team uses the default mix again'); } catch (err) { toast(err.message); } });
 
   // New challenge form: template drives the default target and reward.
   const tpl = () => Arena.TEMPLATES[$('#fTemplate').value] || Arena.TEMPLATES.contest;
@@ -567,8 +580,8 @@ dialog::backdrop{background:rgba(10,14,20,.55)}
   const d = new Date(); $('#fStart').value = d.toISOString().slice(0,10); d.setDate(d.getDate()+5); $('#fEnd').value = d.toISOString().slice(0,10);
   renderMix(); render();
   loadNotif();
-  if (sim) { sim.start(); loadSide(); }
-  else engine.loadMix().then(m => { $('#mQ').value = m.quality; $('#mP').value = m.productivity; $('#mA').value = m.adherence; renderMix(); })
+  if (sim) { sim.start(); loadSide(); engine.mixInfo().then(showMixInfo); }
+  else engine.mixInfo().then(showMixInfo)
     .then(() => engine.start(5)).then(() => { render(); loadSide(); }).catch(err => toast('API error: ' + err.message));
 })();
 </script>

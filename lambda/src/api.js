@@ -3,8 +3,10 @@
  *
  *   GET  /teams/{team}/agents?date=YYYY-MM-DD   agents in engine shape (today + week + live), for all three pages
  *   GET  /agents/{arn}/events?limit=20          points ledger for the agent panel feed
- *   GET  /config/mix                            scoring mix
- *   PUT  /config/mix                            { quality, productivity, adherence } validated by the engine
+ *   GET  /config/mix?team=T                     the mix that applies: the team's own profile or the default ({ mix, source, team, default })
+ *   PUT  /config/mix?team=T                     { quality, productivity, adherence } saves a profile for that team; { useDefault: true } removes it; without ?team it sets the default (supervisors)
+ *   GET  /agents/{arn}/best?days=90             personal best: best day and week on record and how today compares (the agent or a supervisor)
+ *   GET/PUT /agents/{arn}/prefs                 { personalBest } the agent's own view preference
  *   POST /kudos                                 { to, from, note, team } scores and stores a KUDOS event
  *   GET  /teams/{team}/history?days=30          results report: this period against the one before (supervisors)
  *   GET  /teams/{team}/coaching                 coaching plans; agents see only their own, without the supervisor's private note
@@ -63,6 +65,9 @@ function route(method, path) {
   // Kiosk: unauthenticated at the gateway, the token is the credential. Read-only, wallboard only.
   if (method === 'GET' && (x = m(/^\/kiosk\/([^/]+)\/(agents|challenges|kudos)$/))) return { name: 'kiosk', token: decodeURIComponent(x[1]), what: x[2] };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/events$/))) return { name: 'agentEvents', arn: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/agents\/(.+)\/best$/))) return { name: 'agentBest', arn: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/agents\/(.+)\/prefs$/))) return { name: 'getPrefs', arn: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/agents\/(.+)\/prefs$/))) return { name: 'putPrefs', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && path === '/config/mix') return { name: 'getMix' };
   if (method === 'PUT' && path === '/config/mix') return { name: 'putMix' };
   if (method === 'POST' && path === '/kudos') return { name: 'kudos' };
@@ -75,7 +80,9 @@ function makeHandler(deps) {
   const sendFn = deps.send || notify.send;
   // Fire-and-forget notifications: a dead webhook must never fail the request that triggered it.
   const tell = async (team, ev) => { try { const cfg = await s.getNotify(team); if (cfg) await sendFn(cfg, ev, deps); } catch (e) { console.warn('notify failed', e.message); } };
-    /** Where the team's reward budget stands this month. */
+    /** The mix a team is scored with and where it comes from. */
+  const mixInfo = async (team) => { const m = await s.getMixes(team || undefined); return { team: team || undefined, mix: m.team || m.default || Arena.DEFAULT_MIX, source: m.team ? 'team' : 'default', default: m.default || Arena.DEFAULT_MIX }; };
+  /** Where the team's reward budget stands this month. */
   const budgetFor = async (team) => { const b = await s.getBudget(team), month = clock.monthKey(now()); const sp = b && b.monthly ? await s.getSpend(team, month) : { spent: 0, alerted: [] }; return Object.assign(Arena.budgetSummary(b ? b.monthly : 0, sp.spent, month), { alerted: sp.alerted }); };
   return async (event) => {
     const method = event.requestContext && event.requestContext.http ? event.requestContext.http.method : event.httpMethod;
@@ -100,17 +107,40 @@ function makeHandler(deps) {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
           const limit = Math.min(100, +(qs.limit || 20));
           const items = await s.listEvents(r.arn, limit);
-          return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day })) });
+          return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day, adherence: i.Adherence })) });
         }
-        case 'getMix': return json(200, { mix: (await s.getMix()) || Arena.DEFAULT_MIX });
+        case 'getMix': {
+          const team = qs.team || '';
+          if (team && !teamAccess(claims, team)) return json(403, { error: 'not your team' });
+          return json(200, await mixInfo(team));
+        }
         case 'putMix': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
-          const body = parse(event);
+          const team = qs.team || '', body = parse(event);
+          if (team && body.useDefault) { await s.deleteMix(team); return json(200, await mixInfo(team)); }
           const mix = { quality: +body.quality, productivity: +body.productivity, adherence: +body.adherence };
           const v = Arena.validateMix(mix);
           if (!v.ok) return json(400, { error: v.message });
-          await s.putMix(mix);
-          return json(200, { mix, warning: v.message || undefined });
+          await s.putMix(mix, team || undefined);
+          return json(200, Object.assign(await mixInfo(team), { warning: v.message || undefined }));
+        }
+        case 'agentBest': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
+          const today = clock.dayKey(now()), days = Math.min(92, Math.max(7, +(qs.days || 90)));
+          const rows = (await s.getAgentDays(r.arn, addDays(today, 1 - days), today)).map((row) => ({ day: row.sk.slice(4), points: row.points || 0 }));
+          return json(200, Object.assign({ agent: r.arn, days }, Arena.personalBest(rows, today)));
+        }
+        case 'getPrefs': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
+          const live = await s.getLive(r.arn);
+          return json(200, { agent: r.arn, prefs: Object.assign({ personalBest: false }, (live && live.prefs) || {}) });
+        }
+        case 'putPrefs': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
+          const b = parse(event), live = await s.getLive(r.arn);
+          const prefs = Object.assign({ personalBest: false }, (live && live.prefs) || {}, b.personalBest !== undefined ? { personalBest: !!b.personalBest } : {});
+          if (!(await s.putAgentPrefs(r.arn, prefs))) return json(404, { error: 'agent has no activity yet' });
+          return json(200, { agent: r.arn, prefs });
         }
         case 'listChallenges': {
           const list = await challenges.challengesFor(s, r.team, now(), { supervisor: isSupervisor(claims), viewer: claims['custom:agentArn'] });
@@ -300,7 +330,7 @@ function makeHandler(deps) {
             { AgentARN: b.agentId, EventTimestamp: now().toISOString(), Team: (live && live.team) || r.team, Username: live ? live.username : undefined,
               ContactId: b.contactId || undefined, Source: 'api', RecordedBy: who(claims),
               DedupKey: b.contactId ? (b.metric === 'csat' ? 'CSAT#' : 'SENT#') + b.contactId : undefined });
-          const points = Arena.scoreEvent(ev.EventType, ev, (await s.getMix()) || Arena.DEFAULT_MIX);
+          const points = Arena.scoreEvent(ev.EventType, ev, (await s.getMix(r.team)) || Arena.DEFAULT_MIX);
           const applied = await s.apply(store.planWrites(ev, points, now().getTime()));
           if (applied === false) return json(200, { ok: true, duplicate: true, points: 0 });
           return json(201, { ok: true, points });

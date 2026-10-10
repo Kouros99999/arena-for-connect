@@ -78,6 +78,14 @@ button{font:inherit;cursor:pointer}
 .section h3 span{margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;font-size:12px}
 
 .board{display:flex;flex-direction:column}
+.pb{margin-left:10px;font-weight:400;letter-spacing:0;text-transform:none;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+.best{display:grid;gap:10px;padding:4px 0}
+.best .row{display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px}
+.best .row small{color:var(--muted);display:block;font-size:11.5px}
+.best .bar{grid-column:1/-1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.best .bar i{display:block;height:100%;background:var(--accent)}
+.best .bar i.hit{background:var(--gold)}
+.best .note{font-size:12px;color:var(--muted)}
 .rowa{display:grid;grid-template-columns:26px 28px 1fr auto auto;gap:8px;align-items:center;padding:7px 8px;border-radius:5px;border-bottom:1px solid var(--line);transition:background .6s}
 .rowa:last-child{border-bottom:0}
 .rowa.you{background:var(--you);border-bottom-color:transparent}
@@ -187,7 +195,7 @@ button{font:inherit;cursor:pointer}
       </div>
 
       <div class="section">
-        <h3>Team leaderboard <span id="boardRange">today</span></h3>
+        <h3><span id="boardTitle" style="margin:0">Team leaderboard</span> <label class="pb"><input type="checkbox" id="pbMode"> my own best</label><span id="boardRange">today</span></h3>
         <div class="board" id="board"></div>
       </div>
 
@@ -244,7 +252,7 @@ button{font:inherit;cursor:pointer}
   const engine = conn.engine;
   const sim = conn.remote ? null : Arena.createSimulator(engine, { rate: 4 });
   let YOU = conn.remote ? null : engine.agents[0];
-  let range = 'today', feed = [], lastRank = {}, chal = null, plans = [];
+  let range = 'today', feed = [], lastRank = {}, chal = null, plans = [], pbMode = false, best = null;
   const $ = s => document.querySelector(s);
   const pad = n => String(n).padStart(2,'0');
   const now = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
@@ -296,12 +304,25 @@ button{font:inherit;cursor:pointer}
       <div class="meta"><span>${st ? (mine || esc(p.label)) : p.measured === false ? esc(p.label) : 'Currently <b class="num">' + esc(p.value) + '</b> · ' + (p.onTrack ? 'on track' : 'behind')}</span><span>${reward}</span></div>${top ? `<div class="d">${top}</div>` : ''}`;
   }
 
+  // Personal-best mode: the agent measures against their own record instead of the team. Their choice, saved on their profile.
+  async function loadBest(){ if (!YOU) return; try { best = await engine.best(YOU.id); } catch (e) { best = null; } if (pbMode) render(); }
+  function renderBest(board){
+    const b = best;
+    if (!b) { board.innerHTML = '<div class="best"><div class="note">Loading your history…</div></div>'; return; }
+    const fmt = n => (n || 0).toLocaleString();
+    const row = (label, cur, rec, pct, hit, what) => rec ? `<div class="row"><span>${label}<small>${what}: ${fmt(rec.points)} pts on ${rec.day || rec.week}</small></span><b class="num">${fmt(cur)}</b><div class="bar"><i class="${hit ? 'hit' : ''}" style="width:${pct}%"></i></div></div>` : `<div class="row"><span>${label}<small>No ${what.toLowerCase()} yet. Today is the one to beat.</small></span><b class="num">${fmt(cur)}</b></div>`;
+    board.innerHTML = `<div class="best">
+      ${row('Today', b.todayPoints, b.bestDay, b.dayPct, b.newBestDay, 'Best day')}
+      ${row('This week', b.weekPoints, b.bestWeek, b.weekPct, b.newBestWeek, 'Best week')}
+      <div class="note">${b.newBestDay ? 'New best day. ' : b.newBestWeek ? 'New best week. ' : ''}${b.avgDay ? 'Your average day is ' + fmt(b.avgDay) + ' pts over ' + b.activeDays + ' active days.' : ''} Only you and your supervisor see this view.</div></div>`;
+  }
   function render(changed){
     resolveYou();
     if (!YOU || !engine.byId(YOU.id)) return;
     const rows = engine.leaderboard(range);
     const board = $('#board');
-    board.innerHTML = rows.map(r => {
+    $('#boardTitle').textContent = pbMode ? 'Your own best' : 'Team leaderboard';
+    if (pbMode) renderBest(board); else board.innerHTML = rows.map(r => {
       const a = r.agent, prev = lastRank[a.id] ?? r.rank, d = prev - r.rank;
       const mv = d>0 ? `<span class="mv up">▲${d}</span>` : d<0 ? `<span class="mv down">▼${-d}</span>` : '<span class="mv">·</span>';
       return `<div class="rowa ${a===YOU?'you':''} ${r.rank<=3?'top':''} ${changed===a?'flash':''}" data-id="${a.id}">
@@ -315,8 +336,8 @@ button{font:inherit;cursor:pointer}
 
     const me = rows.find(r => r.agent === YOU);
     $('#youPts').textContent = me.points.toLocaleString();
-    $('#youRank').textContent = '#' + me.rank;
-    $('#teamSize').textContent = engine.agents.length;
+    $('#youRank').textContent = pbMode ? (best && best.bestDay ? best.dayPct + '%' : '—') : '#' + me.rank;
+    document.querySelector('.hero .rank .lab').innerHTML = pbMode ? 'of your best day' : 'of <span id="teamSize">' + engine.agents.length + '</span> on team';
     $('#boardRange').textContent = range === 'today' ? 'today' : 'this week';
     $('#handled').textContent = YOU.handled;
     $('#streak').textContent = YOU.streak;
@@ -368,21 +389,25 @@ button{font:inherit;cursor:pointer}
     document.querySelector('.demo').hidden = true;
     document.querySelector('.contact .note').textContent = 'Live data from the Arena API. The pane refreshes every five seconds from DynamoDB, fed by the agent event stream.';
   }
+  $('#pbMode').addEventListener('change', async e => { pbMode = e.target.checked; render(); if (!best) loadBest(); try { if (YOU) await engine.savePrefs(YOU.id, { personalBest: pbMode }); } catch (err) { note('Could not save the preference: ' + err.message, true); } });
+  async function loadPrefs(){ if (!YOU) return; try { const p = await engine.prefs(YOU.id); pbMode = !!p.personalBest; $('#pbMode').checked = pbMode; if (pbMode) await loadBest(); render(); } catch (e) {} }
+  setInterval(() => { if (pbMode) loadBest(); }, 60000);
   $('#clock').textContent = now(); setInterval(() => $('#clock').textContent = now(), 15000);
   setInterval(loadChallenge, 30000); setInterval(loadCoaching, 30000);
 
   if (sim) {
     feed = [{words:'Evaluation scored <b>92%</b>', pts:20, t:'09:12'},{words:'Handled <b>Billing</b> contact, 5 min', pts:10, t:'09:05'},{words:'Streak bonus, day 7', pts:Arena.BASE.streakDay, t:'08:31'}];
-    render(); loadChallenge(); loadCoaching(); sim.start();
+    render(); loadChallenge(); loadCoaching(); loadPrefs(); sim.start();
   } else {
     const words = e => e.type==='CONTACT_HANDLED' ? `Handled <b>${esc(e.queue||'a')}</b> contact, ${Math.round((e.handleTime||0)/60)} min`
       : e.type==='EVALUATION_SUBMITTED' ? (e.autoFail ? 'Evaluation <b>auto-fail</b>' : `Evaluation scored <b>${e.score}%</b>`)
       : e.type==='KUDOS' ? `Kudos from <b>${esc(e.from)}</b>: “${esc(e.note)}”`
       : e.type==='SENTIMENT_SCORED' ? `Customer sentiment <b>${e.sentiment > 0 ? '+' : ''}${e.sentiment}</b> on a contact`
       : e.type==='CSAT_RECEIVED' ? `Customer survey: <b>${e.score} of 5</b>`
-      : e.type==='STREAK_DAY' ? `Streak bonus${e.day ? ', day ' + e.day : ''}` : e.type;
+      : e.type==='STREAK_DAY' ? `Streak bonus${e.day ? ', day ' + e.day : ''}`
+      : e.type==='ADHERENCE_SCORED' ? `Schedule adherence <b>${Math.round(e.adherence || 0)}%</b>` : e.type;
     async function loadFeed(){ const evs = await engine.events(YOU.id, 6); feed = evs.filter(e => e.points).map(e => ({ words: words(e), pts: e.points, t: e.at.slice(11,16) })); render(); }
-    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
+    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); loadPrefs(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
     engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); });
   }
 })();

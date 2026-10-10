@@ -21,13 +21,7 @@ async function readObject(bucket, key) {
   return JSON.parse(await r.Body.transformToString());
 }
 
-let mixCache = { at: 0, mix: Arena.DEFAULT_MIX };
-async function currentMix(s) {
-  if (Date.now() - mixCache.at < 60000) return mixCache.mix;
-  try { mixCache = { at: Date.now(), mix: (await s.getMix()) || Arena.DEFAULT_MIX }; }
-  catch (e) { mixCache.at = Date.now(); }
-  return mixCache.mix;
-}
+const { mixFor } = require('./mix.js');   // the team's scoring profile, or the default
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -53,7 +47,6 @@ function objects(event) {
 
 exports.handler = async (event, context, deps) => {
   const s = (deps && deps.store) || store, read = (deps && deps.readObject) || readObject;
-  const mix = await currentMix(s);
   let scored = 0, skipped = 0;
   for (const { bucket, key } of objects(event)) {
     // Connect writes a redacted copy beside the original; one score per contact is enough.
@@ -63,7 +56,7 @@ exports.handler = async (event, context, deps) => {
     const contact = await s.getContact(ev.ContactId);
     if (!contact) throw new Error('contact ' + ev.ContactId + ' not seen on the agent event stream yet; retrying');
     Object.assign(ev, { AgentARN: contact.agent, Team: contact.team, Username: contact.username, Name: contact.name });
-    const points = Arena.scoreEvent('SENTIMENT_SCORED', ev, mix);
+    const points = Arena.scoreEvent('SENTIMENT_SCORED', ev, await mixFor(s, ev.Team));
     const applied = await s.apply(store.planWrites(ev, points));
     if (applied === false) { skipped++; console.info('duplicate analysis', ev.ContactId); } else scored++;
   }

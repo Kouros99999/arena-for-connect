@@ -62,8 +62,11 @@ async function api(req, res, p) {
     }
     if (req.method === 'DELETE' && (m = p.match(/^\/agents\/(.+)$/))) return json(res, 200, { deleted: 0, agent: decodeURIComponent(m[1]) });
   } catch (e) { return json(res, 400, { error: e.message }); }
-  if (req.method === 'GET' && p === '/config/mix') return json(res, 200, { mix: engine.getMix() });
-  if (req.method === 'PUT' && p === '/config/mix') { const b = await body(req); const mix = { quality: +b.quality, productivity: +b.productivity, adherence: +b.adherence }; const v = engine.setMix(mix); return v.ok ? json(res, 200, { mix, warning: v.message || undefined }) : json(res, 400, { error: v.message }); }
+  if (req.method === 'GET' && p === '/config/mix') return json(res, 200, await engine.mixInfo());
+  if (req.method === 'PUT' && p === '/config/mix') { const b = await body(req); const team = (req.url.split('?')[1] || '').includes('team='); if (team && b.useDefault) return json(res, 200, await engine.clearMix()); const r = await engine.saveMix({ quality: +b.quality, productivity: +b.productivity, adherence: +b.adherence }, team ? 'team' : 'default'); return r.ok ? json(res, 200, Object.assign(await engine.mixInfo(), { warning: r.message || undefined })) : json(res, 400, { error: r.message }); }
+  if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/best$/))) return json(res, 200, await engine.best(decodeURIComponent(m[1])));
+  if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/prefs$/))) return json(res, 200, { prefs: await engine.prefs(decodeURIComponent(m[1])) });
+  if (req.method === 'PUT' && (m = p.match(/^\/agents\/(.+)\/prefs$/))) return json(res, 200, { prefs: await engine.savePrefs(decodeURIComponent(m[1]), await body(req)) });
   if (req.method === 'POST' && p === '/kudos') { const b = await body(req); const a = engine.byId(b.to); if (!a || !b.note) return json(res, 400, { error: 'to and note are required' }); if (b.fromId && b.fromId === b.to) return json(res, 400, { error: 'kudos go to a teammate, not to yourself' }); const r = engine.ingest({ EventType: 'KUDOS', AgentARN: a.id, EventTimestamp: new Date().toISOString(), From: b.from || 'A teammate', Note: String(b.note).slice(0, 140) }); return json(res, 201, { ok: true, points: r.points }); }
   if (req.method === 'GET' && p === '/health') return json(res, 200, { ok: true });
   return json(res, 404, { error: 'not found' });

@@ -22,13 +22,7 @@ async function readObject(bucket, key) {
   return JSON.parse(await r.Body.transformToString());
 }
 
-let mixCache = { at: 0, mix: Arena.DEFAULT_MIX };
-async function currentMix() {
-  if (Date.now() - mixCache.at < 60000) return mixCache.mix;
-  try { mixCache = { at: Date.now(), mix: (await store.getMix()) || Arena.DEFAULT_MIX }; }
-  catch (e) { mixCache.at = Date.now(); }
-  return mixCache.mix;
-}
+const { mixFor } = require('./mix.js');   // the team's scoring profile, or the default
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -72,7 +66,6 @@ function objects(event) {
 }
 
 exports.handler = async (event) => {
-  const mix = await currentMix();
   let scored = 0, skipped = 0;
   for (const { bucket, key } of objects(event)) {
     if (!key.endsWith('.json')) { skipped++; continue; }
@@ -81,7 +74,7 @@ exports.handler = async (event) => {
     if (!ev) { console.warn('no score in', key); skipped++; continue; }
     const live = await store.getLive(ev.AgentARN);
     if (live) { ev.Team = live.team; ev.Username = live.username; }
-    const points = Arena.scoreEvent('EVALUATION_SUBMITTED', ev, mix);
+    const points = Arena.scoreEvent('EVALUATION_SUBMITTED', ev, await mixFor(store, ev.Team));
     const applied = await store.apply(store.planWrites(ev, points));
     if (applied) scored++; else { skipped++; console.info('duplicate evaluation', doc.evaluationId); }
   }

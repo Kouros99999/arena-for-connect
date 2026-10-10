@@ -15,6 +15,7 @@
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 const clock = require('./clock.js');
+const { mixFor } = require('./mix.js');
 
 const METRICS = ['AGENT_SCHEDULE_ADHERENCE', 'AGENT_ADHERENT_TIME', 'AGENT_SCHEDULED_TIME'];
 
@@ -70,7 +71,6 @@ async function runFor(now, deps) {
   if (!live.length) return { day, agents: 0, scored: 0 };
   const bounds = clock.dayBounds(day);
   const endIso = new Date(bounds.end - 1000).toISOString();   // the last second of the local day, so the day row is yesterday's
-  const mix = (await s.getMix()) || Arena.DEFAULT_MIX;
   const byInstance = new Map();
   for (const r of live) { const p = splitAgentArn(r.pk.replace(/^AGENT#/, '')); if (!byInstance.has(p.instanceArn)) byInstance.set(p.instanceArn, []); byInstance.get(p.instanceArn).push({ live: r, ...p }); }
   let scored = 0, noSchedule = 0, points = 0;
@@ -88,7 +88,7 @@ async function runFor(now, deps) {
       for (const a of chunk) {
         const ev = toEvent(a.live, day, byAgent[a.agentId], endIso);
         if (!ev) { noSchedule++; continue; }
-        const pts = Arena.scoreEvent('ADHERENCE_SCORED', ev, mix);
+        const pts = Arena.scoreEvent('ADHERENCE_SCORED', ev, await mixFor(s, ev.Team));
         if (await s.apply(store.planWrites(ev, pts, nowMs)) !== false) { scored++; points += pts; }
       }
     }

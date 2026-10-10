@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.8.0",
+    "date": "2026-10-10",
+    "title": "Scoring profiles per team and a personal-best view",
+    "summary": "Each team can be scored on its own mix, and an agent can choose to measure against their own record instead of the team.",
+    "changes": [
+      "Per-team scoring profiles: the console's scoring mix card now saves for every team (the default) or for this team only, shows which one applies, and can put a team back on the default. Every event is scored with its team's mix.",
+      "Personal-best mode: a tick box above the leaderboard in the agent panel swaps the team board for the agent's own record: today against their best day, this week against their best week, and their average active day. The header shows the percentage of their best day instead of a rank. The choice is saved on the agent's profile.",
+      "The agent's points feed names schedule adherence lines with the percentage."
+    ],
+    "upgrade": [
+      "No action is needed. The existing mix becomes the default for every team; no team has its own profile until a supervisor saves one.",
+      "Personal-best mode reads the agent's day rows, which the stack keeps for 90 days, so records go back at most that far."
+    ],
+    "docs": [
+      "how-scoring-works"
+    ]
+  },
+  {
     "version": "0.7.0",
     "date": "2026-10-10",
     "title": "Schedule adherence, reward budgets, and your own time zone",

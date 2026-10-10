@@ -21,8 +21,14 @@ function fakeStore() {
     kudosCounts: {},
     bumpKudosCount: async function (sender, day, limit) { const k = sender + '#' + day; if ((this.kudosCounts[k] || 0) >= limit) return false; this.kudosCounts[k] = (this.kudosCounts[k] || 0) + 1; return true; },
     listEvents: async (arn, limit) => { calls.push(['listEvents', arn, limit]); return [{ EventType: 'KUDOS', EventTimestamp: 'x', points: 8, From: 'm', Note: 'n' }]; },
-    getMix: async () => null,
-    putMix: async (m) => { calls.push(['putMix', m]); },
+    mixes: {},
+    getMix: async function (team) { return (team && this.mixes[team]) || this.mixes[''] || null; },
+    getMixes: async function (team) { return { team: (team && this.mixes[team]) || null, default: this.mixes[''] || null }; },
+    putMix: async function (m, team) { this.mixes[team || ''] = m; calls.push(['putMix', m, team]); },
+    deleteMix: async function (team) { delete this.mixes[team]; calls.push(['deleteMix', team]); },
+    live: {}, getLive: async function (arn) { return this.live[arn] || null; },
+    putAgentPrefs: async function (arn, prefs) { if (!this.live[arn]) return false; this.live[arn].prefs = prefs; return true; },
+    getAgentDays: async (arn, from, to) => [{ sk: 'DAY#2026-09-08', points: 300 }, { sk: 'DAY#2026-09-09', points: 120 }, { sk: 'DAY#2026-09-15', points: 118 }].filter((r) => r.sk.slice(4) >= from && r.sk.slice(4) <= to),
     budget: null, spend: {},
     getBudget: async function () { return this.budget; }, putBudget: async function (team, monthly) { this.budget = { monthly }; },
     getSpend: async function (team, month) { return this.spend[month] || { spent: 0, alerted: [] }; },
@@ -455,4 +461,44 @@ test('a requested date is a local day in the stack time zone', async () => {
   const b = JSON.parse(r.body);
   assert.equal(b.date, '2026-09-14'); assert.equal(b.week, '2026-W38'); assert.equal(b.timezone, 'UTC');
   assert.equal(s.calls[0][2], '2026-09-14T12:00:00.000Z');
+});
+
+test('scoring profiles: a team can have its own mix, otherwise the default applies; supervisors only', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  const supReq = (method, path, body, team) => Object.assign(req(method, path), { body: JSON.stringify(body || {}), queryStringParameters: team ? { team } : undefined });
+  let b = JSON.parse((await h(supReq('GET', '/config/mix', null, 'Billing'))).body);
+  assert.equal(b.source, 'default'); assert.deepEqual(b.mix, { quality: 50, productivity: 35, adherence: 15 });
+  // Default for everyone, then a profile for Billing only.
+  assert.equal((await h(supReq('PUT', '/config/mix', { quality: 60, productivity: 30, adherence: 10 }))).statusCode, 200);
+  b = JSON.parse((await h(supReq('PUT', '/config/mix', { quality: 35, productivity: 50, adherence: 15 }, 'Billing'))).body);
+  assert.equal(b.source, 'team'); assert.equal(b.mix.quality, 35); assert.equal(b.default.quality, 60); assert.match(b.warning, /rushing/);
+  assert.equal(JSON.parse((await h(supReq('GET', '/config/mix', null, 'Sales'))).body).mix.quality, 60, 'other teams get the default');
+  assert.equal(JSON.parse((await h(supReq('GET', '/config/mix', null, 'Billing'))).body).mix.quality, 35);
+  // An agent may read their own team's mix, not another's, and may not write.
+  const agent = (team, method, path) => Object.assign(anon(method, path), { queryStringParameters: { team }, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'custom:team': 'Billing' } } } } });
+  assert.equal((await h(agent('Billing', 'GET', '/config/mix'))).statusCode, 200);
+  assert.equal((await h(agent('Sales', 'GET', '/config/mix'))).statusCode, 403);
+  assert.equal((await h(Object.assign(agent('Billing', 'PUT', '/config/mix'), { body: '{"quality":50,"productivity":35,"adherence":15}' }))).statusCode, 403);
+  // Back to the default.
+  b = JSON.parse((await h(supReq('PUT', '/config/mix', { useDefault: true }, 'Billing'))).body);
+  assert.equal(b.source, 'default'); assert.equal(b.mix.quality, 60); assert.ok(s.calls.some((c) => c[0] === 'deleteMix' && c[1] === 'Billing'));
+  assert.equal((await h(supReq('PUT', '/config/mix', { quality: 50, productivity: 40, adherence: 15 }, 'Billing'))).statusCode, 400, 'must add to 100');
+});
+
+test('personal best: an agent reads their own record and switches their panel; others may not', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  s.live.a1 = { pk: 'AGENT#a1', team: 't' };
+  const me = (method, path, body) => Object.assign(anon(method, path), { body: body ? JSON.stringify(body) : undefined, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } });
+  let r = await h(me('GET', '/agents/a1/best'));
+  assert.equal(r.statusCode, 200);
+  const b = JSON.parse(r.body);
+  assert.equal(b.today, '2026-09-15'); assert.deepEqual(b.bestDay, { day: '2026-09-08', points: 300 }); assert.equal(b.todayPoints, 118); assert.equal(b.dayPct, 39);
+  assert.equal(b.bestWeek.week, '2026-W37'); assert.equal(b.bestWeek.points, 420); assert.equal(b.weekPoints, 118); assert.equal(b.avgDay, 210); assert.equal(b.activeDays, 3);
+  assert.equal((await h(me('GET', '/agents/a2/best'))).statusCode, 403);
+  assert.equal(JSON.parse((await h(me('GET', '/agents/a1/prefs'))).body).prefs.personalBest, false);
+  r = await h(me('PUT', '/agents/a1/prefs', { personalBest: true }));
+  assert.equal(r.statusCode, 200); assert.equal(JSON.parse(r.body).prefs.personalBest, true); assert.equal(s.live.a1.prefs.personalBest, true);
+  assert.equal((await h(me('PUT', '/agents/a2/prefs', { personalBest: true }))).statusCode, 403);
+  assert.equal((await h(Object.assign(req('PUT', '/agents/a9/prefs'), { body: '{"personalBest":true}' }))).statusCode, 404, 'unknown agent');
+  assert.equal((await h(req('GET', '/agents/a1/best'))).statusCode, 200, 'supervisors may look');
 });

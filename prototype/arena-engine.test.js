@@ -227,3 +227,17 @@ test('reward budget maths', () => {
   assert.deepEqual(Arena.budgetAlerts(10000, 12000, [25, 50, 75]), [100]);
   assert.deepEqual(Arena.budgetAlerts(0, 12000, []), []);
 });
+
+test('personal best compares an agent with their own record', () => {
+  const rows = [{ day: '2026-09-07', points: 200 }, { day: '2026-09-08', points: 300 }, { day: '2026-09-09', points: 0 }, { day: '2026-09-14', points: 150 }, { day: '2026-09-15', points: 120 }];
+  const b = Arena.personalBest(rows, '2026-09-15');
+  assert.deepEqual(b.bestDay, { day: '2026-09-08', points: 300 });
+  assert.deepEqual(b.bestWeek, { week: '2026-W37', points: 500 });
+  assert.equal(b.todayPoints, 120); assert.equal(b.weekPoints, 270); assert.equal(b.dayPct, 40); assert.equal(b.weekPct, 54);
+  assert.equal(b.avgDay, 217); assert.equal(b.activeDays, 4); assert.equal(b.newBestDay, false);
+  const fresh = Arena.personalBest([{ day: '2026-09-15', points: 50 }], '2026-09-15');
+  assert.equal(fresh.newBestDay, false, 'a first day is not a record'); assert.equal(fresh.avgDay, null);
+  const record = Arena.personalBest([{ day: '2026-09-14', points: 50 }, { day: '2026-09-15', points: 90 }], '2026-09-15');
+  assert.equal(record.newBestDay, true); assert.equal(record.dayPct, 100);
+  assert.equal(Arena.isoWeek('2026-09-15'), '2026-W38');
+});

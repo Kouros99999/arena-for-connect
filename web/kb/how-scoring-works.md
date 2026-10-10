@@ -21,6 +21,8 @@ A quick contact earns a little. A good evaluation earns a lot. That is deliberat
 
 Supervisors tune three weights in the console that must add to 100%: quality, productivity and adherence. The default is 50, 35 and 15.
 
+The mix can differ by team. The console's scoring mix card shows which mix applies to the team on screen and has a **Save for** choice: *every team* changes the default, *this team only* gives that team its own profile. A chat team can weight productivity higher while an escalations team weights quality higher. **Use the default again** removes a team's profile. Points already scored keep the mix they were scored with.
+
 - Quality scales evaluations, customer sentiment and survey points.
 - Productivity scales contact points.
 - Adherence scales schedule adherence points. They exist only when the stack's `ScheduleAdherence` setting is enabled and your Connect instance has scheduling turned on; otherwise the slider changes nothing.
@@ -40,6 +42,10 @@ The agent panel shows points for today and for this week. Rewards are priced aga
 ## Schedule adherence
 
 Amazon Connect measures adherence itself when forecasting, capacity planning and scheduling are enabled on the instance. With `ScheduleAdherence` enabled on the stack, Arena reads yesterday's adherence for every known agent shortly after midnight and books one line per agent: the adherence percentage and the hours spent on schedule. Points are 5 per adherent hour at the default mix, weighted by the adherence slider, and are never negative. An agent with no schedule that day gets no line and no penalty. Adherence is also a measure a race or head-to-head can run on, and the results report shows the team's average.
+
+## Your own best
+
+An agent who would rather not race the team can tick **my own best** above the leaderboard in their panel. The panel then shows today against their best day on record and this week against their best week, with their average active day, and the rank in the header becomes a percentage of their best day. The choice is saved on their profile and only they and supervisors see the view. They still count in team totals and on the supervisor's leaderboard, since those are team data; the change is to what the agent is shown.
 
 ## Flags
 

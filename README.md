@@ -20,6 +20,7 @@ Agent engagement add-on for Amazon Connect: a live leaderboard panel inside the 
 | `lambda/src/api.js` | HTTP API: team agents, agent events, scoring mix, kudos, challenges, rewards and budgets, history, coaching, metric import |
 | `lambda/src/adherence.js` | Nightly schedule adherence import from Connect (GetMetricDataV2) |
 | `lambda/src/clock.js` | Local time: day, week and month keys in the stack's Timezone |
+| `lambda/src/mix.js` | Which scoring mix applies to a team, cached |
 | `lambda/src/store.js` | Single-table DynamoDB layer |
 | `lambda/template.yaml` | SAM stack: stream, table, both Lambdas, API, optional JWT auth |
 | `web/` | Public site for arenaforconnect.com: landing page, support, privacy policy (deployed with the demo by GitHub Pages) |
@@ -39,7 +40,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/clock.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -126,6 +127,10 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 ## Operations
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
+
+**Scoring profiles.** `CONFIG / MIX` is the default mix and `CONFIG / MIX#<team>` a team's own; `lambda/src/mix.js` resolves which applies (team, then default, then the engine's built-in weights) with a one-minute cache per team, and every stream handler scores with the event's team. `GET/PUT /config/mix?team=T` reads and writes a profile, `{ useDefault: true }` removes it.
+
+**Personal best.** `GET /agents/{arn}/best` reads the agent's day rows and returns their best day and week, average active day and how today compares (`Arena.personalBest`, shared with the browser). `PUT /agents/{arn}/prefs { personalBest }` stores the panel preference on the LIVE row. Agents reach only their own; supervisors any.
 
 **Time zone.** `Timezone` (an IANA name, default `UTC`) decides when a day, an ISO week and a month begin for day rows, streaks, challenge dates, the digest hour and reward budgets; `lambda/src/clock.js` is the only place that knows. Jobs that act "once a day" run hourly and act on the first run after local midnight.
 

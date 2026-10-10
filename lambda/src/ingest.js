@@ -16,13 +16,7 @@
 const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 
-let mixCache = { at: 0, mix: Arena.DEFAULT_MIX };
-async function currentMix() {
-  if (Date.now() - mixCache.at < 60000) return mixCache.mix;
-  try { mixCache = { at: Date.now(), mix: (await store.getMix()) || Arena.DEFAULT_MIX }; }
-  catch (e) { mixCache.at = Date.now(); }
-  return mixCache.mix;
-}
+const { mixFor } = require('./mix.js');   // the team's scoring profile, or the default
 
 /** Turn one raw Connect agent event into zero or more Arena events. Pure, so it is unit-testable. */
 function translate(raw) {
@@ -76,14 +70,13 @@ function translateContactRecord(raw, attribute) {
 function decode(record) { return JSON.parse(Buffer.from(record.kinesis.data, 'base64').toString('utf8')); }
 
 exports.handler = async (event) => {
-  const mix = await currentMix();
   const failures = [];
   for (const record of event.Records || []) {
     try {
       const raw = decode(record);
       for (const ev of isContactRecord(raw) ? translateContactRecord(raw) : translate(raw)) {
         if (!ev.Team) { const live = await store.getLive(ev.AgentARN); if (live) { ev.Team = live.team; ev.Username = ev.Username || live.username; } }
-        await store.apply(store.planWrites(ev, Arena.scoreEvent(ev.EventType, ev, mix)));
+        await store.apply(store.planWrites(ev, Arena.scoreEvent(ev.EventType, ev, await mixFor(store, ev.Team))));
       }
     } catch (err) {
       console.error('record failed', record.kinesis && record.kinesis.sequenceNumber, err);

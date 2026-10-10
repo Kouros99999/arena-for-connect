@@ -90,6 +90,66 @@
     { id: 'parking', name: 'Prime parking spot, one week', cost: 1500 },
   ];
 
+  /** ISO week (YYYY-Www) of a YYYY-MM-DD. Pure date arithmetic. */
+  function isoWeek(day) {
+    const d = new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)));
+    const wd = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - wd);
+    const y = d.getUTCFullYear();
+    return `${y}-W${String(Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7)).padStart(2, '0')}`;
+  }
+  /**
+   * Personal best: an agent measured against their own history instead of the team. Pure.
+   * rows: [{ day: 'YYYY-MM-DD', points }] over the window. Returns the best day and week on record,
+   * the average active day, and how today and this week compare (today's row is included in rows).
+   */
+  function personalBest(rows, today) {
+    const days = (rows || []).filter((r) => r && r.day && (r.points || 0) > 0);
+    const week = isoWeek(today);
+    const bestDay = days.reduce((b, r) => (!b || r.points > b.points ? { day: r.day, points: r.points } : b), null);
+    const weeks = new Map();
+    for (const r of days) { const w = isoWeek(r.day); weeks.set(w, (weeks.get(w) || 0) + r.points); }
+    let bestWeek = null;
+    for (const [w, points] of weeks) if (!bestWeek || points > bestWeek.points) bestWeek = { week: w, points };
+    const todayPoints = (days.find((r) => r.day === today) || {}).points || 0, weekPoints = weeks.get(week) || 0;
+    const prior = days.filter((r) => r.day !== today);
+    const avgDay = prior.length ? Math.round(prior.reduce((s, r) => s + r.points, 0) / prior.length) : null;
+    return { today, week, todayPoints, weekPoints, bestDay, bestWeek, avgDay, activeDays: days.length,
+      dayPct: bestDay ? Math.min(100, Math.round((todayPoints / bestDay.points) * 100)) : 0,
+      weekPct: bestWeek ? Math.min(100, Math.round((weekPoints / bestWeek.points) * 100)) : 0,
+      newBestDay: !!bestDay && bestDay.day === today && prior.length > 0, newBestWeek: !!bestWeek && bestWeek.week === week && weeks.size > 1 };
+  }
+
+  /** ISO week (YYYY-Www) of a YYYY-MM-DD. Pure date arithmetic. */
+  function isoWeek(day) {
+    const d = new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)));
+    const wd = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - wd);
+    const y = d.getUTCFullYear();
+    return `${y}-W${String(Math.ceil(((d - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7)).padStart(2, '0')}`;
+  }
+  /**
+   * Personal best: an agent measured against their own history instead of the team. Pure.
+   * rows: [{ day: 'YYYY-MM-DD', points }] over the window. Returns the best day and week on record,
+   * the average active day, and how today and this week compare (today's row is included in rows).
+   */
+  function personalBest(rows, today) {
+    const days = (rows || []).filter((r) => r && r.day && (r.points || 0) > 0);
+    const week = isoWeek(today);
+    const bestDay = days.reduce((b, r) => (!b || r.points > b.points ? { day: r.day, points: r.points } : b), null);
+    const weeks = new Map();
+    for (const r of days) { const w = isoWeek(r.day); weeks.set(w, (weeks.get(w) || 0) + r.points); }
+    let bestWeek = null;
+    for (const [w, points] of weeks) if (!bestWeek || points > bestWeek.points) bestWeek = { week: w, points };
+    const todayPoints = (days.find((r) => r.day === today) || {}).points || 0, weekPoints = weeks.get(week) || 0;
+    const prior = days.filter((r) => r.day !== today);
+    const avgDay = prior.length ? Math.round(prior.reduce((s, r) => s + r.points, 0) / prior.length) : null;
+    return { today, week, todayPoints, weekPoints, bestDay, bestWeek, avgDay, activeDays: days.length,
+      dayPct: bestDay ? Math.min(100, Math.round((todayPoints / bestDay.points) * 100)) : 0,
+      weekPct: bestWeek ? Math.min(100, Math.round((weekPoints / bestWeek.points) * 100)) : 0,
+      newBestDay: !!bestDay && bestDay.day === today && prior.length > 0, newBestWeek: !!bestWeek && bestWeek.week === week && weeks.size > 1 };
+  }
+
   /** Where a team's monthly reward budget stands. Pure; the same shape is returned by the API and the demo. */
   function budgetSummary(monthly, spent, month) {
     monthly = Math.max(0, Math.round(Number(monthly) || 0)); spent = Math.max(0, Math.round(Number(spent) || 0));
@@ -378,7 +438,7 @@
     const listeners = [];
     const byId = (id) => agents.find((a) => a.id === id);
     // In-memory challenges, rewards and kudos feed. The remote engine replaces these with API calls.
-    const local = { challenges: [], rewards: [], kudos: [], coaching: [] };
+    const local = { challenges: [], rewards: [], kudos: [], coaching: [], prefs: {} };
     const newId = () => Math.random().toString(36).slice(2, 10);
     const withProgress = (ch) => Object.assign({}, ch, { progress: challengeProgress(ch, agents) });
 
@@ -512,6 +572,14 @@
       leaderboard, stats, preview,
       getMix: () => Object.assign({}, mix),
       setMix: (m) => { const v = validateMix(m); if (v.ok) mix = Object.assign({}, m); return v; },
+      // Scoring profiles: the demo has one team, so "this team" and "the default" are the same mix.
+      mixInfo: async () => ({ mix: Object.assign({}, mix), source: local.ownMix ? 'team' : 'default', team: 'Billing team', default: Object.assign({}, local.defaultMix || mix) }),
+      saveMix: async (m, scope) => { const v = validateMix(m); if (!v.ok) return { ok: false, message: v.message }; mix = Object.assign({}, m); if (scope === 'team') local.ownMix = true; else { local.ownMix = false; local.defaultMix = Object.assign({}, m); } return { ok: true, message: v.message || '' }; },
+      clearMix: async () => { local.ownMix = false; if (local.defaultMix) mix = Object.assign({}, local.defaultMix); return { mix: Object.assign({}, mix), source: 'default' }; },
+      // Personal best from the demo's synthetic history, plus today's live points.
+      best: async (agentId) => { const id = agentId || agents[0].id, today = new Date().toISOString().slice(0, 10); const rows = syntheticHistory(agents, 60).map((d) => { const r = d.rows.find((x) => x.id === id); return { day: d.date, points: r ? r.points : 0 }; }); const a = byId(id); const t = rows.find((r) => r.day === today); if (t && a) t.points = a.today; return personalBest(rows, today); },
+      prefs: async (agentId) => Object.assign({ personalBest: false }, local.prefs[agentId] || {}),
+      savePrefs: async (agentId, p) => { local.prefs[agentId] = Object.assign({}, local.prefs[agentId] || {}, p); return local.prefs[agentId]; },
       flags: (a) => flagsFor(a, agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget,
@@ -625,13 +693,21 @@
       const r = await fetch(`${base}/agents/${encodeURIComponent(agentId)}/events?limit=${limit || 10}`, { headers: await headersFor() });
       return r.ok ? (await r.json()).events : [];
     }
-    async function loadMix() { const r = await fetch(`${base}/config/mix`, { headers: await headersFor() }); if (r.ok) mix = (await r.json()).mix; return mix; }
-    async function saveMix(m) {
-      const r = await fetch(`${base}/config/mix`, { method: 'PUT', headers: await headersFor(), body: JSON.stringify(m) });
+    const mixPath = () => `${base}/config/mix` + (team ? '?team=' + encodeURIComponent(team) : '');
+    /** The mix that applies to this team, with where it comes from: { mix, source: 'team'|'default', team, default }. */
+    async function mixInfo() { const r = await fetch(mixPath(), { headers: await headersFor() }); if (!r.ok) throw new Error('arena api ' + r.status); const info = await r.json(); mix = info.mix; return info; }
+    async function loadMix() { return (await mixInfo()).mix; }
+    /** scope 'team' saves a profile for this team only; anything else updates the stack-wide default. */
+    async function saveMix(m, scope) {
+      const r = await fetch(scope === 'team' ? mixPath() : `${base}/config/mix`, { method: 'PUT', headers: await headersFor(), body: JSON.stringify(m) });
       const body = await r.json();
-      if (r.ok) mix = body.mix;
+      if (r.ok && (scope === 'team' || body.source !== 'team')) mix = body.mix;
       return { ok: r.ok, message: body.error || body.warning || '' };
     }
+    const clearMix = async () => { const info = await call('PUT', mixPath(), { useDefault: true }); mix = info.mix; return info; };
+    const best = async (agentId) => call('GET', `${base}/agents/${encodeURIComponent(agentId)}/best`);
+    const prefs = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/prefs`)).prefs;
+    const savePrefs = async (agentId, p) => (await call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/prefs`, p)).prefs;
     async function kudos(to, note, from, fromId) {
       const a = engine.byId(to);
       const r = await fetch(`${base}/kudos`, { method: 'POST', headers: await headersFor(), body: JSON.stringify({ to, note, team, fromId, toName: a && a.name, toUsername: a && a.username }) });
@@ -672,7 +748,7 @@
 
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
-      remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, kudos, start, stop,
+      remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
       challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
@@ -710,6 +786,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

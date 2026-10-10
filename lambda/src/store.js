@@ -113,7 +113,7 @@ async function queryGsi(gsi1pk) {
 function mergeTeam(live, day, week) {
   const byArn = new Map();
   const get = (pk) => { if (!byArn.has(pk)) byArn.set(pk, { id: pk.replace(/^AGENT#/, ''), today: 0, week: 0, handled: 0, ahtSum: 0, evals: [], autofails: 0, kudosReceived: 0, escalations: 0, streak: 0, adherenceHours: 0, state: 'Offline', lastEvent: 0 }); return byArn.get(pk); };
-  for (const r of live) { const a = get(r.pk); a.name = r.displayName || r.username; a.username = r.username; a.state = r.agentState || 'Offline'; a.lastEvent = r.lastEvent ? Date.parse(r.lastEvent) : 0; a.streak = r.streak || 0; a.team = r.team; }
+  for (const r of live) { const a = get(r.pk); a.name = r.displayName || r.username; a.username = r.username; a.state = r.agentState || 'Offline'; a.lastEvent = r.lastEvent ? Date.parse(r.lastEvent) : 0; a.streak = r.streak || 0; a.team = r.team; a.personalBest = !!(r.prefs && r.prefs.personalBest); }
   for (const r of day) { const a = get(r.pk); Object.assign(a, { today: r.points || 0, handled: r.handled || 0, ahtSum: r.ahtSum || 0, evals: r.evals || [], autofails: r.autofails || 0, kudosReceived: r.kudosReceived || 0, escalations: r.escalations || 0,
     sentSum: r.sentSum || 0, sentCount: r.sentCount || 0, csatSum: r.csatSum || 0, csatCount: r.csatCount || 0, adherenceHours: r.adherenceHours || 0, adhSum: r.adhSum || 0, adhCount: r.adhCount || 0 }); a.name = a.name || r.username; }
   for (const r of week) { const a = get(r.pk); a.week = r.points || 0; a.name = a.name || r.username; }
@@ -314,15 +314,33 @@ async function markBudgetAlert(team, month, pct) {
 async function getMark(job, day) { const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'MARK', sk: job + '#' + day } })); return r.Item || null; }
 async function putMark(job, day, fields) { await db().send(new cmds.PutCommand({ TableName: TABLE, Item: Object.assign({ pk: 'MARK', sk: job + '#' + day, job, day, at: new Date().toISOString(), ttl: Math.floor(Date.now() / 1000) + 14 * 86400 }, fields || {}) })); }
 
-async function getMix() {
-  const r = await db().send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'MIX' } }));
-  return r.Item ? r.Item.mix : null;
+// ---------- scoring mix: a stack-wide default (CONFIG / MIX) and optional per-team profiles (CONFIG / MIX#team) ----------
+const mixKey = (team) => (team ? 'MIX#' + team : 'MIX');
+/** { team: mix|null, default: mix|null } so callers can tell which one applies. */
+async function getMixes(team) {
+  const d = db();
+  const def = await d.send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: 'MIX' } }));
+  const own = team ? await d.send(new cmds.GetCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: mixKey(team) } })) : { Item: null };
+  return { team: own.Item ? own.Item.mix : null, default: def.Item ? def.Item.mix : null };
 }
-async function putMix(mix) {
-  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: 'MIX', mix, updatedAt: new Date().toISOString() } }));
+/** The mix that applies to a team: its own profile, else the default, else null (the engine's built-in weights). */
+async function getMix(team) { const m = await getMixes(team); return m.team || m.default || null; }
+async function putMix(mix, team) {
+  await db().send(new cmds.PutCommand({ TableName: TABLE, Item: { pk: 'CONFIG', sk: mixKey(team), team: team || undefined, mix, updatedAt: new Date().toISOString() } }));
+}
+async function deleteMix(team) {
+  if (!team) return;
+  await db().send(new cmds.DeleteCommand({ TableName: TABLE, Key: { pk: 'CONFIG', sk: mixKey(team) } }));
+}
+/** Per-agent preferences on the LIVE row (personal-best mode). Returns false when the agent is unknown. */
+async function putAgentPrefs(arn, prefs) {
+  try {
+    await db().send(new cmds.UpdateCommand({ TableName: TABLE, Key: { pk: keys.agent(arn), sk: 'LIVE' }, UpdateExpression: 'SET prefs = :p', ExpressionAttributeValues: { ':p': prefs }, ConditionExpression: 'attribute_exists(pk)' }));
+    return true;
+  } catch (e) { if (e.name === 'ConditionalCheckFailedException') return false; throw e; }
 }
 
-module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, putMix, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
+module.exports = { TABLE, dayKey, weekKey, keys, planWrites, apply, getLive, getTeam, mergeTeam, listEvents, getMix, getMixes, putMix, deleteMix, putAgentPrefs, getBudget, putBudget, getSpend, addSpend, markBudgetAlert, getMark, putMark,
   getContact, getTeamLive, getTeamDays, getAgentDays, bumpKudosCount, getNotify, putNotify, getDigestMark, putDigestMark, listTeams,
   listTeamItems, putTeamItem, getTeamItem, updateTeamItem, spendPoints, scanLive, getMeter, putMeter,
   agentRowKeys, deleteKeys, deleteAgent, putKiosk, getKiosk, listKiosks, deleteKiosk, scanLiveFull, getDay, setStreak };
