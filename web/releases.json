@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.15.0",
+    "date": "2026-10-10",
+    "title": "Arena on your phone",
+    "summary": "The console, report and panel install as an app from the browser on iPhone and Android, open offline, and lay out for a phone screen.",
+    "changes": [
+      "Installable: Add to Home Screen on iPhone or Install app on Android puts Arena on the phone with its own icon and a full-screen window; shortcuts to the report, panel and wallboard are on the icon's long-press menu.",
+      "Offline shell: the pages open without a connection and say when the API cannot be reached; a new version is picked up on the next open.",
+      "Phone layout for the console and report: one column, a sideways-scrolling leaderboard, and dialogs that fit the screen."
+    ],
+    "upgrade": [
+      "No action is needed. The install option appears once the stack is updated; existing bookmarks keep working."
+    ],
+    "docs": [
+      "mobile"
+    ]
+  },
+  {
     "version": "0.14.0",
     "date": "2026-10-10",
     "title": "Light or dark, your colours, your logo",

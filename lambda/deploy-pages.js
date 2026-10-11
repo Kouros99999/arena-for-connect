@@ -19,7 +19,7 @@ if (!bucket || !dist) { console.error('stack has no SiteBucket/DistributionId ou
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'arena-site-'));
 const src = path.join(__dirname, '..', 'prototype');
-for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'report.html', 'arena-engine.js', 'arena-auth.js']) fs.copyFileSync(path.join(src, f), path.join(tmp, f));
+for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'report.html', 'arena-engine.js', 'arena-auth.js', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png', 'apple-touch-icon.png']) fs.copyFileSync(path.join(src, f), path.join(tmp, f));
 const config = { api: '/api', team };
 if (out('AuthDomain') && out('UserPoolClientId')) config.auth = { domain: out('AuthDomain'), clientId: out('UserPoolClientId') };
 fs.writeFileSync(path.join(tmp, 'config.js'), `window.ARENA_CONFIG = ${JSON.stringify(config)};\n`);
@@ -46,6 +46,8 @@ console.log('uploading to s3://' + bucket);
 // Short browser cache so a redeploy shows up within a minute; CloudFront is invalidated below anyway.
 aws('s3', 'sync', tmp, 's3://' + bucket, '--delete', '--cache-control', 'public, max-age=60', '--exclude', '*', '--include', '*.html', '--content-type', 'text/html; charset=utf-8');
 aws('s3', 'sync', tmp, 's3://' + bucket, '--cache-control', 'public, max-age=60', '--exclude', '*', '--include', '*.js', '--content-type', 'text/javascript; charset=utf-8');
+aws('s3', 'sync', tmp, 's3://' + bucket, '--cache-control', 'public, max-age=60', '--exclude', '*', '--include', '*.png', '--content-type', 'image/png');
+aws('s3', 'cp', path.join(tmp, 'manifest.webmanifest'), 's3://' + bucket + '/manifest.webmanifest', '--cache-control', 'public, max-age=60', '--content-type', 'application/manifest+json');
 // config.js must never be cached long: it is what an operator changes.
 aws('s3', 'cp', path.join(tmp, 'config.js'), 's3://' + bucket + '/config.js', '--cache-control', 'no-cache', '--content-type', 'text/javascript');
 console.log('invalidating', dist);

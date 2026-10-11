@@ -5,7 +5,7 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const Arena = require('./arena-engine.js');
 const root = __dirname, port = +(process.env.PORT || 8765);
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
 // ---- mock API state ----
 const engine = Arena.seedTeam(Arena.createEngine());

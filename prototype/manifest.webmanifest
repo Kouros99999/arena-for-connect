@@ -1,0 +1,21 @@
+{
+  "name": "Arena for Amazon Connect",
+  "short_name": "Arena",
+  "description": "Supervisor console, results report, agent panel and wallboard for Arena.",
+  "start_url": "./supervisor-console.html?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#EEF0F3",
+  "theme_color": "#232F3E",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Results report", "url": "./report.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Agent panel", "url": "./agent-panel.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Wallboard", "url": "./wallboard.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}

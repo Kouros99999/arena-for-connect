@@ -48,6 +48,12 @@
     "updated": "0.5.0"
   },
   {
+    "slug": "mobile",
+    "title": "Arena on your phone",
+    "summary": "Install the console, report and panel on an iPhone or Android phone from the browser, with no app store.",
+    "updated": "0.15.0"
+  },
+  {
     "slug": "branding-and-themes",
     "title": "Look and feel: themes and your logo",
     "summary": "Light or dark per person, your company name, colours and logo on every page, and wallboard text size and contrast.",
