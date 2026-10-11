@@ -6,6 +6,12 @@
     "updated": "0.9.0"
   },
   {
+    "slug": "implementation-guide",
+    "title": "Implementation guide for partners",
+    "summary": "A half-day runbook for integrators deploying Arena for a client: questions to ask, launch settings, data, workspace app, sign-ins, configuration and handover.",
+    "updated": "0.16.0"
+  },
+  {
     "slug": "how-scoring-works",
     "title": "How scoring works",
     "summary": "Where points come from, why quality outweighs speed, and what the scoring mix changes.",

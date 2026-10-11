@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arena partners: implement, resell or refer Arena for Amazon Connect</title>
+<meta name="description" content="How consultancies, Amazon Connect integrators and resellers work with Arena: implement it for clients, resell it through AWS Marketplace, or refer it. Everything a partner needs is public.">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css?v=8">
+<style>
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;margin:1.2rem 0}
+.role{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.1rem}
+.role h3{margin:0 0 .4rem}
+.role p{margin:0 0 .5rem;color:var(--ink-2);font-size:.97rem}
+.role .who{font-size:.85rem;color:var(--muted)}
+.steps-list li{margin:.35rem 0}
+.callout{background:var(--brand-soft);border-radius:10px;padding:1rem 1.2rem;margin:1.4rem 0}
+</style>
+<header class="site"><div class="wrap">
+  <a class="mark" href="./"><img src="logo.svg" alt="">Arena for Amazon Connect</a>
+  <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
+  <nav class="main"><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="kb.html">Help</a><a href="partners.html">Partners</a><a href="support.html">Support</a><a class="cta" href="agent-panel.html">Try the demo</a></nav>
+</div></header>
+<main class="page">
+  <h1>Partners</h1>
+  <p class="lede">Arena installs from a public CloudFormation template into the customer's own AWS account, and every guide, script and interface is public. A consultancy, Amazon Connect integrator or reseller can deliver it without a partner contract, and can earn on it through AWS Marketplace.</p>
+
+  <div class="roles">
+    <div class="role"><h3>Implement</h3><p>Deploy and configure Arena for your clients: the stack, the Connect data streaming, the agent workspace app, sign-ins, scoring mix, challenges and wallboards. Half a day for a first team; see the <a href="kb/implementation-guide.html">implementation guide</a>.</p><p class="who">For integrators and consultancies.</p></div>
+    <div class="role"><h3>Resell</h3><p>AWS Marketplace channel partner private offers let an authorised reseller sell Arena to a customer at a margin set between us, on the customer's AWS bill. The customer still deploys into their own account. We authorise you in the Marketplace portal; nothing else changes.</p><p class="who">For AWS resellers and distributors.</p></div>
+    <div class="role"><h3>Refer</h3><p>Point a customer at Arena and tell us. Referred customers get a longer trial, and we pay a referral fee on their first year's subscription.</p><p class="who">For anyone who talks to contact centres on Amazon Connect.</p></div>
+  </div>
+
+  <h2>What you get from us</h2>
+  <ul class="steps-list">
+    <li><b>Public templates and code.</b> Versioned releases in a public S3 location and on <a href="https://github.com/Kouros99999/arena-for-connect">GitHub</a>, so you can read what you are deploying and show your client's security team.</li>
+    <li><b>The help center</b> as your runbook: <a href="kb/getting-started.html">getting started</a>, the <a href="kb/settings-reference.html">settings reference</a>, <a href="kb/security-and-data.html">security and your data</a> for procurement, and <a href="kb/troubleshooting.html">troubleshooting</a>.</li>
+    <li><b>Admin tooling without the command line.</b> People, brand, catalog, budgets, notifications and data keys are all in the supervisor console, so your client can run Arena after handover.</li>
+    <li><b>Integration surfaces.</b> An <a href="kb/connecting-other-platforms.html">ingest endpoint</a> for platforms other than Amazon Connect, a <a href="kb/data-export.html">warehouse export and read API</a>, and Slack and Teams notifications.</li>
+    <li><b>A pilot path.</b> The same stack runs outside Marketplace with the billing settings left empty, so a proof of concept costs the client nothing but AWS resources.</li>
+    <li><b>Support.</b> Email <a href="mailto:support@arenaforconnect.com">support@arenaforconnect.com</a>, one business day. Partners get a direct line for escalations.</li>
+  </ul>
+
+  <h2>What a client needs</h2>
+  <ul class="steps-list">
+    <li>An Amazon Connect instance, or another platform plus the middleware to feed the ingest endpoint.</li>
+    <li>An AWS account for the stack, in a region Connect runs in. Arena's own AWS resources cost around $15 a month for a 500-agent centre.</li>
+    <li>Optionally Contact Lens, for evaluation and sentiment points, and Connect scheduling, for adherence points.</li>
+    <li>Someone to own it after handover: a supervisor who sets the scoring mix, starts challenges and approves rewards.</li>
+  </ul>
+
+  <div class="callout"><b>Pricing for the client</b> is on the <a href="index.html#pricing">pricing section</a>: $0.75 per active agent-day through AWS Marketplace, 30-day trial for up to 25 agents a day. Your margin or referral fee comes on top of that through Marketplace, never from the client's AWS bill.</div>
+
+  <h2>How to start</h2>
+  <ol class="steps-list">
+    <li>Run through the <a href="kb/implementation-guide.html">implementation guide</a> once in your own AWS account with the demo data. It takes an afternoon.</li>
+    <li>Email <a href="mailto:support@arenaforconnect.com?subject=Partner%20enquiry">support@arenaforconnect.com</a> with your company, the AWS account ID you resell or implement from, and which of the three roles you want. We reply within one business day with the Marketplace authorisation or the referral terms.</li>
+    <li>For a resale, we create the channel partner authorisation in AWS Marketplace; you then issue private offers to your customers from your own Marketplace portal.</li>
+  </ol>
+</main>
+<footer class="site"><div class="wrap">
+  <div><a class="mark" href="./"><img src="logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by EKPK LLC.</p></div>
+  <div><h4>Product</h4><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="agent-panel.html">Demo</a><a href="releases.html">Release notes</a><a href="partners.html">Partners</a></div>
+  <div><h4>Support</h4><a href="kb.html">Help center</a><a href="support.html">Contact support</a><a href="kb.html?a=security-and-data">Security</a><a href="privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation on GitHub</a></div>
+  <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
+</div></footer>
+</html>
