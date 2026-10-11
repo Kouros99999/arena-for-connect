@@ -660,3 +660,41 @@ test('generic ingest: an ingest key accepts canonical events, dedupes, rejects b
   assert.equal(JSON.parse(r.body).aliases.length, 0);
   assert.equal(JSON.parse((await h(req('GET', '/health'))).body).provider, 'connect');
 });
+
+test('spot awards: supervisors only, capped per award and per day, on the ledger and the feed', async () => {
+  const s = fakeStore(); const sent = []; const h = makeHandler({ store: s, now: fixed, send: async (cfg, ev) => { sent.push(ev); return ['slack']; } });
+  s.notify = { slackUrl: 'https://hooks.slack.com/x', events: { kudos: true } };
+  const supReq = (path, body) => Object.assign(req('POST', path), { body: JSON.stringify(body) });
+  assert.equal((await h(Object.assign(anon('POST', '/teams/t/awards'), { body: '{}', requestContext: { http: { method: 'POST' }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } }))).statusCode, 403);
+  assert.equal((await h(supReq('/teams/t/awards', { agentId: 'a1', points: 500, reason: 'x' }))).statusCode, 400);
+  assert.equal((await h(supReq('/teams/t/awards', { agentId: 'a1', points: 25 }))).statusCode, 400, 'reason required');
+  assert.equal((await h(supReq('/teams/t/awards', { agentId: 'zz', points: 25, reason: 'x' }))).statusCode, 404);
+  const r = await h(supReq('/teams/t/awards', { agentId: 'a1', points: 25, reason: 'Saved the account' }));
+  assert.equal(r.statusCode, 201); assert.deepEqual(JSON.parse(r.body), { ok: true, points: 25, agentName: 'priya' });
+  const w = s.calls.find((c) => c[0] === 'apply')[1];
+  const ev = w.find((x) => x.item && x.item.sk && x.item.sk.startsWith('EV#')).item; assert.equal(ev.EventType, 'SPOT_AWARD'); assert.equal(ev.points, 25); assert.equal(ev.From, 'Dana');
+  const feed = w.find((x) => x.item && x.item.sk && x.item.sk.startsWith('KD#')).item; assert.equal(feed.award, 25); assert.equal(feed.note, 'Saved the account');
+  assert.deepEqual(sent[0], { kind: 'spotAward', from: 'Dana', to: 'priya', points: 25, reason: 'Saved the account' });
+  for (let i = 0; i < 9; i++) await h(supReq('/teams/t/awards', { agentId: 'a1', points: 1, reason: 'r' }));
+  assert.equal((await h(supReq('/teams/t/awards', { agentId: 'a1', points: 1, reason: 'r' }))).statusCode, 429, 'ten a day');
+});
+
+test('kudos may carry a badge; goals are the agent\'s own and measured live', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  const me = (method, path, body) => Object.assign(anon(method, path), { body: body ? JSON.stringify(body) : undefined, requestContext: { http: { method }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1', name: 'Priya' } } } } });
+  let r = await h(me('POST', '/kudos', { to: 'a2', note: 'carried the queue', badge: 'teamplayer' }));
+  assert.equal(r.statusCode, 201);
+  const w = s.calls.find((c) => c[0] === 'apply')[1];
+  assert.equal(w.find((x) => x.item && x.item.sk && x.item.sk.startsWith('EV#')).item.Badge, 'teamplayer');
+  assert.equal(w.find((x) => x.item && x.item.sk && x.item.sk.startsWith('KD#')).item.badge, 'teamplayer');
+  r = await h(me('POST', '/kudos', { to: 'a2', note: 'again', badge: 'made-up' }));
+  assert.equal(s.calls.filter((c) => c[0] === 'apply').pop()[1].find((x) => x.item && x.item.sk && x.item.sk.startsWith('EV#')).item.Badge, undefined, 'unknown badges are dropped');
+  s.live.a1 = { pk: 'AGENT#a1', team: 't' };
+  assert.equal(JSON.parse((await h(me('GET', '/agents/a1/goal'))).body).goal, null);
+  r = await h(me('PUT', '/agents/a1/goal', { metric: 'points', target: 1000 }));
+  assert.equal(r.statusCode, 200); const b = JSON.parse(r.body);
+  assert.deepEqual(b.goal, { metric: 'points', target: 1000 }); assert.equal(b.progress.value, 900); assert.equal(b.progress.pct, 90); assert.equal(s.live.a1.prefs.goal.target, 1000);
+  assert.equal((await h(me('PUT', '/agents/a1/goal', { metric: 'nope', target: 1 }))).statusCode, 400);
+  assert.equal((await h(me('PUT', '/agents/a2/goal', { metric: 'points', target: 1 }))).statusCode, 403);
+  assert.equal(JSON.parse((await h(me('PUT', '/agents/a1/goal', { metric: null }))).body).goal, null);
+});

@@ -61,7 +61,9 @@ function planWrites(ev, points, now) {
     values: { ':ts': ts, ':team': team, ':user': ev.Username || ev.AgentARN, ':g1': keys.team(team, 'LIVE'), ':g2': pk, ...(ev.State ? { ':state': ev.State } : {}), ...(ev.Name ? { ':name': ev.Name } : {}) } });
 
   // Kudos also land on a team feed so the console and wallboard can list them without scanning agents.
-  if (ev.EventType === 'KUDOS') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Note, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
+  if (ev.EventType === 'KUDOS') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Note, badge: ev.Badge, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
+  // A supervisor's spot award lands on the feed too, with its points, so the floor sees it.
+  if (ev.EventType === 'SPOT_AWARD') writes.push({ op: 'put', item: { pk: keys.teamItems(team), sk: `KD#${ts}#award-${ev.AgentARN.split('/').pop()}`, at: ts, from: ev.From, to: ev.AgentARN, toName: ev.ToName || ev.Username || ev.AgentARN.split('/').pop(), note: ev.Reason, award: points, ttl: Math.floor(now / 1000) + TTL_DAYS * 86400 } });
 
   if (points !== 0 || isContact || isEval || isSent || isCsat || isAdh || isBackfill || ev.EventType === 'KUDOS') {
     for (const [kind, period] of [['DAY', dayKey(ts)], ['WEEK', weekKey(ts)]]) {

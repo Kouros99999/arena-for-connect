@@ -52,3 +52,9 @@ test('spotlights have their own switch and message', () => {
   assert.equal(notify.eventKey('spotlight'), 'spotlights'); assert.equal(notify.withDefaults({}).events.spotlights, true);
   assert.equal(notify.merge({}, { events: { spotlights: false } }).events.spotlights, false);
 });
+
+test('spot awards and badges show in channel messages under the kudos switch', () => {
+  assert.equal(notify.message({ kind: 'spotAward', from: 'Dana', to: 'Priya', points: 25, reason: 'Saved the account' }).lines[0], 'Dana awarded Priya 25 pts: “Saved the account”');
+  assert.equal(notify.message({ kind: 'kudos', from: 'A', to: 'B', note: 'n', badge: 'Team player' }).lines[0], 'A → B · Team player: “n”');
+  assert.equal(notify.eventKey('spotAward'), 'kudos');
+});

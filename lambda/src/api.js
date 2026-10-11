@@ -26,6 +26,8 @@
  *   GET  /export/days?from&to[&team]            the same rows for a signed-in supervisor
  *   GET /config/theme (anyone signed in; /kiosk/{token}/theme for wallboards), PUT /config/theme { name, accent, highlight, logoUrl } (supervisors)
  *   POST /config/logo { dataUrl }                 stores the company logo on the site (brand/logo-<ts>.<ext>, 300 KB max) and sets logoUrl (supervisors)
+ *   POST /teams/{team}/awards                   { agentId, points (1..100), reason } a supervisor's spot award: points on the ledger, a line on the feed (supervisors, capped per day)
+ *   GET/PUT /agents/{arn}/goal                  the agent's own goal { metric, target } and progress (the agent or a supervisor)
  *   GET/PUT /teams/{team}/budget                monthly reward budget in points; approvals stop at the cap, alerts at 25/50/75/100% (supervisors)
  *   Days, weeks and months are calendar periods in the stack's Timezone (clock.js).
  *   Challenges run over their whole period; races, duels and team-vs-team carry standings; ending one freezes results and pays prizes.
@@ -49,6 +51,7 @@ const exporter = require('./export.js');
 
 const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const KUDOS_DAILY_LIMIT = Math.max(1, +(process.env.KUDOS_DAILY_LIMIT || 5));
+const AWARDS_DAILY_LIMIT = Math.max(1, +(process.env.AWARDS_DAILY_LIMIT || 10));   // spot awards one supervisor may give per day
 const DISPLAY_NAMES = process.env.DISPLAY_NAMES || 'full';   // full | first | initials, for sign-in-free wallboards
 const SITE_BUCKET = process.env.SITE_BUCKET || '';
 const PROVIDER = process.env.PROVIDER || 'connect';         // which platform feeds this stack: connect | generic (wording in the console)           // where an uploaded company logo is stored, served by the same CloudFront as the pages
@@ -72,6 +75,9 @@ function route(method, path) {
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/rewards$/))) return { name: 'requestReward', team: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/teams\/([^/]+)\/rewards\/([^/]+)$/))) return { name: 'decideReward', team: decodeURIComponent(x[1]), id: decodeURIComponent(x[2]) };
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/kudos$/))) return { name: 'kudosFeed', team: decodeURIComponent(x[1]) };
+  if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/awards$/))) return { name: 'spotAward', team: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/agents\/(.+)\/goal$/))) return { name: 'getGoal', arn: decodeURIComponent(x[1]) };
+  if (method === 'PUT' && (x = m(/^\/agents\/(.+)\/goal$/))) return { name: 'putGoal', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/kiosk$/))) return { name: 'listKiosk', team: decodeURIComponent(x[1]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/kiosk$/))) return { name: 'createKiosk', team: decodeURIComponent(x[1]) };
   if (method === 'DELETE' && (x = m(/^\/teams\/([^/]+)\/kiosk\/([^/]+)$/))) return { name: 'revokeKiosk', team: decodeURIComponent(x[1]), token: decodeURIComponent(x[2]) };
@@ -173,7 +179,7 @@ function makeHandler(deps) {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
           const limit = Math.min(100, +(qs.limit || 20));
           const items = await s.listEvents(r.arn, limit);
-          return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day, adherence: i.Adherence, handled: i.Handled })) });
+          return json(200, { agent: r.arn, events: items.map((i) => ({ type: i.EventType, at: i.EventTimestamp, points: i.points, queue: i.Queue, score: i.Score, autoFail: i.AutoFail, from: i.From, note: i.Note, handleTime: i.HandleTime, sentiment: i.Sentiment, day: i.Day, adherence: i.Adherence, handled: i.Handled, badge: i.Badge, reason: i.Reason })) });
         }
         case 'getTheme': return json(200, { theme: Object.assign({}, Arena.THEME_DEFAULTS, (await s.getTheme()) || {}) });
         case 'putTheme': {
@@ -449,10 +455,11 @@ function makeHandler(deps) {
           const day = clock.dayKey(now());
           if (!(await s.bumpKudosCount(sender, day, KUDOS_DAILY_LIMIT, now().getTime()))) return json(429, { error: `kudos limit of ${KUDOS_DAILY_LIMIT} a day reached` });
           const from = claims.name || claims['cognito:username'] || claims.username || claims.sub || 'A teammate';
-          const ev = { EventType: 'KUDOS', AgentARN: body.to, EventTimestamp: now().toISOString(), From: from, FromId: sender, Note: String(body.note).slice(0, 140), Team: team, Username: recipient.username, ToName: recipient.name };
+          const badge = Arena.badgeOf(body.badge) ? body.badge : undefined;
+          const ev = { EventType: 'KUDOS', AgentARN: body.to, EventTimestamp: now().toISOString(), From: from, FromId: sender, Note: String(body.note).slice(0, 140), Badge: badge, Team: team, Username: recipient.username, ToName: recipient.name };
           const points = Arena.scoreEvent('KUDOS', ev, Arena.DEFAULT_MIX);
           await s.apply(store.planWrites(ev, points, now().getTime()));
-          await tell(team, { kind: 'kudos', from, to: recipient.name, note: ev.Note });
+          await tell(team, { kind: 'kudos', from, to: recipient.name, note: ev.Note, badge: badge ? Arena.badgeOf(badge).label : undefined });
           return json(201, { ok: true, points });
         }
         case 'getNotify': {
@@ -576,6 +583,36 @@ function makeHandler(deps) {
           const { from, to } = rangeOf(qs);
           const rows = await exporter.rowsBetween(s, from, to, qs.team || undefined);
           return json(200, { from, to, team: qs.team || undefined, rows });
+        }
+        case 'spotAward': {
+          if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });
+          const b = parse(event), points = Math.round(Number(b.points)), reason = String(b.reason || '').trim().slice(0, 140);
+          if (!b.agentId || !reason) return json(400, { error: 'agentId and a reason are required' });
+          if (!Number.isFinite(points) || points < 1 || points > Arena.BASE.spotAwardMax) return json(400, { error: `points must be 1 to ${Arena.BASE.spotAwardMax}` });
+          const agent = (await s.getTeam(r.team, now().toISOString())).find((a) => a.id === b.agentId);
+          if (!agent) return json(404, { error: 'agent not on this team' });
+          const sender = claims.sub || claims['cognito:username'] || 'supervisor';
+          if (!(await s.bumpKudosCount('award#' + sender, clock.dayKey(now()), AWARDS_DAILY_LIMIT, now().getTime()))) return json(429, { error: `spot award limit of ${AWARDS_DAILY_LIMIT} a day reached` });
+          const from = who(claims);
+          const ev = { EventType: 'SPOT_AWARD', AgentARN: agent.id, EventTimestamp: now().toISOString(), From: from, FromId: sender, Points: points, Reason: reason, Team: r.team, Username: agent.username, ToName: agent.name };
+          const pts = Arena.scoreEvent('SPOT_AWARD', ev, Arena.DEFAULT_MIX);
+          await s.apply(store.planWrites(ev, pts, now().getTime()));
+          console.info(JSON.stringify({ audit: 'spotAward', agent: agent.id, points: pts, by: from }));
+          await tell(r.team, { kind: 'spotAward', from, to: agent.name, points: pts, reason });
+          return json(201, { ok: true, points: pts, agentName: agent.name });
+        }
+        case 'getGoal': case 'putGoal': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
+          const live = await s.getLive(r.arn);
+          let goal = (live && live.prefs && live.prefs.goal) || null;
+          if (r.name === 'putGoal') {
+            try { goal = Arena.normalizeGoal(parse(event)); } catch (e) { return json(400, { error: e.message }); }
+            const prefs = Object.assign({ personalBest: false, hideFromBoard: false }, (live && live.prefs) || {}, { goal });
+            if (!(await s.putAgentPrefs(r.arn, prefs))) return json(404, { error: 'agent has no activity yet' });
+          }
+          const team = (live && live.team) || claims['custom:team'];
+          const agent = team ? (await s.getTeam(team, now().toISOString())).find((a) => a.id === r.arn) : null;
+          return json(200, { agent: r.arn, goal, progress: agent ? Arena.goalProgress(goal, agent) : null });
         }
         case 'getBudget': {
           if (!isSupervisor(claims)) return json(403, { error: 'supervisors only' });

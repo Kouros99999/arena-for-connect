@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.18.0",
+    "date": "2026-10-11",
+    "title": "Personal goals, spot awards and badges",
+    "summary": "Agents set a goal of their own, supervisors give points for what they saw, and kudos can carry a badge.",
+    "changes": [
+      "My goal: an agent picks a measure (points this week, contacts today, evaluation average, sentiment, survey score or handle time) and a number to beat; the panel shows progress from the same figures as the leaderboard. Only the agent and supervisors see it.",
+      "Spot awards: a supervisor gives an agent up to 100 points with a reason from the console's kudos card. On the ledger, on the team feed and in the channel with the supervisor's name; ten a day per supervisor; logged.",
+      "Badges on kudos: Lifesaver, Calm under pressure, Team player, Problem solver, Customer champion or Mentor, shown on the feed, the wallboard and the channel message."
+    ],
+    "upgrade": [
+      "No action is needed."
+    ],
+    "docs": [
+      "challenges-rewards-kudos",
+      "how-scoring-works"
+    ]
+  },
+  {
     "version": "0.17.0",
     "date": "2026-10-11",
     "title": "Hear about new versions",

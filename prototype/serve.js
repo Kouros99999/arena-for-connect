@@ -45,6 +45,9 @@ async function api(req, res, p) {
     if (req.method === 'DELETE' && (m = p.match(/^\/admin\/users\/([^/]+)$/))) return json(res, 200, await engine.deleteUser(decodeURIComponent(m[1])));
     if (req.method === 'GET' && p === '/data/keys') return json(res, 200, { keys: await engine.dataKeys() });
     if (req.method === 'POST' && p === '/data/keys') { const b = await body(req); return json(res, 201, { key: await engine.createDataKey(b.label, b.days, b.kind) }); }
+    if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/awards$/))) { const b = await body(req); try { return json(res, 201, await engine.award(b.agentId, b.points, b.reason, 'mock supervisor')); } catch (e) { return json(res, 400, { error: e.message }); } }
+    if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/goal$/))) return json(res, 200, await engine.goal(decodeURIComponent(m[1])));
+    if (req.method === 'PUT' && (m = p.match(/^\/agents\/(.+)\/goal$/))) { try { return json(res, 200, await engine.setGoal(decodeURIComponent(m[1]), await body(req))); } catch (e) { return json(res, 400, { error: e.message }); } }
     if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) return json(res, 200, { aliases: await engine.aliases(decodeURIComponent(m[1])) });
     if (req.method === 'PUT' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) { const b = await body(req); return json(res, 200, { aliases: await engine.linkAlias(decodeURIComponent(m[1]), b.id, b.platform) }); }
     if (req.method === 'DELETE' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) { const id = decodeURIComponent((req.url.split('?')[1] || '').replace(/^id=/, '')); return json(res, 200, { aliases: await engine.unlinkAlias(decodeURIComponent(m[1]), id) }); }
@@ -85,7 +88,7 @@ async function api(req, res, p) {
   if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/best$/))) return json(res, 200, await engine.best(decodeURIComponent(m[1])));
   if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/prefs$/))) return json(res, 200, { prefs: await engine.prefs(decodeURIComponent(m[1])) });
   if (req.method === 'PUT' && (m = p.match(/^\/agents\/(.+)\/prefs$/))) return json(res, 200, { prefs: await engine.savePrefs(decodeURIComponent(m[1]), await body(req)) });
-  if (req.method === 'POST' && p === '/kudos') { const b = await body(req); const a = engine.byId(b.to); if (!a || !b.note) return json(res, 400, { error: 'to and note are required' }); if (b.fromId && b.fromId === b.to) return json(res, 400, { error: 'kudos go to a teammate, not to yourself' }); const r = engine.ingest({ EventType: 'KUDOS', AgentARN: a.id, EventTimestamp: new Date().toISOString(), From: b.from || 'A teammate', Note: String(b.note).slice(0, 140) }); return json(res, 201, { ok: true, points: r.points }); }
+  if (req.method === 'POST' && p === '/kudos') { const b = await body(req); const a = engine.byId(b.to); if (!a || !b.note) return json(res, 400, { error: 'to and note are required' }); if (b.fromId && b.fromId === b.to) return json(res, 400, { error: 'kudos go to a teammate, not to yourself' }); const r = engine.ingest({ EventType: 'KUDOS', AgentARN: a.id, EventTimestamp: new Date().toISOString(), From: b.from || 'A teammate', Note: String(b.note).slice(0, 140), Badge: Arena.badgeOf(b.badge) ? b.badge : undefined }); return json(res, 201, { ok: true, points: r.points }); }
   if (req.method === 'GET' && p === '/health') return json(res, 200, { ok: true });
   return json(res, 404, { error: 'not found' });
 }

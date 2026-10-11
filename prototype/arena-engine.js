@@ -32,6 +32,7 @@
     sentiment: (s) => (s >= 2.5 ? 8 : s >= 1 ? 5 : s > -1 ? 2 : 0),
     csat: (n) => (n >= 5 ? 10 : n >= 4 ? 6 : n >= 3 ? 2 : 0),
     kudos: 8,
+    spotAwardMax: 100,  // the most a supervisor may hand out in one spot award
     streakDay: 25,
     evalAck: 5,        // reading and acknowledging your own evaluation: the coaching loop closes
   };
@@ -139,6 +140,35 @@
     setWall(p) { try { localStorage.setItem('arena.wall', JSON.stringify(Object.assign(ui.getWall(), p))); } catch {} },
     applyWall(doc) { const p = ui.getWall(); doc.documentElement.setAttribute('data-size', p.size === 'large' ? 'large' : 'normal'); doc.documentElement.setAttribute('data-contrast', p.contrast === 'high' ? 'high' : 'normal'); return p; },
   };
+
+  // ---------- peer badges, spot awards and personal goals ----------
+  /** Named badges a teammate may attach to kudos. Ids are stored; labels are shown. */
+  const KUDOS_BADGES = [
+    { id: 'lifesaver', label: 'Lifesaver', emoji: '🛟' }, { id: 'calm', label: 'Calm under pressure', emoji: '🧊' }, { id: 'teamplayer', label: 'Team player', emoji: '🤝' },
+    { id: 'solver', label: 'Problem solver', emoji: '🧩' }, { id: 'champion', label: 'Customer champion', emoji: '🏅' }, { id: 'mentor', label: 'Mentor', emoji: '🎓' },
+  ];
+  const badgeOf = (id) => KUDOS_BADGES.find((b) => b.id === id) || null;
+  /** Measures an agent may set a personal goal on, and what "this week" means for each. */
+  const GOAL_METRICS = { points: { label: 'Points this week', higher: true, of: (a) => a.week || 0, fmt: (v) => Math.round(v).toLocaleString() }, handled: { label: 'Contacts handled today', higher: true, of: (a) => a.handled || 0, fmt: (v) => Math.round(v).toLocaleString() },
+    qa: { label: 'Evaluation average', higher: true, of: (a) => metricOf('qa', a), fmt: (v) => Math.round(v) + '%' }, sentiment: { label: 'Customer sentiment', higher: true, of: (a) => metricOf('sentiment', a), fmt: (v) => (v > 0 ? '+' : '') + (Math.round(v * 10) / 10).toFixed(1) },
+    csat: { label: 'Survey score', higher: true, of: (a) => metricOf('csat', a), fmt: (v) => (Math.round(v * 10) / 10).toFixed(1) }, aht: { label: 'Handle time (seconds, lower is better)', higher: false, of: (a) => metricOf('aht', a), fmt: (v) => Math.round(v) + 's' } };
+  /** Validate a goal an agent set for themselves. Throws with a message a person can act on. */
+  function normalizeGoal(g) {
+    if (!g || g.metric === null || g.metric === '') return null;
+    const m = GOAL_METRICS[g.metric]; if (!m) throw new Error('goal metric must be one of ' + Object.keys(GOAL_METRICS).join(', '));
+    const target = Number(g.target); if (!Number.isFinite(target) || target <= 0 || target > 1000000) throw new Error('goal target must be a positive number');
+    return { metric: g.metric, target: Math.round(target * 10) / 10 };
+  }
+  /** Pure: where an agent stands against their goal. */
+  function goalProgress(goal, agent) {
+    if (!goal) return null;
+    const m = GOAL_METRICS[goal.metric]; if (!m) return null;
+    const value = m.of(agent);
+    if (value === null || value === undefined) return { metric: goal.metric, label: m.label, target: goal.target, value: null, pct: 0, met: false, text: 'nothing to measure yet' };
+    const pct = m.higher ? Math.min(100, Math.round((value / goal.target) * 100)) : Math.min(100, Math.round((goal.target / Math.max(value, 0.001)) * 100));
+    const met = m.higher ? value >= goal.target : value <= goal.target;
+    return { metric: goal.metric, label: m.label, target: goal.target, value, pct, met, text: `${m.fmt(value)} of ${m.fmt(goal.target)}` };
+  }
 
   // ---------- spotlights: recognition Arena writes itself, no points attached ----------
   const SPOTLIGHTS = { evalScore: 95, streakDays: [5, 10, 20, 50], minPriorDays: 3 };
@@ -434,6 +464,7 @@
       case 'SENTIMENT_SCORED': return Math.round(BASE.sentiment(data.Sentiment) * q);
       case 'CSAT_RECEIVED': return Math.round(BASE.csat(data.Score) * q);
       case 'KUDOS': return BASE.kudos;
+      case 'SPOT_AWARD': return Math.max(1, Math.min(BASE.spotAwardMax, Math.round(Number(data.Points) || 0)));
       case 'STREAK_DAY': return BASE.streakDay;
       case 'EVALUATION_ACKNOWLEDGED': return Math.round(BASE.evalAck * q);
       case 'CHALLENGE_WON': return Math.max(0, Math.round(Number(data.Points) || 0));
@@ -586,7 +617,8 @@
       agent.lastEvent = ev.EventTimestamp ? Date.parse(ev.EventTimestamp) : Date.now();
       if (type === 'CONTACT_HANDLED') { agent.handled++; agent.ahtSum += ev.HandleTime || 0; if (ev.Escalated) agent.escalations++; }
       if (type === 'EVALUATION_SUBMITTED') { if (ev.AutoFail) { agent.autofails++; agent.evals.push(0); } else { agent.evals.push(ev.Score); const sp = spotlightText('evaluation', { score: ev.Score }); if (sp) { local.kudos.unshift({ at: new Date().toISOString(), from: 'Arena', auto: true, to: agent.id, toName: agent.name, note: sp }); local.kudos.length = Math.min(local.kudos.length, 50); } } }
-      if (type === 'KUDOS') { agent.kudosReceived++; local.kudos.unshift({ at: ev.EventTimestamp || new Date().toISOString(), from: ev.From, to: agent.id, toName: agent.name, note: ev.Note }); local.kudos.length = Math.min(local.kudos.length, 50); }
+      if (type === 'KUDOS') { agent.kudosReceived++; local.kudos.unshift({ at: ev.EventTimestamp || new Date().toISOString(), from: ev.From, to: agent.id, toName: agent.name, note: ev.Note, badge: ev.Badge }); local.kudos.length = Math.min(local.kudos.length, 50); }
+      if (type === 'SPOT_AWARD') { local.kudos.unshift({ at: ev.EventTimestamp || new Date().toISOString(), from: ev.From, to: agent.id, toName: agent.name, note: ev.Reason, award: pts }); local.kudos.length = Math.min(local.kudos.length, 50); }
       if (type === 'ADHERENCE_HOUR') agent.adherenceHours++;
       if (type === 'ADHERENCE_SCORED') { agent.adherenceHours = round1((agent.adherenceHours || 0) + (ev.AdherentHours || 0)); agent.adhSum = (agent.adhSum || 0) + (ev.Adherence || 0); agent.adhCount = (agent.adhCount || 0) + 1; }
       if (type === 'SENTIMENT_SCORED') { agent.sentSum = round1((agent.sentSum || 0) + ev.Sentiment); agent.sentCount = (agent.sentCount || 0) + 1; }
@@ -602,7 +634,8 @@
     function describe(type, ev) {
       if (type === 'CONTACT_HANDLED') return `Handled <b>${ev.Queue || 'a'}</b> contact, ${Math.round((ev.HandleTime || 0) / 60)} min`;
       if (type === 'EVALUATION_SUBMITTED') return ev.AutoFail ? `Evaluation <b>auto-fail</b>: ${ev.Reason || 'policy'}` : `Evaluation scored <b>${ev.Score}%</b>`;
-      if (type === 'KUDOS') return `Kudos from <b>${ev.From}</b>: “${ev.Note}”`;
+      if (type === 'KUDOS') return `Kudos from <b>${ev.From}</b>${ev.Badge && badgeOf(ev.Badge) ? ' · ' + badgeOf(ev.Badge).emoji + ' ' + badgeOf(ev.Badge).label : ''}: “${ev.Note}”`;
+      if (type === 'SPOT_AWARD') return `Spot award from <b>${ev.From}</b>: “${ev.Reason}”`;
       if (type === 'ADHERENCE_HOUR') return 'Hour in adherence';
       if (type === 'ADHERENCE_SCORED') return `Schedule adherence <b>${Math.round(ev.Adherence || 0)}%</b>, ${round1(ev.AdherentHours || 0)} h on schedule`;
       if (type === 'STREAK_DAY') return `Streak bonus, day ${ev.Day}`;
@@ -754,7 +787,10 @@
       challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance,
       users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias,
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
-      kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
+      kudos: async (to, note, from, fromId, badge) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note, Badge: badgeOf(badge) ? badge : undefined }); return true; },
+      award: async (to, points, reason, by) => { const a = byId(to); if (!a) throw new Error('unknown agent'); const r = ingest({ EventType: 'SPOT_AWARD', AgentARN: to, EventTimestamp: new Date().toISOString(), From: by || 'Supervisor', Points: points, Reason: reason }); return { points: r.points, agentName: a.name }; },
+      goal: async (agentId) => ({ goal: local.prefs[agentId] && local.prefs[agentId].goal || null, progress: goalProgress(local.prefs[agentId] && local.prefs[agentId].goal, byId(agentId)) }),
+      setGoal: async (agentId, g) => { const goal = normalizeGoal(g); local.prefs[agentId] = Object.assign({}, local.prefs[agentId] || {}, { goal }); return { goal, progress: goalProgress(goal, byId(agentId)) }; },
       _local: local,
     };
   }
@@ -879,9 +915,9 @@
     const best = async (agentId) => call('GET', `${base}/agents/${encodeURIComponent(agentId)}/best`);
     const prefs = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/prefs`)).prefs;
     const savePrefs = async (agentId, p) => (await call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/prefs`, p)).prefs;
-    async function kudos(to, note, from, fromId) {
+    async function kudos(to, note, from, fromId, badge) {
       const a = engine.byId(to);
-      const r = await fetch(`${base}/kudos`, { method: 'POST', headers: await headersFor(), body: JSON.stringify({ to, note, team, fromId, toName: a && a.name, toUsername: a && a.username }) });
+      const r = await fetch(`${base}/kudos`, { method: 'POST', headers: await headersFor(), body: JSON.stringify({ to, note, team, fromId, badge: badge || undefined, toName: a && a.name, toUsername: a && a.username }) });
       if (!r.ok) { const body = await r.json().catch(() => ({})); throw new Error(body.error || ('arena api ' + r.status)); }
       return true;
     }
@@ -917,6 +953,9 @@
     const deleteUser = async (username) => call('DELETE', `${base}/admin/users/${encodeURIComponent(username)}`);
     const dataKeys = async () => (await call('GET', `${base}/data/keys`)).keys;
     const createDataKey = async (label, days, kind) => (await call('POST', `${base}/data/keys`, { label, days, kind })).key;
+    const award = async (to, points, reason) => call('POST', `${teamPath()}/awards`, { agentId: to, points, reason });
+    const goal = async (agentId) => call('GET', `${base}/agents/${encodeURIComponent(agentId)}/goal`);
+    const setGoal = async (agentId, g) => call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/goal`, g || { metric: null });
     const aliases = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/aliases`)).aliases;
     const linkAlias = async (agentId, id, platform) => (await call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/aliases`, { id, platform })).aliases;
     const unlinkAlias = async (agentId, id) => (await call('DELETE', `${base}/agents/${encodeURIComponent(agentId)}/aliases?id=${encodeURIComponent(id)}`)).aliases;
@@ -943,7 +982,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias, award, goal, setGoal, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       suggestions: () => recommendChallenges(engine.agents),
@@ -981,6 +1020,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeTheme, THEME_DEFAULTS, ui, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeTheme, THEME_DEFAULTS, ui, KUDOS_BADGES, badgeOf, GOAL_METRICS, normalizeGoal, goalProgress, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

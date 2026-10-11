@@ -343,7 +343,7 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
       </div>
 
       <div class="card">
-        <div class="card-h"><h2>Kudos activity</h2><span class="sub">last hour</span></div>
+        <div class="card-h"><h2>Kudos activity</h2><span class="sub">last hour</span><button class="btn sm" id="awardBtn" title="Give an agent points for something you saw">Spot award</button></div>
         <div class="card-b" id="kudos"></div>
       </div>
     </div>
@@ -351,6 +351,16 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
 
   <div class="demo"><span class="l">Demo</span> Simulated event stream · <span id="evCount">0</span> events since load · <label>speed <input type="range" id="speed" min="1" max="10" value="4" style="vertical-align:middle;width:100px"></label></div>
 </div>
+<dialog id="awardDlg" aria-labelledby="awardTitle">
+  <form class="dlg" id="awardForm" method="dialog">
+    <h2 id="awardTitle">Spot award</h2>
+    <div class="ctx">Points for something you saw: a hard call handled well, a save, a helping hand. It goes on the agent's ledger and the team feed with your name. Up to 100 points, ten awards a day per supervisor.</div>
+    <label>Agent<select id="awAgent"></select></label>
+    <label>Points<input id="awPoints" type="number" min="1" max="100" value="25"></label>
+    <label>Reason, shown to the team<input id="awReason" maxlength="140" placeholder="Talked an angry caller down and kept the account"></label>
+    <div class="act"><span class="err" id="awErr"></span><button type="button" class="btn" id="awCancel">Cancel</button><button type="submit" class="btn pri">Award</button></div>
+  </form>
+</dialog>
 <dialog id="brandDlg" aria-labelledby="brandTitle">
   <form class="dlg" id="brandForm" method="dialog">
     <h2 id="brandTitle">Brand</h2>
@@ -509,7 +519,7 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
       <div class="m"><div class="bar ${c.state==='active'?'':'gold'}"><i style="width:${Math.round((p.progress || 0)*100)}%"></i></div><span>${esc(p.measured === false ? '' : p.label)}${p.measured === false ? '' : ' · '}${rewardText(c)}</span></div>${standings(c)}</div>`; }).join('')
       : '<div class="empty">No challenges yet. Schedule one below.</div>';
     $('#rewards').innerHTML = rewards.length ? rewards.map(r => `<div class="rw"><div><b>${esc(r.agentName)}</b> · ${esc(r.what)}<small>${r.cost.toLocaleString()} pts · requested ${hm(r.requestedAt)}</small></div><div class="acts"><button class="btn sm pri" data-approve="${r.id}">Approve</button><button class="btn sm" data-decline="${r.id}">Decline</button></div></div>`).join('') : '<div class="empty">No rewards waiting.</div>';
-    $('#kudos').innerHTML = kudos.length ? kudos.map(k => `<div class="rw"><div><b class="${k.auto ? 'auto' : ''}">${k.auto ? '✦ Spotlight' : esc(k.from)}</b> → ${esc(k.toName || k.to)}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`).join('') : '<div class="empty">No kudos yet today.</div>';
+    $('#kudos').innerHTML = kudos.length ? kudos.map(k => { const b = k.badge && Arena.badgeOf(k.badge); return `<div class="rw"><div><b class="${k.auto ? 'auto' : ''}">${k.auto ? '✦ Spotlight' : esc(k.from)}</b> → ${esc(k.toName || k.to)}${k.award ? ` <span class="pill good">+${k.award} pts</span>` : ''}${b ? ` <span class="pill">${b.emoji} ${esc(b.label)}</span>` : ''}<small>“${esc(k.note)}” · ${hm(k.at)}</small></div></div>`; }).join('') : '<div class="empty">No kudos yet today.</div>';
     renderSuggestions();
     $('#sRew').textContent = rewards.length;
     renderBudget();
@@ -583,6 +593,13 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
     if (budgetEditing) $('#budgetSave').onclick = async () => { try { budget = await engine.setBudget(+$('#budgetVal').value || 0); budgetEditing = false; renderBudget(); toast(budget.capped ? `Budget set to ${budget.monthly.toLocaleString()} pts a month` : 'Budget cap removed'); } catch (e) { toast(e.message); } };
   }
   $('#budgetEdit').addEventListener('click', () => { budgetEditing = !budgetEditing; renderBudget(); });
+  // Spot award: a supervisor's points for something they saw. Capped per award and per day by the API.
+  $('#awardBtn').addEventListener('click', () => { if (!conn.isSupervisor && engine.remote) return toast('Supervisors only'); $('#awAgent').innerHTML = engine.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(''); $('#awErr').textContent = ''; $('#awardDlg').showModal(); $('#awReason').focus(); });
+  $('#awCancel').addEventListener('click', () => $('#awardDlg').close());
+  $('#awardForm').addEventListener('submit', async e => { e.preventDefault();
+    try { const r = await engine.award($('#awAgent').value, +$('#awPoints').value, $('#awReason').value.trim(), conn.remote ? undefined : 'Supervisor'); $('#awardDlg').close(); $('#awReason').value = ''; toast(`${r.points} pts to ${r.agentName}`); if (engine.remote) await engine.refresh(); render(); loadSide(); }
+    catch (err) { $('#awErr').textContent = err.message; } });
+
   // Brand: name, colours and logo for every page on the stack. The logo is uploaded to the site under brand/.
   let brandDraft = null;
   function renderBrandPreview(){ const t = brandDraft; $('#bPreview').innerHTML = `${t.logoUrl ? `<img src="${esc(t.logoUrl)}" alt="">` : ''}<span>${esc(t.name || 'Arena')}</span><span class="sw" style="background:${esc(t.accent)}" title="accent"></span><span class="sw" style="background:${esc(t.highlight)}" title="highlight"></span>`; }

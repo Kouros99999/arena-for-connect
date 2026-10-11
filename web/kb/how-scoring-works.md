@@ -14,6 +14,7 @@ Arena turns what already happens in Amazon Connect into points. Nothing is self-
 | Schedule adherence, each night (with `ScheduleAdherence` enabled) | 5 per hour spent on schedule the day before; a 7.4-hour adherent day is 37 |
 | Acknowledging your own evaluation in Connect | 5 |
 | Kudos from a teammate | 8 |
+| Spot award from a supervisor | 1 to 100, chosen by the supervisor; ten awards a day each |
 | Quality streak, from day two | 25 each clean day |
 
 A quick contact earns a little. A good evaluation earns a lot. That is deliberate: an agent cannot win the leaderboard by rushing.
@@ -51,6 +52,8 @@ Amazon Connect measures adherence itself when forecasting, capacity planning and
 ## Your own best
 
 An agent who would rather not race the team can tick **my own best** above the leaderboard in their panel. The panel then shows today against their best day on record and this week against their best week, with their average active day, and the rank in the header becomes a percentage of their best day. The choice is saved on their profile and only they and supervisors see the view. They still count in team totals and on the supervisor's leaderboard, since those are team data; the change is to what the agent is shown.
+
+**My goal** in the agent panel lets an agent pick a measure and a number to beat: points this week, contacts today, evaluation average, sentiment, survey score or handle time. The panel shows progress against it from the same figures as the leaderboard. Only the agent and supervisors see it, and it carries no points.
 
 A second tick box, **hide me from others**, takes the agent off their teammates' leaderboards and off wallboards, and leaves their name out of challenge standings that teammates see. Supervisors still see them, with a "hidden" tag in the console, and the agent still sees themselves. Team totals and challenge results are unchanged.
 

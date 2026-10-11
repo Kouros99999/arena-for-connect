@@ -304,3 +304,19 @@ test('theme settings validate; brand colours derive readable companions', () => 
   assert.equal(vars['--accent'], '#1A56DB'); assert.equal(vars['--gold'], '#F59E0B'); assert.equal(vars['--accent-ink'], '#FFFFFF'); assert.match(vars['--accent-soft'], /^#/);
   assert.equal(doc.title, 'Acme Support console'); assert.equal(nodes[0].kids[0].tag, 'img'); assert.equal(nodes[0].kids[1].text, '');
 });
+
+test('goals validate and measure against the same figures as the board; spot awards are capped', () => {
+  assert.deepEqual(Arena.normalizeGoal({ metric: 'qa', target: '88.26' }), { metric: 'qa', target: 88.3 });
+  assert.equal(Arena.normalizeGoal({ metric: null }), null);
+  assert.throws(() => Arena.normalizeGoal({ metric: 'speed', target: 5 }), /goal metric/);
+  assert.throws(() => Arena.normalizeGoal({ metric: 'points', target: -5 }), /positive/);
+  const a = { week: 450, handled: 7, evals: [90, 84], ahtSum: 2100 };
+  let p = Arena.goalProgress({ metric: 'points', target: 600 }, a); assert.equal(p.pct, 75); assert.equal(p.met, false); assert.equal(p.text, '450 of 600');
+  p = Arena.goalProgress({ metric: 'qa', target: 85 }, a); assert.equal(p.met, true); assert.equal(p.pct, 100);
+  p = Arena.goalProgress({ metric: 'aht', target: 240 }, a); assert.equal(p.value, 300); assert.equal(p.met, false); assert.equal(p.pct, 80);
+  p = Arena.goalProgress({ metric: 'sentiment', target: 1 }, a); assert.equal(p.value, null); assert.equal(p.pct, 0);
+  assert.equal(Arena.goalProgress(null, a), null);
+  assert.equal(Arena.scoreEvent('SPOT_AWARD', { Points: 500 }, Arena.DEFAULT_MIX), 100);
+  assert.equal(Arena.scoreEvent('SPOT_AWARD', { Points: 0 }, Arena.DEFAULT_MIX), 1);
+  assert.equal(Arena.badgeOf('mentor').label, 'Mentor'); assert.equal(Arena.badgeOf('nope'), null);
+});

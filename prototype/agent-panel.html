@@ -210,6 +210,11 @@ button{font:inherit;cursor:pointer}
         <div class="tile"><div class="v num" id="kud">0</div><div class="l">kudos received</div></div>
       </div>
 
+      <div class="section" id="goalSec">
+        <h3>My goal <span id="goalState"></span></h3>
+        <div class="chal" id="goalCard"><div class="d">Set a goal for yourself: a number to beat this week. Only you and your supervisor see it.</div></div>
+        <div class="act"><select id="goalMetric" aria-label="Measure"></select><input id="goalTarget" type="number" min="0" step="any" placeholder="Target" aria-label="Target" style="width:6.5rem"><button id="goalSave" class="btn">Set</button><button id="goalClear" class="btn" hidden>Clear</button></div>
+      </div>
       <div class="section" id="coachSec" hidden>
         <h3>Your coaching plan <span id="coachDue"></span></h3>
         <div class="chal" id="coachCard"></div>
@@ -227,7 +232,7 @@ button{font:inherit;cursor:pointer}
 
       <div class="section">
         <h3>Send kudos</h3>
-        <div class="act"><select id="kudosTo" aria-label="Teammate"></select><input id="kudosNote" maxlength="140" placeholder="What did they do?"><button id="kudosSend" class="btn">Send</button></div>
+        <div class="act"><select id="kudosTo" aria-label="Teammate"></select><select id="kudosBadge" aria-label="Badge" title="Optional badge"><option value="">No badge</option></select><input id="kudosNote" maxlength="140" placeholder="What did they do?"><button id="kudosSend" class="btn">Send</button></div>
       </div>
 
       <div class="section">
@@ -400,7 +405,7 @@ button{font:inherit;cursor:pointer}
   $('#kudosSend').addEventListener('click', async () => {
     const to = $('#kudosTo').value, text = $('#kudosNote').value.trim();
     if (!to || !text) return note('Pick a teammate and write a note.', true);
-    try { const ok = await engine.kudos(to, text, YOU.name, YOU.id); note(ok ? 'Kudos sent.' : 'Could not send kudos.', !ok); if (ok) { $('#kudosNote').value = ''; if (engine.remote) await engine.refresh(); render(); } }
+    try { const ok = await engine.kudos(to, text, YOU.name, YOU.id, $('#kudosBadge').value || undefined); note(ok ? 'Kudos sent.' : 'Could not send kudos.', !ok); if (ok) { $('#kudosNote').value = ''; if (engine.remote) await engine.refresh(); render(); } }
     catch (e) { note('Could not send kudos: ' + e.message, true); }
   });
   $('#redeemBtn').addEventListener('click', async () => {
@@ -418,6 +423,23 @@ button{font:inherit;cursor:pointer}
     document.querySelector('.contact .note').textContent = 'Live data from the Arena API. The pane refreshes every five seconds from DynamoDB, fed by the agent event stream.';
   }
   $('#pbMode').addEventListener('change', async e => { pbMode = e.target.checked; render(); if (!best) loadBest(); try { if (YOU) await engine.savePrefs(YOU.id, { personalBest: pbMode }); } catch (err) { note('Could not save the preference: ' + err.message, true); } });
+  // Personal goal: a number the agent picked to beat; progress from the same figures as the leaderboard.
+  let myGoal = null;
+  $('#kudosBadge').innerHTML = '<option value="">No badge</option>' + Arena.KUDOS_BADGES.map(b => `<option value="${b.id}">${b.emoji} ${esc(b.label)}</option>`).join('');
+  $('#goalMetric').innerHTML = Object.entries(Arena.GOAL_METRICS).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join('');
+  function renderGoal(){
+    const card = $('#goalCard'); if (!YOU) return;
+    const p = myGoal ? Arena.goalProgress(myGoal, engine.byId(YOU.id) || YOU) : null;
+    $('#goalClear').hidden = !myGoal;
+    if (!p) { $('#goalState').textContent = ''; card.innerHTML = '<div class="d">Set a goal for yourself: a number to beat this week. Only you and your supervisor see it.</div>'; return; }
+    $('#goalState').textContent = p.met ? 'met' : p.pct + '%';
+    card.innerHTML = `<div class="t">${esc(p.label)}: ${esc(p.text)}</div><div class="bar"><i style="width:${p.pct}%"></i></div><div class="meta"><span>${p.met ? 'Goal met. Set a higher one?' : p.value === null ? 'Nothing to measure yet' : 'Keep going'}</span><span>target ${esc(Arena.GOAL_METRICS[p.metric].fmt(p.target))}</span></div>`;
+  }
+  async function loadGoal(){ if (!YOU) return; try { const g = await engine.goal(YOU.id); myGoal = g.goal; if (myGoal) { $('#goalMetric').value = myGoal.metric; $('#goalTarget').value = myGoal.target; } } catch (e) {} renderGoal(); }
+  $('#goalSave').addEventListener('click', async () => { try { const g = await engine.setGoal(YOU.id, { metric: $('#goalMetric').value, target: $('#goalTarget').value }); myGoal = g.goal; renderGoal(); note('Goal set.'); } catch (e) { note('Could not set the goal: ' + e.message, true); } });
+  $('#goalClear').addEventListener('click', async () => { try { await engine.setGoal(YOU.id, { metric: null }); myGoal = null; $('#goalTarget').value = ''; renderGoal(); } catch (e) { note(e.message, true); } });
+  engine.on(() => { if (myGoal) renderGoal(); });
+
   // The team's catalog and this agent's spendable balance (points this period minus approved rewards).
   async function loadRewards(){ if (!YOU) return; try { catalog = await engine.catalog(); bal = await engine.balance(YOU.id); } catch (e) {} render(); }
   setInterval(loadRewards, 60000);
@@ -429,11 +451,12 @@ button{font:inherit;cursor:pointer}
 
   if (sim) {
     feed = [{words:'Evaluation scored <b>92%</b>', pts:20, t:'09:12'},{words:'Handled <b>Billing</b> contact, 5 min', pts:10, t:'09:05'},{words:'Streak bonus, day 7', pts:Arena.BASE.streakDay, t:'08:31'}];
-    render(); loadChallenge(); loadCoaching(); loadPrefs(); loadRewards(); sim.start();
+    render(); loadChallenge(); loadCoaching(); loadPrefs(); loadRewards(); loadGoal(); sim.start();
   } else {
     const words = e => e.type==='CONTACT_HANDLED' ? `Handled <b>${esc(e.queue||'a')}</b> contact, ${Math.round((e.handleTime||0)/60)} min`
       : e.type==='EVALUATION_SUBMITTED' ? (e.autoFail ? 'Evaluation <b>auto-fail</b>' : `Evaluation scored <b>${e.score}%</b>`)
-      : e.type==='KUDOS' ? `Kudos from <b>${esc(e.from)}</b>: “${esc(e.note)}”`
+      : e.type==='KUDOS' ? `Kudos from <b>${esc(e.from)}</b>${e.badge && Arena.badgeOf(e.badge) ? ' · ' + Arena.badgeOf(e.badge).emoji + ' ' + esc(Arena.badgeOf(e.badge).label) : ''}: “${esc(e.note)}”`
+      : e.type==='SPOT_AWARD' ? `Spot award from <b>${esc(e.from)}</b>: “${esc(e.note || e.reason || '')}”`
       : e.type==='SENTIMENT_SCORED' ? `Customer sentiment <b>${e.sentiment > 0 ? '+' : ''}${e.sentiment}</b> on a contact`
       : e.type==='CSAT_RECEIVED' ? `Customer survey: <b>${e.score} of 5</b>`
       : e.type==='STREAK_DAY' ? `Streak bonus${e.day ? ', day ' + e.day : ''}`
@@ -441,7 +464,7 @@ button{font:inherit;cursor:pointer}
       : e.type==='EVALUATION_ACKNOWLEDGED' ? `Acknowledged your <b>${e.score != null ? e.score + '%' : ''}</b> evaluation`
       : e.type==='BACKFILL_DAY' ? `History: <b>${e.handled || 0}</b> contacts` : e.type;
     async function loadFeed(){ const evs = await engine.events(YOU.id, 6); feed = evs.filter(e => e.points).map(e => ({ words: words(e), pts: e.points, t: e.at.slice(11,16) })); render(); }
-    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); loadPrefs(); loadRewards(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
+    engine.start(5).then(() => { YOU = engine.byId(conn.agentId) || engine.agents[0]; if (YOU) { $('#youName').textContent = YOU.name + (YOU.team ? ' · ' + YOU.team : ''); loadFeed(); loadPrefs(); loadRewards(); loadGoal(); } render(); loadChallenge(); loadCoaching(); }).catch(err => { $('#log').textContent = 'API error: ' + err.message; });
     engine.on(r => { if (YOU && r.agent.id === YOU.id) loadFeed(); });
   }
 })();

@@ -630,6 +630,7 @@ Resources:
         Variables:
           DISPLAY_NAMES: !Ref WallboardNames
           KUDOS_DAILY_LIMIT: !Ref KudosDailyLimit
+          AWARDS_DAILY_LIMIT: '10'
           DIGEST_TOPIC_ARN: !Ref DigestTopic
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           AUTH_MODE: jwt

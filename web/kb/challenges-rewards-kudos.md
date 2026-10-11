@@ -50,6 +50,14 @@ Each team can carry a monthly budget in points, set from the **Budget** button o
 
 ## Kudos
 
+### Badges
+
+A kudos may carry a badge: Lifesaver, Calm under pressure, Team player, Problem solver, Customer champion or Mentor. Pick one in the agent panel next to the teammate's name. It shows on the feed, the wallboard and the channel message. Badges carry no extra points; they say what the kudos was for.
+
+### Spot awards
+
+A supervisor can give points for something they saw: a hard call handled well, a save, a helping hand. **Spot award** on the console's kudos card takes the agent, up to 100 points and a reason the team will see. It lands on the agent's ledger and the team feed with the supervisor's name, is posted to the team's channel under the kudos switch, and is logged. Each supervisor may give ten a day.
+
 ### Spotlights
 
 Some moments deserve a mention without waiting for a teammate to notice. Arena posts a **spotlight** to the team's kudos feed, the wallboard ticker and the team's channels when an agent scores 95% or better on an evaluation, reaches day 5, 10, 20 or 50 of a clean-quality streak, or has their best day on record (which needs at least three earlier active days). Spotlights carry no points, so nothing can be farmed, and they can be switched off per team under **spotlights** in the notifications card.
