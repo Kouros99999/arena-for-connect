@@ -17,6 +17,7 @@ const Arena = require('./arena-engine.js');
 const store = require('./store.js');
 
 const { mixFor } = require('./mix.js');   // the team's scoring profile, or the default
+const people = require('./people.js');     // a person's rows may live under another platform's id
 
 /** Turn one raw Connect agent event into zero or more Arena events. Pure, so it is unit-testable. */
 function translate(raw) {
@@ -75,6 +76,7 @@ exports.handler = async (event) => {
     try {
       const raw = decode(record);
       for (const ev of isContactRecord(raw) ? translateContactRecord(raw) : translate(raw)) {
+        ev.AgentARN = await people.resolve(store, ev.AgentARN);
         if (!ev.Team) { const live = await store.getLive(ev.AgentARN); if (live) { ev.Team = live.team; ev.Username = ev.Username || live.username; } }
         await store.apply(store.planWrites(ev, Arena.scoreEvent(ev.EventType, ev, await mixFor(store, ev.Team))));
       }

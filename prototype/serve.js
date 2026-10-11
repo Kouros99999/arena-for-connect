@@ -44,7 +44,10 @@ async function api(req, res, p) {
     if (req.method === 'PUT' && (m = p.match(/^\/admin\/users\/([^/]+)$/))) { try { return json(res, 200, { person: await engine.updateUser(decodeURIComponent(m[1]), await body(req)) }); } catch (e) { return json(res, 404, { error: e.message }); } }
     if (req.method === 'DELETE' && (m = p.match(/^\/admin\/users\/([^/]+)$/))) return json(res, 200, await engine.deleteUser(decodeURIComponent(m[1])));
     if (req.method === 'GET' && p === '/data/keys') return json(res, 200, { keys: await engine.dataKeys() });
-    if (req.method === 'POST' && p === '/data/keys') { const b = await body(req); return json(res, 201, { key: await engine.createDataKey(b.label, b.days) }); }
+    if (req.method === 'POST' && p === '/data/keys') { const b = await body(req); return json(res, 201, { key: await engine.createDataKey(b.label, b.days, b.kind) }); }
+    if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) return json(res, 200, { aliases: await engine.aliases(decodeURIComponent(m[1])) });
+    if (req.method === 'PUT' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) { const b = await body(req); return json(res, 200, { aliases: await engine.linkAlias(decodeURIComponent(m[1]), b.id, b.platform) }); }
+    if (req.method === 'DELETE' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) { const id = decodeURIComponent((req.url.split('?')[1] || '').replace(/^id=/, '')); return json(res, 200, { aliases: await engine.unlinkAlias(decodeURIComponent(m[1]), id) }); }
     if (req.method === 'DELETE' && (m = p.match(/^\/data\/keys\/([^/]+)$/))) return json(res, 200, await engine.revokeDataKey(decodeURIComponent(m[1])));
     if (req.method === 'GET' && (m = p.match(/^\/data\/([^/]+)\/days$/))) return json(res, 200, await engine.exportDays('2026-01-01', '2026-01-07'));
     if (req.method === 'GET' && (m = p.match(/^\/teams\/([^/]+)\/rewards\/settings$/))) return json(res, 200, { settings: await engine.rewardSettings() });

@@ -626,3 +626,37 @@ test('brand: anyone signed in reads it, wallboards read it by key, supervisors s
   assert.equal(JSON.parse((await h(anon('GET', '/kiosk/tv/theme'))).body).theme.logoUrl, theme.logoUrl, 'wallboards get the brand by key');
   assert.equal((await h(anon('GET', '/kiosk/nope/theme'))).statusCode, 401);
 });
+
+test('generic ingest: an ingest key accepts canonical events, dedupes, rejects bad ones, and resolves linked ids', async () => {
+  const s = fakeStore(); const kiosks = {}, aliases = {}, applied = [];
+  s.putKiosk = async (t, team, f) => { kiosks[t] = Object.assign({ token: t, team }, f); }; s.getKiosk = async (t) => kiosks[t] || null; s.listKiosks = async () => Object.values(kiosks); s.deleteKiosk = async (t) => { delete kiosks[t]; };
+  s.getAlias = async (id) => aliases[id] || null; s.putAlias = async (id, agent, f) => { aliases[id] = Object.assign({ id, agent }, f); }; s.deleteAlias = async (id) => { delete aliases[id]; }; s.listAliases = async (agent) => Object.values(aliases).filter((a) => a.agent === agent);
+  s.apply = async (w) => { applied.push(w); const seen = w.find((x) => x.item && x.item.sk && x.item.sk.startsWith('SEEN#')); if (seen && applied.filter((p) => p.some((x) => x.item && x.item.sk === seen.item.sk)).length > 1) return false; return true; };
+  s.live.a1 = { pk: 'AGENT#a1', team: 't', username: 'priya', displayName: 'Priya N' };
+  require('./people.js').clearCache();
+  const h = makeHandler({ store: s, now: fixed });
+  const made = await h(Object.assign(req('POST', '/data/keys'), { body: JSON.stringify({ label: 'Genesys', kind: 'ingest' }) }));
+  const key = JSON.parse(made.body).key.key; assert.match(key, /^ik_/);
+  assert.equal(JSON.parse((await h(req('GET', '/data/keys'))).body).keys[0].kind, 'ingest');
+  assert.equal((await h(Object.assign(anon('GET', `/data/${key}/days`)))).statusCode, 401, 'an ingest key cannot read');
+  // Link a Genesys id to a1, then feed events under it.
+  let r = await h(Object.assign(req('PUT', '/agents/a1/aliases'), { body: JSON.stringify({ id: 'genesys-42', platform: 'genesys' }) }));
+  assert.equal(r.statusCode, 200); assert.equal(JSON.parse(r.body).aliases[0].id, 'genesys-42');
+  assert.equal((await h(Object.assign(req('PUT', '/agents/a2/aliases'), { body: JSON.stringify({ id: 'genesys-42' }) }))).statusCode, 409, 'one id, one person');
+  const post = (events) => h(Object.assign(anon('POST', `/ingest/${key}/events`), { body: JSON.stringify({ events }) }));
+  r = await post([
+    { type: 'CONTACT_HANDLED', agent: 'genesys-42', at: '2026-09-15T10:00:00Z', contactId: 'c-1', handleTime: 300 },
+    { type: 'EVALUATION_SUBMITTED', agent: 'genesys-42', evaluationId: 'e-1', score: 95 },
+    { type: 'CONTACT_HANDLED', agent: 'genesys-42', contactId: 'c-1', handleTime: 300 },
+    { type: 'CONTACT_HANDLED', agent: 'genesys-42', handleTime: -5 },
+  ]);
+  assert.equal(r.statusCode, 200); const b = JSON.parse(r.body);
+  assert.equal(b.accepted, 2); assert.equal(b.duplicates, 1); assert.deepEqual(b.rejected, [{ index: 3, error: 'handleTime must be seconds, 0 to 86400' }]);
+  const ev = applied[0].find((w) => w.item && w.item.sk && w.item.sk.startsWith('EV#')).item;
+  assert.equal(ev.AgentARN, 'a1', 'written under the linked person'); assert.equal(ev.Team, 't', 'team from the live row'); assert.equal(ev.Source, 'ingest'); assert.ok(ev.points > 0);
+  assert.equal((await post([{ type: 'NOPE', agent: 'x' }])).statusCode, 400, 'nothing accepted');
+  assert.equal((await h(anon('POST', '/ingest/nope/events'))).statusCode, 401);
+  r = await h(Object.assign(req('DELETE', '/agents/a1/aliases'), { queryStringParameters: { id: 'genesys-42' } }));
+  assert.equal(JSON.parse(r.body).aliases.length, 0);
+  assert.equal(JSON.parse((await h(req('GET', '/health'))).body).provider, 'connect');
+});

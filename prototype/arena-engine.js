@@ -691,7 +691,11 @@
     const deleteUser = async (username) => { local.users = local.users.filter((x) => x.username !== username); return { username, deleted: true }; };
     local.dataKeys = [];
     const dataKeys = async () => local.dataKeys;
-    const createDataKey = async (label, days) => { const k = { key: 'dk_demo' + (local.dataKeys.length + 1), label: label || 'Warehouse', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + (days || 365) * 86400000).toISOString() }; local.dataKeys.push(k); return k; };
+    const createDataKey = async (label, days, kind) => { const k = { key: (kind === 'ingest' ? 'ik_demo' : 'dk_demo') + (local.dataKeys.length + 1), kind: kind === 'ingest' ? 'ingest' : 'data', label: label || 'Warehouse', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + (days || 365) * 86400000).toISOString() }; local.dataKeys.push(k); return k; };
+    local.aliases = {};
+    const aliases = async (agentId) => local.aliases[agentId] || [];
+    const linkAlias = async (agentId, id, platform) => { (local.aliases[agentId] = local.aliases[agentId] || []).push({ id, agent: agentId, platform, createdAt: new Date().toISOString() }); return local.aliases[agentId]; };
+    const unlinkAlias = async (agentId, id) => { local.aliases[agentId] = (local.aliases[agentId] || []).filter((a) => a.id !== id); return local.aliases[agentId]; };
     const revokeDataKey = async (key) => { local.dataKeys = local.dataKeys.filter((k) => k.key !== key); return { revoked: key }; };
     const exportDays = async (from, to) => ({ from, to, rows: syntheticHistory(agents, 7).flatMap((d) => d.rows.map((r) => ({ day: d.date, team: 'Billing team', agentId: r.id, name: r.name, points: r.points, contactsHandled: r.handled }))) });
     const apiBase = () => '/api';
@@ -748,7 +752,7 @@
       suggestions: () => recommendChallenges(agents),
       badges: badgesFor, level: (a) => levelFor(a.week), qaAvg, aht, sentimentAvg, csatAvg,
       challenges, createChallenge, endChallenge, updateChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance,
-      users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo,
+      users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias,
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note }); return true; },
       _local: local,
@@ -841,6 +845,7 @@
       const body = await r.json();
       if (kiosk && body.team) team = body.team;
       if (body.timezone) engine.timezone = body.timezone;   // the stack's Timezone setting: when its days start
+      if (body.provider) engine.provider = body.provider;   // which platform feeds the stack: wording only
       engine.agents.length = 0;
       for (const a of body.agents) { a.hue = hueFor(a.id); a.initials = initials(a.name || '?'); engine.agents.push(a); }
       // The signed-in agent may have no rows yet (nothing scored today). Show them at zero rather than nothing.
@@ -911,7 +916,10 @@
     const resetPassword = async (username) => call('POST', `${base}/admin/users/${encodeURIComponent(username)}/password`, {});
     const deleteUser = async (username) => call('DELETE', `${base}/admin/users/${encodeURIComponent(username)}`);
     const dataKeys = async () => (await call('GET', `${base}/data/keys`)).keys;
-    const createDataKey = async (label, days) => (await call('POST', `${base}/data/keys`, { label, days })).key;
+    const createDataKey = async (label, days, kind) => (await call('POST', `${base}/data/keys`, { label, days, kind })).key;
+    const aliases = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/aliases`)).aliases;
+    const linkAlias = async (agentId, id, platform) => (await call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/aliases`, { id, platform })).aliases;
+    const unlinkAlias = async (agentId, id) => (await call('DELETE', `${base}/agents/${encodeURIComponent(agentId)}/aliases?id=${encodeURIComponent(id)}`)).aliases;
     const revokeDataKey = async (key) => call('DELETE', `${base}/data/keys/${encodeURIComponent(key)}`);
     const exportDays = async (from, to, teamName) => call('GET', `${base}/export/days?from=${from}&to=${to}` + (teamName ? '&team=' + encodeURIComponent(teamName) : ''));
     const apiBase = () => base;
@@ -935,7 +943,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       suggestions: () => recommendChallenges(engine.agents),

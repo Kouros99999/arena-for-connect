@@ -23,7 +23,8 @@ async function readObject(bucket, key) {
 }
 
 const { mixFor } = require('./mix.js');
-const { spotlight } = require('./spotlight.js');   // the team's scoring profile, or the default
+const { spotlight } = require('./spotlight.js');
+const people = require('./people.js');   // the team's scoring profile, or the default
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -73,6 +74,7 @@ exports.handler = async (event) => {
     const doc = await readObject(bucket, key);
     const ev = translate(doc);
     if (!ev) { console.warn('no score in', key); skipped++; continue; }
+    ev.AgentARN = await people.resolve(store, ev.AgentARN);
     const live = await store.getLive(ev.AgentARN);
     if (live) { ev.Team = live.team; ev.Username = live.username; }
     const points = Arena.scoreEvent('EVALUATION_SUBMITTED', ev, await mixFor(store, ev.Team));

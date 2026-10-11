@@ -377,6 +377,14 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
       <label>Connect agent<select id="pAgent"><option value="">Not an agent</option></select></label>
     </div>
     <datalist id="pTeams"></datalist>
+    <h3 class="sub-h">Link another platform's id</h3>
+    <div class="ctx">When a person's contacts arrive under a new id (a new platform, or a second one), link it here and their points, streaks and history carry on under the same record.</div>
+    <div class="grid2">
+      <label>Person<select id="alAgent"></select></label>
+      <label>Id on the other platform<input id="alId" maxlength="300" placeholder="e.g. a Genesys user id or an email"></label>
+    </div>
+    <div class="act"><label>Platform (optional)<input id="alPlatform" maxlength="40" placeholder="genesys"></label><button type="button" class="btn sm" id="alLink">Link</button><span class="err" id="alErr"></span></div>
+    <div class="people" id="alList"></div>
     <div class="act"><span class="err" id="pErr"></span><button type="button" class="btn" id="pClose">Close</button><button type="submit" class="btn pri" id="pAdd">Add person</button></div>
   </form>
 </dialog>
@@ -385,7 +393,7 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
     <h2 id="dataTitle">Data for your warehouse</h2>
     <div class="ctx">Per-agent, per-day rows: points, contacts, handle time, evaluations, sentiment, surveys, adherence and kudos. No customer data. The stack writes them nightly to its export bucket when DataExport is enabled; the read API below returns the same rows.</div>
     <div class="people" id="dataKeys"></div>
-    <div class="act"><label>Label<input id="dkLabel" maxlength="60" placeholder="Databricks"></label><button type="button" class="btn sm pri" id="dkCreate">Create a data key</button></div>
+    <div class="act"><label>Label<input id="dkLabel" maxlength="60" placeholder="Databricks"></label><button type="button" class="btn sm pri" id="dkCreate">Create a data key</button><button type="button" class="btn sm" id="ikCreate" title="Lets another platform or your own middleware send Arena its events">Create an ingest key</button></div>
     <pre class="code" id="dkHow" hidden></pre>
     <div class="act"><span class="err" id="dkErr"></span><button type="button" class="btn" id="dkClose">Close</button></div>
   </form>
@@ -601,7 +609,11 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
   async function loadPeople(){ try { people = await engine.users(); $('#pErr').textContent = ''; } catch (e) { people = []; $('#pErr').textContent = e.message; } renderPeople();
     $('#pAgent').innerHTML = '<option value="">Not an agent</option>' + engine.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
     $('#pTeams').innerHTML = [...new Set(engine.agents.map(a => a.team).filter(Boolean).concat([engine.team]).filter(Boolean))].map(t => `<option value="${esc(t)}">`).join(''); $('#pTeam').value = engine.team || ''; }
-  $('#peopleBtn').addEventListener('click', async () => { if (!conn.isSupervisor && engine.remote) return toast('Supervisors only'); await loadPeople(); $('#peopleDlg').showModal(); });
+  async function loadAliases(){ const id = $('#alAgent').value; if (!id) { $('#alList').innerHTML = ''; return; } try { const list = await engine.aliases(id); $('#alList').innerHTML = list.length ? list.map(a => `<div class="person" style="grid-template-columns:1fr 1fr auto"><span><b>${esc(a.id)}</b></span><span><small>${esc(a.platform || 'linked')} · ${esc((a.createdAt || '').slice(0, 10))}</small></span><span class="acts"><button type="button" class="btn sm" data-unlink="${esc(a.id)}">Unlink</button></span></div>`).join('') : '<div class="empty">No linked ids for this person.</div>'; } catch (e) { $('#alErr').textContent = e.message; } }
+  $('#peopleBtn').addEventListener('click', async () => { if (!conn.isSupervisor && engine.remote) return toast('Supervisors only'); await loadPeople(); $('#alAgent').innerHTML = engine.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join(''); await loadAliases(); $('#peopleDlg').showModal(); });
+  $('#alAgent').addEventListener('change', loadAliases);
+  $('#alLink').addEventListener('click', async () => { try { await engine.linkAlias($('#alAgent').value, $('#alId').value.trim(), $('#alPlatform').value.trim()); $('#alId').value = ''; $('#alErr').textContent = ''; await loadAliases(); toast('Linked'); } catch (e) { $('#alErr').textContent = e.message; } });
+  $('#alList').addEventListener('click', async e => { const u = e.target.closest('[data-unlink]'); if (!u) return; try { await engine.unlinkAlias($('#alAgent').value, u.dataset.unlink); await loadAliases(); } catch (err) { $('#alErr').textContent = err.message; } });
   $('#pClose').addEventListener('click', () => $('#peopleDlg').close());
   $('#pAgent').addEventListener('change', e => { const a = engine.byId(e.target.value); if (a) { if (!$('#pName').value) $('#pName').value = a.name; if (!$('#pUser').value && a.username) $('#pUser').value = a.username; if (a.team) $('#pTeam').value = a.team; } });
   $('#peopleForm').addEventListener('submit', async e => { e.preventDefault();
@@ -620,13 +632,18 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
   // Data keys: a warehouse or BI tool reads per-agent per-day rows through the API without a sign-in. Supervisors mint and revoke them.
   async function loadDataKeys(){
     let keys = []; try { keys = await engine.dataKeys(); $('#dkErr').textContent = ''; } catch (e) { $('#dkErr').textContent = e.message; }
-    $('#dataKeys').innerHTML = keys.length ? keys.map(k => `<div class="person" style="grid-template-columns:1fr 1fr auto"><span><b>${esc(k.label)}</b><small>created ${esc((k.createdAt || '').slice(0, 10))}${k.createdBy ? ' by ' + esc(k.createdBy) : ''}</small></span><span><small>${esc(k.key.slice(0, 8))}… · until ${esc((k.expiresAt || '').slice(0, 10))}</small></span><span class="acts"><button type="button" class="btn sm" data-revoke="${esc(k.key)}">Revoke</button></span></div>`).join('') : '<div class="empty">No data keys yet.</div>';
+    $('#dataKeys').innerHTML = keys.length ? keys.map(k => `<div class="person" style="grid-template-columns:1fr 1fr auto"><span><b>${esc(k.label)}</b> <small style="display:inline">${k.kind === 'ingest' ? 'ingest (events in)' : 'data (rows out)'}</small><small>created ${esc((k.createdAt || '').slice(0, 10))}${k.createdBy ? ' by ' + esc(k.createdBy) : ''}</small></span><span><small>${esc(k.key.slice(0, 8))}… · until ${esc((k.expiresAt || '').slice(0, 10))}</small></span><span class="acts"><button type="button" class="btn sm" data-revoke="${esc(k.key)}">Revoke</button></span></div>`).join('') : '<div class="empty">No data keys yet.</div>';
   }
   $('#dataBtn').addEventListener('click', async () => { if (!conn.isSupervisor && engine.remote) return toast('Supervisors only'); $('#dkHow').hidden = true; await loadDataKeys(); $('#dataDlg').showModal(); });
   $('#dkClose').addEventListener('click', () => $('#dataDlg').close());
   $('#dkCreate').addEventListener('click', async () => {
     try { const k = await engine.createDataKey($('#dkLabel').value.trim() || 'Warehouse', 365); const base = new URL(engine.apiBase(), location.href).toString().replace(/\/$/, '');
       $('#dkHow').hidden = false; $('#dkHow').textContent = `Data key, shown once. Store it in your warehouse's secret store.\n\n${k.key}\n\nRead the last 30 days:\ncurl "${base}/data/${k.key}/days?from=${new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)}&to=${new Date(Date.now() - 86400000).toISOString().slice(0, 10)}"\n\nNightly files land in the stack's export bucket under days/dt=YYYY-MM-DD/<team>.json when DataExport is enabled.`;
+      $('#dkLabel').value = ''; await loadDataKeys(); }
+    catch (e) { $('#dkErr').textContent = e.message; } });
+  $('#ikCreate').addEventListener('click', async () => {
+    try { const k = await engine.createDataKey($('#dkLabel').value.trim() || 'Platform feed', 365, 'ingest'); const base = new URL(engine.apiBase(), location.href).toString().replace(/\/$/, '');
+      $('#dkHow').hidden = false; $('#dkHow').textContent = `Ingest key, shown once. Give it to the platform or middleware that will send events.\n\n${k.key}\n\nSend events (any of CONTACT_HANDLED, EVALUATION_SUBMITTED, SENTIMENT_SCORED, CSAT_RECEIVED, ADHERENCE_SCORED, AGENT_STATE_CHANGE):\ncurl -X POST "${base}/ingest/${k.key}/events" -H "content-type: application/json" -d '{"events":[{"type":"CONTACT_HANDLED","agent":"agent-id-on-your-platform","at":"${new Date().toISOString()}","contactId":"c-1","handleTime":312,"queue":"Billing","team":"Billing team","name":"Priya N"}]}'\n\nThe help center article "Connecting other platforms" lists every field.`;
       $('#dkLabel').value = ''; await loadDataKeys(); }
     catch (e) { $('#dkErr').textContent = e.message; } });
   $('#dataKeys').addEventListener('click', async e => { const r = e.target.closest('[data-revoke]'); if (!r) return; try { await engine.revokeDataKey(r.dataset.revoke); await loadDataKeys(); toast('Data key revoked'); } catch (err) { $('#dkErr').textContent = err.message; } });

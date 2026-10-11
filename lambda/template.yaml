@@ -83,6 +83,11 @@ Parameters:
     Default: disabled
     AllowedValues: [enabled, disabled]
     Description: enabled creates a private export bucket and writes per-agent per-day rows to it every night (newline JSON under days/dt=YYYY-MM-DD/), for Databricks, Athena or any warehouse. The read API works either way.
+  Provider:
+    Type: String
+    Default: connect
+    AllowedValues: [connect, generic]
+    Description: Which platform feeds this stack. connect reads the Amazon Connect agent event stream and Contact Lens files. generic expects events through the ingest endpoint (any platform or middleware); the Connect feeds stay available if configured.
   KudosDailyLimit:
     Type: Number
     Default: 5
@@ -630,6 +635,7 @@ Resources:
           AUTH_MODE: jwt
           USER_POOL_ID: !If [UseCognito, !Ref UserPool, '']
           SITE_BUCKET: !Ref SiteBucket
+          PROVIDER: !Ref Provider
       Policies:
         - SNSPublishMessagePolicy: { TopicName: !GetAtt DigestTopic.TopicName }
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
@@ -647,6 +653,14 @@ Resources:
             Method: GET
             Auth:
               Authorizer: NONE   # the data key in the path is the credential; the function checks it. Read-only.
+        Ingest:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ingest/{key}/events
+            Method: POST
+            Auth:
+              Authorizer: NONE   # the ingest key in the path is the credential; the function validates every event.
         Any:
           Type: HttpApi
           Properties:

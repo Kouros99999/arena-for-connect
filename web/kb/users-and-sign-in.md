@@ -18,6 +18,8 @@ Supervisors manage sign-ins from the **People** button at the top of the console
 - **Reset password** shows a new temporary password once.
 - **Remove** deletes the sign-in. Their points and history stay; see [security and your data](kb.html?a=security-and-data) to remove those too.
 
+The same dialog links **another platform's id** to a person, so their history continues when contacts start arriving under a new id; see [connecting other platforms](kb.html?a=connecting-other-platforms).
+
 Every action is written to the API log with who did it. With an external identity provider (`AuthMode` external) the button says so and people are managed in your provider instead.
 
 ## Creating users from Connect in bulk

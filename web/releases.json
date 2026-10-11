@@ -1,5 +1,25 @@
 [
   {
+    "version": "0.16.0",
+    "date": "2026-10-10",
+    "title": "Any platform in, and the same Arena",
+    "summary": "An ingest endpoint lets any contact centre platform or middleware feed Arena, and people keep their history when their platform id changes.",
+    "changes": [
+      "Ingest endpoint: create an ingest key from the Data button and send Arena's six canonical events (contacts, evaluations, sentiment, surveys, adherence, state) as JSON from any platform or your own middleware. Validated, deduplicated, up to 500 per call.",
+      "Linked ids: in People, link another platform's id to a person so points, streaks, personal bests, coaching and rewards continue under the same record when contacts arrive under the new id.",
+      "Provider setting on the stack records which platform feeds it. The Amazon Connect feeds keep working alongside the endpoint, so a centre can run both during a migration.",
+      "New help center article: connecting other platforms and switching providers without losing history."
+    ],
+    "upgrade": [
+      "No action is needed. Nothing changes for a stack fed by Amazon Connect."
+    ],
+    "docs": [
+      "connecting-other-platforms",
+      "settings-reference",
+      "users-and-sign-in"
+    ]
+  },
+  {
     "version": "0.15.0",
     "date": "2026-10-10",
     "title": "Arena on your phone",
