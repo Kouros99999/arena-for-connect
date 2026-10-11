@@ -43,13 +43,21 @@ Resources:
           CUSTOMERS_TABLE: !Ref Customers
           SUPPORT_EMAIL: !Ref SupportEmail
           LAUNCH_REGION: !Ref LaunchRegion
+          ANNOUNCE_TOPIC_ARN: !Ref Announcements
+          SITE_ORIGIN: https://arenaforconnect.com
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Customers }
         - Statement:
             - Effect: Allow
               Action: [aws-marketplace:ResolveCustomer]
               Resource: '*'
+            - Effect: Allow
+              Action: [sns:Subscribe]
+              Resource: !Ref Announcements
       Events:
+        Subscribe:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Path: /subscribe, Method: POST }
         Register:
           Type: HttpApi
           Properties: { ApiId: !Ref Api, Path: /register, Method: ANY }
@@ -61,6 +69,17 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       Description: Arena Marketplace registration
+      CorsConfiguration:
+        AllowOrigins: ['https://arenaforconnect.com', 'http://localhost:8800']
+        AllowMethods: [POST]
+        AllowHeaders: [content-type]
+
+  # Release announcements: the website's subscribe box adds confirmed email subscriptions; release.js publishes each version's notes here.
+  Announcements:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub arena-announcements-${AWS::StackName}
+      DisplayName: Arena releases
 
   NotifyFunction:
     Type: AWS::Serverless::Function
@@ -95,3 +114,6 @@ Outputs:
     Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/register
   CustomersTable:
     Value: !Ref Customers
+  AnnouncementsTopicArn:
+    Description: Pass to release.js as ARENA_ANNOUNCE_TOPIC so each published release is emailed to subscribers.
+    Value: !Ref Announcements

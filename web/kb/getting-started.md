@@ -19,6 +19,10 @@ You need:
 
 When the stack shows `CREATE_COMPLETE`, open its **Outputs** tab. You will use `StreamArn`, `SiteUrl` and `UserPoolId`.
 
+## Staying current
+
+When a newer version exists, the supervisor console shows a notice at the top with what changed and a link here. Updating is one CloudFormation stack update to the new template URL from the [release notes](releases.html); settings and data stay. To hear about versions without opening the console, subscribe to the release feed or the email list on the release notes page.
+
 ## 2. Point Connect at Arena
 
 Arena reads the agent event stream. In the Amazon Connect console:

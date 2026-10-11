@@ -55,3 +55,15 @@ test('notify parses Marketplace license events and ignores junk', () => {
   assert.equal(parseRecord({ detail: {} }), null);
   assert.equal(parseRecord({ 'detail-type': 'Something Else', detail: { license: { arn: 'x' } } }), null);
 });
+
+test('/subscribe validates the address and asks SNS for a confirmed email subscription', async () => {
+  const calls = [];
+  const clients = { sns: { send: async (cmd) => { calls.push(cmd.input); return {}; } }, SubscribeCommand: function (i) { this.input = i; } };
+  const post = (body) => ({ rawPath: '/subscribe', requestContext: { http: { method: 'POST' } }, body: JSON.stringify(body) });
+  let r = await handler(post({ email: ' Partner@VeriCX.ai ' }), {}, { clients, topic: 'arn:aws:sns:us-east-1:1:arena-announcements' });
+  assert.equal(r.statusCode, 200); assert.match(JSON.parse(r.body).message, /confirmation/); assert.equal(r.headers['access-control-allow-origin'], 'https://arenaforconnect.com');
+  assert.deepEqual(calls[0], { TopicArn: 'arn:aws:sns:us-east-1:1:arena-announcements', Protocol: 'email', Endpoint: 'partner@vericx.ai' });
+  assert.equal((await handler(post({ email: 'nope' }), {}, { clients, topic: 't' })).statusCode, 400);
+  assert.equal((await handler(post({ email: 'a@b.co' }), {}, { clients: {}, topic: '' })).statusCode, 503);
+  assert.equal((await handler({ rawPath: '/subscribe', requestContext: { http: { method: 'GET' } } }, {}, { clients, topic: 't' })).statusCode, 405);
+});

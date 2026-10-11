@@ -145,6 +145,9 @@ tr.flash td{background:var(--flash)}
 
 .rw{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .rw:last-child{border-bottom:0}
+.update{background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.update a{color:var(--accent);font-weight:600}
+.update button{margin-left:auto;background:transparent;border:0;color:var(--muted);cursor:pointer;font:inherit}
 .suggest{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 0;font-size:12px}
 .suggest:empty{display:none}
 .suggest .lab{color:var(--muted);align-self:center}
@@ -237,6 +240,7 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
 </div>
 
 <div class="wrap">
+  <div class="update" id="updateBar" hidden></div>
   <div class="stats">
     <div class="stat"><div class="v num" id="sAgents">12</div><div class="l">agents online</div></div>
     <div class="stat"><div class="v num" id="sPts">0</div><div class="l">team points today</div></div>
@@ -647,6 +651,19 @@ dialog.wide{width:min(760px,calc(100vw - 32px))}
       $('#dkLabel').value = ''; await loadDataKeys(); }
     catch (e) { $('#dkErr').textContent = e.message; } });
   $('#dataKeys').addEventListener('click', async e => { const r = e.target.closest('[data-revoke]'); if (!r) return; try { await engine.revokeDataKey(r.dataset.revoke); await loadDataKeys(); toast('Data key revoked'); } catch (err) { $('#dkErr').textContent = err.message; } });
+
+  // Update notice: compare the installed version (config.js) with the newest release on arenaforconnect.com, once a day, supervisors only.
+  (async function checkForUpdate(){
+    const cfg = window.ARENA_CONFIG || {}; if (!engine.remote || !cfg.version || !conn.isSupervisor) return;
+    const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+    let latest = null;
+    try { const cached = JSON.parse(localStorage.getItem('arena.latest') || 'null'); if (cached && Date.now() - cached.at < 86400000) latest = cached.rel; } catch {}
+    if (!latest) { try { const list = await (await fetch('https://arenaforconnect.com/releases.json', { cache: 'no-cache' })).json(); latest = list[0]; localStorage.setItem('arena.latest', JSON.stringify({ at: Date.now(), rel: latest })); } catch { return; } }
+    if (!latest || !newer(latest.version, cfg.version) || localStorage.getItem('arena.dismissed') === latest.version) return;
+    const bar = $('#updateBar'); bar.hidden = false;
+    bar.innerHTML = `<span>Arena <b>${esc(latest.version)}</b> is available (you run ${esc(cfg.version)}): ${esc(latest.title)}. <a href="https://arenaforconnect.com/releases.html#v${esc(latest.version)}" target="_blank" rel="noopener">What changed</a> · <a href="https://arenaforconnect.com/kb/getting-started.html" target="_blank" rel="noopener">how to update</a></span><button type="button" title="Hide until the next version">×</button>`;
+    bar.querySelector('button').onclick = () => { bar.hidden = true; localStorage.setItem('arena.dismissed', latest.version); };
+  })();
 
   // Suggested challenges: what the team's own numbers say to run next. Clicking one prefills the form.
   function renderSuggestions(){

@@ -20,12 +20,18 @@ const TABLE = process.env.CUSTOMERS_TABLE || '';
 const SUPPORT = process.env.SUPPORT_EMAIL || '';
 
 let clients;
+const ANNOUNCE = process.env.ANNOUNCE_TOPIC_ARN || '';
+const SITE_ORIGIN = process.env.SITE_ORIGIN || 'https://arenaforconnect.com';
+const jsonOut = (status, body) => ({ statusCode: status, headers: { 'content-type': 'application/json', 'access-control-allow-origin': SITE_ORIGIN }, body: JSON.stringify(body) });
+
 function real() {
   if (clients) return clients;
   const mm = require('@aws-sdk/client-marketplace-metering');
+  const sns = require('@aws-sdk/client-sns');
   const ddb = require('@aws-sdk/client-dynamodb'), lib = require('@aws-sdk/lib-dynamodb');
   clients = { metering: new mm.MarketplaceMeteringClient({ region: 'us-east-1' }), ResolveCustomerCommand: mm.ResolveCustomerCommand,
-    ddb: lib.DynamoDBDocumentClient.from(new ddb.DynamoDBClient({})), PutCommand: lib.PutCommand, UpdateCommand: lib.UpdateCommand };
+    ddb: lib.DynamoDBDocumentClient.from(new ddb.DynamoDBClient({})), PutCommand: lib.PutCommand, UpdateCommand: lib.UpdateCommand,
+    sns: new sns.SNSClient({}), SubscribeCommand: sns.SubscribeCommand };
   return clients;
 }
 
@@ -82,6 +88,19 @@ exports.handler = async (event, context, deps) => {
   const method = (event.requestContext && event.requestContext.http && event.requestContext.http.method) || 'GET';
   const path = event.rawPath || '/';
   if (path === '/health') return { statusCode: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ok: true }) };
+  if (path === '/subscribe') {
+    // Release announcements by email. SNS sends its own confirmation; nothing is stored until the person confirms.
+    if (method !== 'POST') return jsonOut(405, { error: 'POST an email' });
+    let email = '';
+    try { email = String(JSON.parse(event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString() : (event.body || '{}')).email || '').trim().toLowerCase(); } catch { email = ''; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return jsonOut(400, { error: 'That does not look like an email address.' });
+    const topic = (deps && deps.topic) || ANNOUNCE;
+    if (!topic || !c.sns) return jsonOut(503, { error: 'Subscriptions are not set up yet. Email support@arenaforconnect.com and we will add you.' });
+    try { await c.sns.send(new c.SubscribeCommand({ TopicArn: topic, Protocol: 'email', Endpoint: email })); }
+    catch (err) { console.error('subscribe failed', err.name); return jsonOut(502, { error: 'Could not subscribe right now. Email support@arenaforconnect.com and we will add you.' }); }
+    console.log(JSON.stringify({ subscribed: email.replace(/^(.).*(@.*)$/, '$1…$2') }));
+    return jsonOut(200, { ok: true, message: 'Check your inbox for a confirmation from AWS Notifications and click the link once.' });
+  }
   if (method !== 'POST') return html(200, landingPage());
   const token = tokenFrom(event);
   if (!token) return html(400, page('Missing subscription token', '<h1>Missing subscription token</h1><p>This page must be reached from the AWS Marketplace subscription flow.</p>'));

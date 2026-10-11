@@ -47,7 +47,7 @@ function social(html, urlPath, image) {
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${ORIGIN}/${image || 'img/og.png'}">
 <meta name="theme-color" content="#0F766E">
 `;
-  return html.replace(/(<link rel="icon" type="image\/svg\+xml"[^>]*>)/, tags + '$1');
+  return html.replace(/(<link rel="icon" type="image\/svg\+xml"[^>]*>)/, tags + '<link rel="alternate" type="application/rss+xml" title="Arena releases" href="' + ORIGIN + '/releases.xml">\n$1');
 }
 
 // ---------- help-center articles as static pages ----------
@@ -144,9 +144,34 @@ ${footer('../')}
 }
 for (const f of ['support.html', 'privacy.html', 'partners.html']) write(f, social(read(f), '/' + f));
 
+// ---------- release feed (RSS 2.0): partners and customers subscribe once and hear about every version ----------
+{
+  const rfc = (iso) => new Date(iso + 'T16:00:00Z').toUTCString();
+  const items = releases.map((r) => `    <item>
+      <title>Arena ${esc(r.version)}: ${esc(r.title)}</title>
+      <link>${ORIGIN}/releases.html#v${esc(r.version)}</link>
+      <guid isPermaLink="true">${ORIGIN}/releases.html#v${esc(r.version)}</guid>
+      <pubDate>${rfc(r.date)}</pubDate>
+      <description>${esc(r.summary + ' ' + r.changes.map((c) => '• ' + c).join(' '))}</description>
+    </item>`).join('\n');
+  write('releases.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Arena for Amazon Connect releases</title>
+    <link>${ORIGIN}/releases.html</link>
+    <atom:link href="${ORIGIN}/releases.xml" rel="self" type="application/rss+xml"/>
+    <description>What changed in each version of Arena for Amazon Connect.</description>
+    <language>en</language>
+    <lastBuildDate>${rfc(latest.date)}</lastBuildDate>
+${items}
+  </channel>
+</rss>
+`);
+}
+
 // ---------- sitemap and robots ----------
 const today = new Date().toISOString().slice(0, 10);
-const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/partners.html', priority: '0.6', changefreq: 'monthly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
+const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/partners.html', priority: '0.6', changefreq: 'monthly' }, { loc: '/releases.xml', priority: '0.4', changefreq: 'weekly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `  <url><loc>${ORIGIN}${p.loc}</loc><lastmod>${today}</lastmod><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`).join('\n')}\n</urlset>\n`);
 write('robots.txt', `User-agent: *\nAllow: /\nDisallow: /agent-panel.html\nDisallow: /supervisor-console.html\nDisallow: /wallboard.html\nDisallow: /report.html\nSitemap: ${ORIGIN}/sitemap.xml\n`);
 console.log(`built ${kb.length} articles, ${releases.length} releases, sitemap with ${pages.length} URLs into ${out}`);

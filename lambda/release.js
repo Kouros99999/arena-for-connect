@@ -1,6 +1,7 @@
 // Builds a self-contained release of the Arena stack for AWS Marketplace or any customer account.
 //
-//   node lambda/release.js <version> [--bucket <public artifacts bucket>] [--region us-east-1] [--no-upload]
+//   node lambda/release.js <version> [--bucket <public artifacts bucket>] [--region us-east-1] [--no-upload] [--announce <sns topic arn>]
+//   ARENA_ANNOUNCE_TOPIC in the environment does the same as --announce: after a successful upload the release notes are published to that topic (email subscribers from the website).
 //
 // Produces release/<version>/arena.zip (all Lambda code, one archive), release/<version>/template.yaml
 // (every CodeUri rewritten to the public S3 location) and release/<version>/site.zip (the pages).
@@ -82,6 +83,16 @@ if (upload) {
   for (const f of fs.readdirSync(out)) aws('s3', 'cp', path.join(out, f), `s3://${bucket}/arena/${version}/${f}`, '--cache-control', 'public, max-age=31536000, immutable');
   console.log(`published to s3://${bucket}/arena/${version}/`);
   console.log(`template URL: https://${bucket}.s3.${region}.amazonaws.com/arena/${version}/template.yaml`);
+  const announce = opt('announce', process.env.ARENA_ANNOUNCE_TOPIC || '');
+  if (announce) {
+    const text = [`Arena for Amazon Connect ${version}: ${entry.title}`, '', entry.summary, '', 'What changed:', ...entry.changes.map((c) => '- ' + c), '',
+      ...(entry.upgrade && entry.upgrade.length ? ['If you are upgrading:', ...entry.upgrade.map((c) => '- ' + c), ''] : []),
+      `Release notes: https://arenaforconnect.com/releases.html#v${version}`, `Template: https://${bucket}.s3.${region}.amazonaws.com/arena/${version}/template.yaml`, '',
+      'You receive this because you subscribed on arenaforconnect.com. Unsubscribe with the link AWS adds below.'].join('\n');
+    const msgFile = path.join(os.tmpdir(), `arena-announce-${version}.txt`); fs.writeFileSync(msgFile, text);
+    aws('sns', 'publish', '--topic-arn', announce, '--subject', `Arena ${version}: ${entry.title}`.slice(0, 99), '--message', `file://${msgFile}`);
+    console.log('announced to', announce);
+  }
   console.log(`\nNext: commit and push. The push publishes the ${version} notes to https://arenaforconnect.com/releases.html and the help center at https://arenaforconnect.com/kb.html.`);
 } else if (bucket) console.log('upload skipped (--no-upload)');
 else console.log('no --bucket given: template references ./arena.zip; run `aws cloudformation package` on it or pass --bucket to publish');

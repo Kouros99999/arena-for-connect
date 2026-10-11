@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.17.0",
+    "date": "2026-10-11",
+    "title": "Hear about new versions",
+    "summary": "The console tells supervisors when a newer Arena exists, and partners and customers can follow releases by feed or email.",
+    "changes": [
+      "Update notice: the supervisor console checks arenaforconnect.com once a day and shows a bar when a newer version exists, with what changed and how to update. Dismiss it until the next version.",
+      "Release feed: an RSS feed of the release notes at arenaforconnect.com/releases.xml, for Slack, Teams or any reader.",
+      "Email announcements: a subscribe box on the release notes page; each published version's notes go to confirmed subscribers.",
+      "The website now says Arena is available on AWS Marketplace, with a subscribe button."
+    ],
+    "upgrade": [
+      "No action is needed. The update notice appears once this version is installed."
+    ],
+    "docs": [
+      "getting-started"
+    ]
+  },
+  {
     "version": "0.16.0",
     "date": "2026-10-10",
     "title": "Any platform in, and the same Arena",

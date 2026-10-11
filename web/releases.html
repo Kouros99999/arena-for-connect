@@ -15,6 +15,10 @@
 <main class="page">
   <h1>Release notes</h1>
   <p class="lede">What changed in each version of Arena, newest first.</p>
+  <div class="latest" id="follow">
+    <b>Hear about new versions.</b> Subscribe to the <a href="releases.xml">release feed</a> in Slack, Teams or any reader, watch the <a href="https://github.com/Kouros99999/arena-for-connect">GitHub repository</a>, or get the notes by email:
+    <form id="subForm" class="btn-row" style="margin-top:.5rem" data-api="https://zpk32ibw12.execute-api.us-east-1.amazonaws.com"><input id="subEmail" type="email" required placeholder="you@example.com" aria-label="Email" style="padding:.5rem .7rem;border:1px solid var(--line);border-radius:8px;font:inherit;min-width:16rem"><button class="btn" type="submit">Subscribe</button><span class="muted" id="subMsg"></span></form>
+  </div>
   <div id="releases"><p class="muted">Loading release notes…</p></div>
   <noscript><p>The release notes need JavaScript to display. The same content is in <a href="releases.json">releases.json</a>.</p></noscript>
 </main>
@@ -25,6 +29,11 @@
   <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
 </div></footer>
 <script>
+document.getElementById('subForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); const f = e.target, msg = document.getElementById('subMsg'); msg.textContent = 'Sending…';
+  try { const r = await fetch(f.dataset.api + '/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: document.getElementById('subEmail').value }) }); const b = await r.json(); msg.textContent = b.message || b.error || (r.ok ? 'Done.' : 'Something went wrong.'); if (r.ok) f.reset(); }
+  catch (err) { msg.textContent = 'Could not reach the subscription service. Email support@arenaforconnect.com and we will add you.'; }
+});
 (async function () {
   const box = document.getElementById('releases');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

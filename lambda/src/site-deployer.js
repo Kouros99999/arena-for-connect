@@ -45,6 +45,7 @@ function unzip(buf) {
 
 function configJs(p) {
   const cfg = { api: '/api' };
+  const v = /\/arena\/(\d+\.\d+\.\d+)\/site\.zip/.exec(p.ArchiveUrl || ''); if (v) cfg.version = v[1];   // the pages tell supervisors when a newer release exists
   if (p.Team) cfg.team = p.Team;
   if (p.AuthDomain && p.ClientId) cfg.auth = { domain: p.AuthDomain, clientId: p.ClientId };
   return 'window.ARENA_CONFIG = ' + JSON.stringify(cfg) + ';\n';
