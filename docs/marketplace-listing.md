@@ -41,7 +41,7 @@ Entered in the stored listing on 2026-10-03 (Save updates request succeeded 11:1
 ## Pricing
 
 - **Model:** SaaS subscription with usage
-- **Dimension:** `agent_days` — display "Active agent-day", unit type Units, description "One agent with scored activity on a day (UTC). About 16 USD per agent per month."
+- **Dimension:** `agent_days` — display "Active agent-day", unit type Units, description "One agent with scored activity on a day (UTC). About 16 USD per agent per month." (updated on the listing 2026-10-16 via the Catalog API, change type UpdateDimensions)
 - **Price:** $0.75 per agent-day (≈ $16 per agent per month at 22 working days; raised from $0.40 on 2026-10-10, before public availability). Entered as the test price $0.00000001 while the listing is in limited visibility; set the real price in the update request that asks for public availability. Optional private offer at $0.50 per agent-day for 500+ seats.
 - **Metering change needed:** the stack must report a per-day count (`USAGE_DIMENSION=agent_days`, `USAGE_WINDOW_DAYS=1`) instead of the trailing-30-day count; see README.
 - **Free trial:** 30 days, up to 25 agents. Implemented in the stack's metering (MarketplaceTrialDays=30, MarketplaceTrialAgents=25): the first 25 active agents a day are subtracted before the usage report for 30 days from the first report. Marketplace itself has no trial for usage pricing, so the listing text describes it and the stack enforces it.
@@ -71,3 +71,8 @@ All eight wizard steps entered and validated, saved with **Save and exit** (not 
 - Network: HTTPS only; CloudFront with framing restricted to the customer's Connect instance.
 - Data deletion: per-agent deletion route and admin script; stack deletion removes everything.
 - Least privilege: each Lambda has a scoped role; no wildcard resource except the Marketplace metering actions, which require it.
+
+
+## 2026-10-16: listing copy refreshed for 0.18
+
+Submitted through the Marketplace Catalog API (`start-change-set`, change type `UpdateInformation`; the console form is a SimpleMDE editor and the API is simpler). New short description, long description (three paragraphs covering everything through 0.18), three highlights, 14 keywords, support description, and three resource links (help center, security write-up, partners; the API allows at most three). Source of the copy: scratchpad `listing-update.py` at the time; the live values can be read back with `describe-entity`.

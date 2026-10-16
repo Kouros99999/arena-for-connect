@@ -1,0 +1,2 @@
+
+aws: [ERROR]: An error occurred (ResourceNotFoundException) when calling the Converse operation: Model use case details have not been submitted for this account. Fill out the Anthropic use case details form before using the model. If you have already filled out the form, try again in 15 minutes.
