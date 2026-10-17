@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.19.0",
+    "date": "2026-10-17",
+    "title": "Your 13 weeks",
+    "summary": "The agent panel shows each agent's own trend over thirteen weeks beside the team's average.",
+    "changes": [
+      "Your 13 weeks: a line of the agent's week-by-week points, contacts, evaluation average, sentiment, survey score or adherence, with the team's average active agent drawn beside it. Visible to the agent and supervisors; refreshed every ten minutes."
+    ],
+    "upgrade": [
+      "No action is needed. The trend fills in from the day rows the stack already keeps, including backfilled history."
+    ],
+    "docs": [
+      "how-scoring-works"
+    ]
+  },
+  {
     "version": "0.18.0",
     "date": "2026-10-11",
     "title": "Personal goals, spot awards and badges",

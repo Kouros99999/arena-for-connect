@@ -698,3 +698,15 @@ test('kudos may carry a badge; goals are the agent\'s own and measured live', as
   assert.equal((await h(me('PUT', '/agents/a2/goal', { metric: 'points', target: 1 }))).statusCode, 403);
   assert.equal(JSON.parse((await h(me('PUT', '/agents/a1/goal', { metric: null }))).body).goal, null);
 });
+
+test('the trend route reads the agent and team day rows over the weeks asked for', async () => {
+  const s = fakeStore(); const h = makeHandler({ store: s, now: fixed });
+  s.live.a1 = { pk: 'AGENT#a1', team: 't' };
+  const asked = []; s.getAgentDays = async (arn, from, to) => { asked.push([arn, from, to]); return [{ sk: 'DAY#2026-09-15', points: 118, handled: 4, ahtSum: 1200, evals: [92] }]; };
+  const me = Object.assign(anon('GET', '/agents/a1/trend'), { queryStringParameters: { weeks: '4' }, requestContext: { http: { method: 'GET' }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } });
+  const r = await h(me); assert.equal(r.statusCode, 200); const b = JSON.parse(r.body);
+  assert.equal(b.weeks, 4); assert.equal(b.from, '2026-W35'); assert.equal(b.to, '2026-W38'); assert.equal(b.series.length, 4);
+  assert.deepEqual(asked[0], ['a1', '2026-08-24', '2026-09-15']);
+  const last = b.series[3]; assert.equal(last.mine.points, 118); assert.equal(last.team.points, 84, 'priya 118 and marcus 50 average 84'); assert.equal(last.agents, 2);
+  assert.equal((await h(Object.assign(anon('GET', '/agents/a2/trend'), { requestContext: { http: { method: 'GET' }, authorizer: { jwt: { claims: { 'custom:team': 't', 'custom:agentArn': 'a1' } } } } }))).statusCode, 403);
+});

@@ -46,6 +46,7 @@ async function api(req, res, p) {
     if (req.method === 'GET' && p === '/data/keys') return json(res, 200, { keys: await engine.dataKeys() });
     if (req.method === 'POST' && p === '/data/keys') { const b = await body(req); return json(res, 201, { key: await engine.createDataKey(b.label, b.days, b.kind) }); }
     if (req.method === 'POST' && (m = p.match(/^\/teams\/([^/]+)\/awards$/))) { const b = await body(req); try { return json(res, 201, await engine.award(b.agentId, b.points, b.reason, 'mock supervisor')); } catch (e) { return json(res, 400, { error: e.message }); } }
+    if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/trend$/))) return json(res, 200, await engine.trend(decodeURIComponent(m[1])));
     if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/goal$/))) return json(res, 200, await engine.goal(decodeURIComponent(m[1])));
     if (req.method === 'PUT' && (m = p.match(/^\/agents\/(.+)\/goal$/))) { try { return json(res, 200, await engine.setGoal(decodeURIComponent(m[1]), await body(req))); } catch (e) { return json(res, 400, { error: e.message }); } }
     if (req.method === 'GET' && (m = p.match(/^\/agents\/(.+)\/aliases$/))) return json(res, 200, { aliases: await engine.aliases(decodeURIComponent(m[1])) });

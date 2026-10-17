@@ -132,6 +132,8 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 
 **Alarms.** The stack creates an SNS topic and alarms for ingest errors, ingest falling more than five minutes behind the stream, API function errors, API 5xx responses, and (on Marketplace) a failed nightly usage report. Pass `AlarmEmail` at deploy time to get them by email, or subscribe anything else to the `AlarmTopicArn` output.
 
+**13-week trend.** `Arena.weeklyTrend(mine, teamDaysByDate, today, weeks)` is pure and shared; `GET /agents/{arn}/trend?weeks=13` reads the agent's day rows and the team's day rows over the window (one GSI query per day) and returns the agent's weekly figures beside the team's average per active agent.
+
 **Goals, spot awards, badges.** `Arena.GOAL_METRICS`, `normalizeGoal`, `goalProgress` (pure, shared); the goal lives in the agent's `prefs.goal` (`GET/PUT /agents/{arn}/goal`). `POST /teams/{team}/awards` writes a `SPOT_AWARD` event (1..`BASE.spotAwardMax`) and a feed item with `award`, capped by `AWARDS_DAILY_LIMIT` per supervisor via the kudos counter. Kudos take an optional `badge` from `Arena.KUDOS_BADGES`, stored on the event and feed item.
 
 **Release announcements.** `web/build-site.js` writes `releases.xml` (RSS). The seller stack has an `Announcements` SNS topic and `POST /subscribe` (email, SNS-confirmed); `release.js --announce <arn>` or `ARENA_ANNOUNCE_TOPIC` publishes each release's notes to it. Deployed pages carry `version` in `config.js` and the console shows an update bar when `releases.json` on the website lists a newer one.

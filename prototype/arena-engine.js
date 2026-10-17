@@ -141,6 +141,33 @@
     applyWall(doc) { const p = ui.getWall(); doc.documentElement.setAttribute('data-size', p.size === 'large' ? 'large' : 'normal'); doc.documentElement.setAttribute('data-contrast', p.contrast === 'high' ? 'high' : 'normal'); return p; },
   };
 
+  // ---------- the agent's own trend: 13 weeks of them beside the team's average active agent ----------
+  const TREND_METRICS = { points: { label: 'Points', higher: true }, handled: { label: 'Contacts handled', higher: true }, qa: { label: 'Evaluation average', higher: true }, sentiment: { label: 'Customer sentiment', higher: true }, csat: { label: 'Survey score', higher: true }, adherence: { label: 'Schedule adherence', higher: true } };
+  /** The last `weeks` ISO weeks ending in the week of `today`, oldest first. */
+  function weekKeys(today, weeks) {
+    const out = []; const d = new Date(Date.parse(today + 'T00:00:00.000Z')); const wd = d.getUTCDay() || 7; const monday = new Date(d.getTime() - (wd - 1) * 86400000);
+    for (let i = weeks - 1; i >= 0; i--) out.push(isoWeek(new Date(monday.getTime() - i * 7 * 86400000).toISOString().slice(0, 10)));
+    return out;
+  }
+  /**
+   * Pure. mine: the agent's day rows [{ day, points, handled, ahtSum, evals, sentSum, sentCount, csatSum, csatCount, adhSum, adhCount }].
+   * team: { [day]: [rows with id] } for the whole team over the same window. Returns one entry per week with the agent's
+   * figures and the team's average per active agent (an agent counts for a week when they have points or contacts in it).
+   */
+  function weeklyTrend(mine, team, today, weeks) {
+    const keys = weekKeys(today, weeks || 13), byWeek = {};
+    for (const k of keys) byWeek[k] = { mine: [], team: {} };
+    for (const r of mine || []) { const k = isoWeek(r.day); if (byWeek[k]) byWeek[k].mine.push(r); }
+    for (const [day, rows] of Object.entries(team || {})) { const k = isoWeek(day); if (!byWeek[k]) continue; for (const r of rows) (byWeek[k].team[r.id] = byWeek[k].team[r.id] || []).push(r); }
+    const measure = (rows) => { const t = summarizeRows(rows); return { points: t.points, handled: t.handled, qa: t.qa, sentiment: t.sentiment, csat: t.csat, adherence: t.adherence }; };
+    return keys.map((week) => {
+      const me = measure(byWeek[week].mine);
+      const agents = Object.values(byWeek[week].team).map(measure).filter((m) => m.points > 0 || m.handled > 0);
+      const avg = {}; for (const k of Object.keys(TREND_METRICS)) { const vals = agents.map((m) => m[k]).filter((v) => v !== null && v !== undefined); avg[k] = vals.length ? Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10 : null; }
+      return { week, mine: me, team: avg, agents: agents.length };
+    });
+  }
+
   // ---------- peer badges, spot awards and personal goals ----------
   /** Named badges a teammate may attach to kudos. Ids are stored; labels are shown. */
   const KUDOS_BADGES = [
@@ -789,6 +816,7 @@
       coaching, createCoaching, updateCoaching, history, notifications, saveNotifications, testNotification,
       kudos: async (to, note, from, fromId, badge) => { const a = byId(to); if (!a || (fromId && fromId === to)) return false; ingest({ EventType: 'KUDOS', AgentARN: to, EventTimestamp: new Date().toISOString(), From: from || 'A teammate', Note: note, Badge: badgeOf(badge) ? badge : undefined }); return true; },
       award: async (to, points, reason, by) => { const a = byId(to); if (!a) throw new Error('unknown agent'); const r = ingest({ EventType: 'SPOT_AWARD', AgentARN: to, EventTimestamp: new Date().toISOString(), From: by || 'Supervisor', Points: points, Reason: reason }); return { points: r.points, agentName: a.name }; },
+      trend: async (agentId) => { const id = agentId || agents[0].id, today = new Date().toISOString().slice(0, 10); const hist = syntheticHistory(agents, 91); const mine = hist.map((d) => { const r = d.rows.find((x) => x.id === id); return Object.assign({ day: d.date }, r || { points: 0 }); }); const team = {}; for (const d of hist) team[d.date] = d.rows; return { agent: id, weeks: 13, series: weeklyTrend(mine, team, today, 13) }; },
       goal: async (agentId) => ({ goal: local.prefs[agentId] && local.prefs[agentId].goal || null, progress: goalProgress(local.prefs[agentId] && local.prefs[agentId].goal, byId(agentId)) }),
       setGoal: async (agentId, g) => { const goal = normalizeGoal(g); local.prefs[agentId] = Object.assign({}, local.prefs[agentId] || {}, { goal }); return { goal, progress: goalProgress(goal, byId(agentId)) }; },
       _local: local,
@@ -955,6 +983,7 @@
     const createDataKey = async (label, days, kind) => (await call('POST', `${base}/data/keys`, { label, days, kind })).key;
     const award = async (to, points, reason) => call('POST', `${teamPath()}/awards`, { agentId: to, points, reason });
     const goal = async (agentId) => call('GET', `${base}/agents/${encodeURIComponent(agentId)}/goal`);
+    const trend = async (agentId) => call('GET', `${base}/agents/${encodeURIComponent(agentId)}/trend`);
     const setGoal = async (agentId, g) => call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/goal`, g || { metric: null });
     const aliases = async (agentId) => (await call('GET', `${base}/agents/${encodeURIComponent(agentId)}/aliases`)).aliases;
     const linkAlias = async (agentId, id, platform) => (await call('PUT', `${base}/agents/${encodeURIComponent(agentId)}/aliases`, { id, platform })).aliases;
@@ -982,7 +1011,7 @@
     // Object.assign copies getter values, not getters, so `team` is defined on the result afterwards to stay live.
     const remoteEngine = Object.assign({}, engine, {
       remote: true, kiosk: !!kiosk, refresh, events, loadMix, saveMix, mixInfo, clearMix, best, prefs, savePrefs, kudos, start, stop,
-      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias, award, goal, setGoal, kiosks, createKiosk, revokeKiosk, deleteAgent,
+      challenges, createChallenge, endChallenge, rewards, requestReward, decideReward, kudosFeed, budget, setBudget, rewardSettings, saveRewardSettings, resetRewardSettings, catalog, balance, users, createUser, updateUser, resetPassword, deleteUser, dataKeys, createDataKey, revokeDataKey, exportDays, apiBase, theme, saveTheme, uploadLogo, aliases, linkAlias, unlinkAlias, award, goal, setGoal, trend, kiosks, createKiosk, revokeKiosk, deleteAgent,
       coaching, createCoaching, updateCoaching, history, recordMetric, updateChallenge, notifications, saveNotifications, testNotification,
       on: (fn) => listeners.push(fn),
       suggestions: () => recommendChallenges(engine.agents),
@@ -1020,6 +1049,6 @@
     return { engine, agentId: engine.agents[0].id, remote: false };
   }
 
-  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeTheme, THEME_DEFAULTS, ui, KUDOS_BADGES, badgeOf, GOAL_METRICS, normalizeGoal, goalProgress, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
+  return { createEngine, createRemoteEngine, connect, createSimulator, seedTeam, scoreEvent, validateMix, levelFor, flagsFor, badgesFor, challengeProgress, challengeStandings, aggregateAgents, metricOf, metricOfTeam, budgetSummary, budgetAlerts, personalBest, isoWeek, spotlightText, isBestDay, SPOTLIGHTS, recommendChallenges, normalizeTheme, THEME_DEFAULTS, ui, weeklyTrend, weekKeys, TREND_METRICS, KUDOS_BADGES, badgeOf, GOAL_METRICS, normalizeGoal, goalProgress, normalizeRewardSettings, periodKey, periodBounds, balanceSummary, REWARD_DEFAULTS, BALANCE_PERIODS, summarizeRows, historyReport, syntheticHistory, sentimentAvg, csatAvg,
     DEFAULT_MIX, QUALITY_FLOOR, BASE, LEVELS, BADGES, FLAGS, TEMPLATES, METRICS, CATALOG, NAMES, HUES };
 });

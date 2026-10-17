@@ -27,6 +27,7 @@
  *   GET /config/theme (anyone signed in; /kiosk/{token}/theme for wallboards), PUT /config/theme { name, accent, highlight, logoUrl } (supervisors)
  *   POST /config/logo { dataUrl }                 stores the company logo on the site (brand/logo-<ts>.<ext>, 300 KB max) and sets logoUrl (supervisors)
  *   POST /teams/{team}/awards                   { agentId, points (1..100), reason } a supervisor's spot award: points on the ledger, a line on the feed (supervisors, capped per day)
+ *   GET  /agents/{arn}/trend?weeks=13           the agent's weekly figures beside the team's average active agent (the agent or a supervisor)
  *   GET/PUT /agents/{arn}/goal                  the agent's own goal { metric, target } and progress (the agent or a supervisor)
  *   GET/PUT /teams/{team}/budget                monthly reward budget in points; approvals stop at the cap, alerts at 25/50/75/100% (supervisors)
  *   Days, weeks and months are calendar periods in the stack's Timezone (clock.js).
@@ -77,6 +78,7 @@ function route(method, path) {
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/kudos$/))) return { name: 'kudosFeed', team: decodeURIComponent(x[1]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/awards$/))) return { name: 'spotAward', team: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/agents\/(.+)\/goal$/))) return { name: 'getGoal', arn: decodeURIComponent(x[1]) };
+  if (method === 'GET' && (x = m(/^\/agents\/(.+)\/trend$/))) return { name: 'agentTrend', arn: decodeURIComponent(x[1]) };
   if (method === 'PUT' && (x = m(/^\/agents\/(.+)\/goal$/))) return { name: 'putGoal', arn: decodeURIComponent(x[1]) };
   if (method === 'GET' && (x = m(/^\/teams\/([^/]+)\/kiosk$/))) return { name: 'listKiosk', team: decodeURIComponent(x[1]) };
   if (method === 'POST' && (x = m(/^\/teams\/([^/]+)\/kiosk$/))) return { name: 'createKiosk', team: decodeURIComponent(x[1]) };
@@ -600,6 +602,18 @@ function makeHandler(deps) {
           console.info(JSON.stringify({ audit: 'spotAward', agent: agent.id, points: pts, by: from }));
           await tell(r.team, { kind: 'spotAward', from, to: agent.name, points: pts, reason });
           return json(201, { ok: true, points: pts, agentName: agent.name });
+        }
+        case 'agentTrend': {
+          if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });
+          const weeks = Math.min(13, Math.max(4, +(qs.weeks || 13))), today = clock.dayKey(now());
+          const keys = Arena.weekKeys(today, weeks), from = Arena.periodBounds('week', today).start;
+          const start = addDays(from, -7 * (weeks - 1));
+          const live = await s.getLive(r.arn), team = (live && live.team) || claims['custom:team'];
+          const mine = (await s.getAgentDays(r.arn, start, today)).map((row) => Object.assign(dayRow(Object.assign({ pk: 'AGENT#' + r.arn }, row), {}), { day: row.sk.slice(4) }));
+          const dates = []; for (let d = start; d <= today; d = addDays(d, 1)) dates.push(d);
+          const teamDays = team ? await s.getTeamDays(team, dates) : {};
+          const byDay = {}; for (const [d, rows] of Object.entries(teamDays)) byDay[d] = rows.map((row) => dayRow(row, {}));
+          return json(200, { agent: r.arn, team, weeks, from: keys[0], to: keys[keys.length - 1], series: Arena.weeklyTrend(mine, byDay, today, weeks) });
         }
         case 'getGoal': case 'putGoal': {
           if (!isSupervisor(claims) && claims['custom:agentArn'] !== r.arn) return json(403, { error: 'not your ledger' });

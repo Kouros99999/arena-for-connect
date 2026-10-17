@@ -320,3 +320,15 @@ test('goals validate and measure against the same figures as the board; spot awa
   assert.equal(Arena.scoreEvent('SPOT_AWARD', { Points: 0 }, Arena.DEFAULT_MIX), 1);
   assert.equal(Arena.badgeOf('mentor').label, 'Mentor'); assert.equal(Arena.badgeOf('nope'), null);
 });
+
+test('weekly trend groups days into ISO weeks and averages the team per active agent', () => {
+  assert.deepEqual(Arena.weekKeys('2026-09-15', 3), ['2026-W36', '2026-W37', '2026-W38']);
+  const mine = [{ day: '2026-09-08', points: 100, handled: 5, evals: [90] }, { day: '2026-09-09', points: 50, handled: 2, evals: [] }, { day: '2026-09-15', points: 70, handled: 3, evals: [80] }];
+  const team = { '2026-09-08': [{ id: 'me', points: 100, handled: 5, evals: [90] }, { id: 'b', points: 40, handled: 2, evals: [] }, { id: 'c', points: 0, handled: 0, evals: [] }], '2026-09-09': [{ id: 'me', points: 50, handled: 2, evals: [] }, { id: 'b', points: 60, handled: 3, evals: [70] }], '2026-09-15': [{ id: 'me', points: 70, handled: 3, evals: [80] }] };
+  const t = Arena.weeklyTrend(mine, team, '2026-09-15', 3);
+  assert.deepEqual(t.map((w) => w.week), ['2026-W36', '2026-W37', '2026-W38']);
+  assert.equal(t[0].mine.points, 0); assert.equal(t[0].agents, 0); assert.equal(t[0].team.points, null);
+  assert.equal(t[1].mine.points, 150); assert.equal(t[1].mine.qa, 90); assert.equal(t[1].agents, 2, 'c had nothing and does not count');
+  assert.equal(t[1].team.points, 125); assert.equal(t[1].team.qa, 80);
+  assert.equal(t[2].mine.points, 70); assert.equal(t[2].team.points, 70);
+});
