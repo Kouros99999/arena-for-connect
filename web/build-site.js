@@ -30,7 +30,7 @@ const header = (up) => `<header class="site"><div class="wrap">
   <nav class="main"><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}kb.html">Help</a><a href="${up}partners.html">Partners</a><a href="${up}support.html">Support</a><a class="cta" href="${up}agent-panel.html">Try the demo</a></nav>
 </div></header>`;
 const footer = (up) => `<footer class="site"><div class="wrap">
-  <div><a class="mark" href="${up}./"><img src="${up}logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by EKPK LLC.</p></div>
+  <div><a class="mark" href="${up}./"><img src="${up}logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by <a href="https://ekpk.com/products/arena/">EKPK LLC</a>.</p></div>
   <div><h4>Product</h4><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}agent-panel.html">Demo</a><a href="${up}releases.html">Release notes</a><a href="${up}partners.html">Partners</a></div>
   <div><h4>Support</h4><a href="${up}kb.html">Help center</a><a href="${up}support.html">Contact support</a><a href="${up}kb/security-and-data.html">Security</a><a href="${up}privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation on GitHub</a></div>
   <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
