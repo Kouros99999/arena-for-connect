@@ -44,7 +44,7 @@ Then open:
 ## Test
 
 ```bash
-node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/admin.test.js lambda/src/export.test.js lambda/src/spotlight.test.js lambda/src/events.test.js lambda/src/people.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js web/releases.test.js
+node lambda/build.js && node --test prototype/arena-engine.test.js lambda/src/ingest.test.js lambda/src/store.test.js lambda/src/api.test.js lambda/src/evaluations.test.js lambda/src/sentiment.test.js lambda/src/notify.test.js lambda/src/challenges.test.js lambda/src/digest.test.js lambda/src/adherence.test.js lambda/src/backfill.test.js lambda/src/acknowledgements.test.js lambda/src/clock.test.js lambda/src/mix.test.js lambda/src/admin.test.js lambda/src/export.test.js lambda/src/spotlight.test.js lambda/src/events.test.js lambda/src/people.test.js lambda/src/metering.test.js lambda/src/streaks.test.js lambda/src/site-deployer.test.js lambda/seller/register.test.js prototype/arena-auth.test.js prototype/arena-i18n.test.js web/releases.test.js
 ```
 
 ## Deploy into an AWS account
@@ -139,6 +139,8 @@ Its `RegistrationUrl` output goes into the listing as the fulfillment URL. The s
 **Release announcements.** `web/build-site.js` writes `releases.xml` (RSS). The seller stack has an `Announcements` SNS topic and `POST /subscribe` (email, SNS-confirmed); `release.js --announce <arn>` or `ARENA_ANNOUNCE_TOPIC` publishes each release's notes to it. Deployed pages carry `version` in `config.js` and the console shows an update bar when `releases.json` on the website lists a newer one.
 
 **Platforms.** `lambda/src/events.js` defines the six canonical events every connector produces and validates external ones; `POST /ingest/{key}/events` (ingest keys are kiosk rows with `kind: ingest`) accepts them from any platform. `lambda/src/people.js` resolves a platform id to the agent key its rows live under through `ALIAS#<id>` rows (`GET/PUT/DELETE /agents/{arn}/aliases`), and every connector resolves before writing. `Provider` is wording only.
+
+**Languages.** `prototype/arena-i18n.js` holds the dictionaries keyed by the English string; `ArenaI18n.apply(document)` translates text nodes, placeholders, titles and aria-labels and keeps watching the page for re-rendered content. Add a language by adding a column to `ROWS` and an entry to `LANGS`; the test checks every language has every string.
 
 **Phone and install.** `prototype/manifest.webmanifest` and `prototype/sw.js` make the pages a progressive web app (standalone window, icons, offline shell with the API never cached). They ship with the pages in the release zip, `deploy-pages.js` and the website workflow.
 

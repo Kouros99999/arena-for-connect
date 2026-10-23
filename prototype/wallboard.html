@@ -36,6 +36,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 .brand-logo{height:4.2vh;max-width:28vw;vertical-align:middle;margin-right:1vw;object-fit:contain}
 .wall-ctl{margin-left:1.5vw;display:flex;gap:.6vw;opacity:.35;transition:opacity .3s}
 .wall-ctl:hover{opacity:1}
+.wall-ctl .lang-sel{background:transparent;border:1px solid var(--line);color:var(--ink-2);border-radius:.8vh;font:inherit;font-size:1.8vh;padding:.3vh .6vh}
 .wall-ctl button{background:transparent;border:1px solid var(--line);color:var(--ink-2);border-radius:.8vh;padding:.3vh 1vh;font:inherit;font-size:1.8vh;cursor:pointer}
 .top{display:flex;align-items:baseline;gap:2vw}
 .top .team{font-family:Manrope,sans-serif;font-weight:800;font-size:4.2vh;letter-spacing:-.02em}
@@ -95,7 +96,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
   <div class="top">
     <span class="team">Billing team</span>
     <span class="sub"><span class="brand">Arena</span> · today</span>
-    <span class="wall-ctl"><button id="themeBtn" title="Light or dark">◐</button><button id="sizeBtn" title="Larger text">A+</button><button id="contrastBtn" title="High contrast">◑</button></span>
+    <span class="wall-ctl"><span id="langSlot"></span><button id="themeBtn" title="Light or dark">◐</button><button id="sizeBtn" title="Larger text">A+</button><button id="contrastBtn" title="High contrast">◑</button></span>
     <span class="clock num" id="clock">09:41</span>
   </div>
 
@@ -132,9 +133,14 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 
 <script src="config.js"></script>
 <script src="arena-auth.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
 <script src="arena-engine.js"></script>
 <script>
 (function(){
+  ArenaI18n.apply(document); document.getElementById('langSlot').appendChild(ArenaI18n.selector(document, 'lang-sel'));
   Arena.ui.applyMode(document, true); Arena.ui.applyWall(document);
   const conn = Arena.connect();
   let brand = null;

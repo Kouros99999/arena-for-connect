@@ -66,6 +66,10 @@ button{font:inherit;cursor:pointer}
   --chrome:#0B0E13; --chrome-ink:#E9EDF2; --chrome-muted:#8C96A6;
 }
 .brand-logo{height:22px;max-width:140px;vertical-align:middle;margin-right:6px;object-fit:contain}
+.lang-sel{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);padding:2px 4px;margin-right:6px}
+.lang-sel{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);padding:2px 4px;margin-right:6px}
+.lang-sel{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);padding:2px 4px;margin-right:6px}
+.lang-sel{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);padding:2px 4px;margin-right:6px}
 .theme-btn{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:2px 8px;font:inherit;cursor:pointer}
 .pane-head .app{font-family:Manrope,sans-serif;font-weight:800;font-size:15px;letter-spacing:-.01em}
 .pane-head .tabs{margin-left:auto;display:flex;gap:2px;background:var(--sub);border-radius:6px;padding:2px}
@@ -190,6 +194,10 @@ button{font:inherit;cursor:pointer}
         <button role="tab" aria-selected="true" data-range="today">Today</button>
         <button role="tab" aria-selected="false" data-range="week">This week</button>
       </div>
+      <span id="langSlot"></span>
+      <span id="langSlot"></span>
+      <span id="langSlot"></span>
+      <span id="langSlot"></span>
       <button class="theme-btn" id="themeBtn" title="Switch between light and dark">◐</button>
     </div>
 
@@ -280,10 +288,15 @@ button{font:inherit;cursor:pointer}
 
 <script src="config.js"></script>
 <script src="arena-auth.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
 <script src="arena-engine.js"></script>
 <script>
 (function(){
   Arena.ui.applyMode(document);
+  ArenaI18n.apply(document); document.getElementById('langSlot').appendChild(ArenaI18n.selector(document, 'lang-sel'));
   const conn = Arena.connect();
   let brand = null;
   const applyBrand = () => Arena.ui.applyBrand(document, brand, { mark: '.pane-head .app', title: true });

@@ -7,8 +7,8 @@
  * Bump VERSION when the shell changes so old caches are dropped.
  */
 'use strict';
-const VERSION = 'arena-shell-v1';
-const SHELL = ['./supervisor-console.html', './agent-panel.html', './report.html', './wallboard.html', './arena-engine.js', './arena-auth.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const VERSION = 'arena-shell-v2';
+const SHELL = ['./supervisor-console.html', './agent-panel.html', './report.html', './wallboard.html', './arena-engine.js', './arena-auth.js', './arena-i18n.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => Promise.allSettled(SHELL.map((u) => c.add(u)))).then(() => self.skipWaiting()));

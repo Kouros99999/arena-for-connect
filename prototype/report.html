@@ -48,6 +48,8 @@ h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0}
   --chrome:#0B0E13; --chrome-ink:#E9EDF2; --chrome-muted:#8C96A6;
 }
 .brand-logo{height:22px;max-width:140px;vertical-align:middle;margin-right:6px;object-fit:contain}
+.lang-sel{font:inherit;font-size:12px;border:1px solid rgba(255,255,255,.25);border-radius:6px;background:transparent;color:var(--chrome-ink);padding:2px 4px}
+.lang-sel option{color:#15181E}
 .theme-btn{background:transparent;border:1px solid rgba(255,255,255,.25);color:var(--chrome-ink);border-radius:6px;padding:2px 8px;font:inherit;cursor:pointer}
 .chrome{background:var(--chrome);color:var(--chrome-ink);min-height:44px;display:flex;align-items:center;gap:14px;padding:6px 20px;font-size:13px;flex-wrap:wrap}
 .chrome .brand{font-family:Manrope,sans-serif;font-weight:800;letter-spacing:-.01em;font-size:15px}
@@ -126,6 +128,8 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;padding:10px 14
   <span class="brand">Arena</span>
   <span class="crumb">Results report</span>
   <span class="crumb" id="teamName"></span>
+  <span id="langSlot"></span>
+  <button class="theme-btn" id="themeBtn" title="Switch between light and dark">◐</button>
   <select id="period" aria-label="Period">
     <option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option>
   </select>
@@ -166,10 +170,15 @@ details summary{cursor:pointer;color:var(--ink-2);font-size:13px;padding:10px 14
 
 <script src="config.js"></script>
 <script src="arena-auth.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
+<script src="arena-i18n.js"></script>
 <script src="arena-engine.js"></script>
 <script>
 (function(){
   Arena.ui.applyMode(document);
+  ArenaI18n.apply(document); document.getElementById('langSlot').appendChild(ArenaI18n.selector(document, 'lang-sel'));
   const conn = Arena.connect();
   let brand = null;
   const applyBrand = () => Arena.ui.applyBrand(document, brand, { title: true });

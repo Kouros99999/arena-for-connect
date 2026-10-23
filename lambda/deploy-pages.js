@@ -19,7 +19,7 @@ if (!bucket || !dist) { console.error('stack has no SiteBucket/DistributionId ou
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'arena-site-'));
 const src = path.join(__dirname, '..', 'prototype');
-for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'report.html', 'arena-engine.js', 'arena-auth.js', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png', 'apple-touch-icon.png']) fs.copyFileSync(path.join(src, f), path.join(tmp, f));
+for (const f of ['agent-panel.html', 'supervisor-console.html', 'wallboard.html', 'report.html', 'arena-engine.js', 'arena-auth.js', 'arena-i18n.js', 'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png', 'apple-touch-icon.png']) fs.copyFileSync(path.join(src, f), path.join(tmp, f));
 const config = { api: '/api', team, version: JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'web', 'releases.json'), 'utf8'))[0].version };
 if (out('AuthDomain') && out('UserPoolClientId')) config.auth = { domain: out('AuthDomain'), clientId: out('UserPoolClientId') };
 fs.writeFileSync(path.join(tmp, 'config.js'), `window.ARENA_CONFIG = ${JSON.stringify(config)};\n`);

@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.20.0",
+    "date": "2026-10-23",
+    "title": "Spanish, French, German and Portuguese",
+    "summary": "The agent panel, console, report and wallboard speak five languages, chosen per browser or per link.",
+    "changes": [
+      "Languages: English, Spanish, French, German and Brazilian Portuguese for every fixed label, button, tile, placeholder, badge and measure across the four pages. A selector in each header; the browser's own language is used until someone chooses; ?lang= forces one for a wallboard link.",
+      "Sentences Arena composes around numbers stay in English in this version."
+    ],
+    "upgrade": [
+      "No action is needed. English stays the default until a person or a link chooses otherwise."
+    ],
+    "docs": [
+      "languages"
+    ]
+  },
+  {
     "version": "0.19.0",
     "date": "2026-10-17",
     "title": "Your 13 weeks",

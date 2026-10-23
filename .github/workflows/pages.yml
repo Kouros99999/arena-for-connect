@@ -25,7 +25,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p site
-          cp prototype/*.html prototype/arena-engine.js prototype/arena-auth.js prototype/sw.js prototype/manifest.webmanifest prototype/*.png site/
+          cp prototype/*.html prototype/arena-engine.js prototype/arena-auth.js prototype/arena-i18n.js prototype/sw.js prototype/manifest.webmanifest prototype/*.png site/
           echo 'window.ARENA_CONFIG = {};' > site/config.js
           cp -r web/* site/ && rm -f site/make-logo.py site/make-video.js site/make-shots.js site/make-og.py site/releases.test.js site/build-site.js
       - uses: actions/setup-node@v4
