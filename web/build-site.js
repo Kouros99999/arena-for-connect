@@ -27,11 +27,11 @@ const latest = releases[0];
 const header = (up) => `<header class="site"><div class="wrap">
   <a class="mark" href="${up}./"><img src="${up}logo.svg" alt="">Arena for Amazon Connect</a>
   <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
-  <nav class="main"><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}roi.html">ROI</a><a href="${up}kb.html">Help</a><a href="${up}partners.html">Partners</a><a href="${up}support.html">Support</a><a class="cta" href="${up}agent-panel.html">Try the demo</a></nav>
+  <nav class="main"><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}roi.html">ROI</a><a href="${up}blog.html">Blog</a><a href="${up}kb.html">Help</a><a href="${up}partners.html">Partners</a><a href="${up}support.html">Support</a><a class="cta" href="${up}agent-panel.html">Try the demo</a></nav>
 </div></header>`;
 const footer = (up) => `<footer class="site"><div class="wrap">
   <div><a class="mark" href="${up}./"><img src="${up}logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by <a href="https://ekpk.com/products/arena/">EKPK LLC</a>.</p></div>
-  <div><h4>Product</h4><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}roi.html">ROI calculator</a><a href="${up}agent-panel.html">Demo</a><a href="${up}releases.html">Release notes</a><a href="${up}partners.html">Partners</a></div>
+  <div><h4>Product</h4><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}roi.html">ROI calculator</a><a href="${up}blog.html">Blog</a><a href="${up}agent-panel.html">Demo</a><a href="${up}releases.html">Release notes</a><a href="${up}partners.html">Partners</a></div>
   <div><h4>Support</h4><a href="${up}kb.html">Help center</a><a href="${up}support.html">Contact support</a><a href="${up}kb/security-and-data.html">Security</a><a href="${up}privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation on GitHub</a></div>
   <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
 </div></footer>`;
@@ -169,9 +169,46 @@ ${items}
 `);
 }
 
+// ---------- blog: posts as static pages with Article JSON-LD, and the list pre-rendered into blog.html ----------
+{
+  const posts = JSON.parse(read('blog/index.json')).sort((a, b) => (a.date < b.date ? 1 : -1));
+  for (const p of posts) {
+    let body = marked.parse(read('blog/' + p.slug + '.md'));
+    body = body.replace(/<a href="http/g, '<a target="_blank" rel="noopener" href="http');
+    const ld = { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: p.title, description: p.summary, datePublished: p.date, dateModified: p.date, author: { '@type': 'Person', name: p.author.split(',')[0].trim() }, publisher: { '@type': 'Organization', name: 'EKPK LLC', logo: { '@type': 'ImageObject', url: `${ORIGIN}/logo.png` } }, mainEntityOfPage: `${ORIGIN}/blog/${p.slug}.html`, image: `${ORIGIN}/img/og.png` };
+    const others = posts.filter((o) => o.slug !== p.slug).map((o) => `<a href="${o.slug}.html">${esc(o.title)}</a>`).join('');
+    const page = `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(p.title)} · Arena blog</title>
+<meta name="description" content="${esc(p.summary)}">
+<link rel="icon" type="image/svg+xml" href="../logo.svg">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="stylesheet" href="../site.css?v=8">
+<script type="application/ld+json">${JSON.stringify(ld)}</script>
+<style>article h1{margin-top:.6rem}article h2{margin-top:1.8rem}article p{font-size:1.05rem}.crumb{font-size:.9rem;color:var(--muted);margin-top:1.2rem}.crumb a{color:var(--muted)}.byline{color:var(--muted);font-size:.9rem;margin:0 0 1.2rem}.related{margin-top:2rem;border-top:1px solid var(--line);padding-top:1rem}.related a{display:block;margin:.3rem 0}.cta-box{background:var(--brand-soft);border-radius:10px;padding:1rem 1.2rem;margin-top:2rem}</style>
+${header('../')}
+<main class="page">
+  <p class="crumb"><a href="../blog.html">Blog</a> › ${esc(p.title)}</p>
+  <article>${body.replace(/(<h1>[^]*?<\/h1>)/, '$1<p class="byline">' + esc(p.author) + ' · ' + day(p.date) + '</p>')}</article>
+  <div class="cta-box"><b>Arena for Amazon Connect</b> is a fair, live leaderboard for your agents, in your own AWS account. <a href="../index.html#features">See the features</a>, run the <a href="../roi.html">ROI calculator</a>, or <a href="https://aws.amazon.com/marketplace/pp/prodview-ui66aef7c2jym">subscribe on AWS Marketplace</a>.</div>
+  <div class="related"><h2>More from the blog</h2>${others}</div>
+</main>
+${footer('../')}
+</html>
+`;
+    write('blog/' + p.slug + '.html', social(page, `/blog/${p.slug}.html`));
+    urls.push({ loc: `/blog/${p.slug}.html`, changefreq: 'monthly', priority: '0.6' });
+  }
+  let list = read('blog.html');
+  list = list.replace('<!--POSTS-->', posts.map((p) => `<li><a href="blog/${p.slug}.html">${esc(p.title)}</a><p>${esc(p.summary)}</p><small>${esc(p.author)} · ${day(p.date)}</small></li>`).join(''));
+  write('blog.html', social(list, '/blog.html'));
+}
+
 // ---------- sitemap and robots ----------
 const today = new Date().toISOString().slice(0, 10);
-const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/partners.html', priority: '0.6', changefreq: 'monthly' }, { loc: '/roi.html', priority: '0.7', changefreq: 'monthly' }, { loc: '/releases.xml', priority: '0.4', changefreq: 'weekly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
+const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/partners.html', priority: '0.6', changefreq: 'monthly' }, { loc: '/roi.html', priority: '0.7', changefreq: 'monthly' }, { loc: '/blog.html', priority: '0.7', changefreq: 'weekly' }, { loc: '/releases.xml', priority: '0.4', changefreq: 'weekly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `  <url><loc>${ORIGIN}${p.loc}</loc><lastmod>${today}</lastmod><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`).join('\n')}\n</urlset>\n`);
 write('robots.txt', `User-agent: *\nAllow: /\nDisallow: /agent-panel.html\nDisallow: /supervisor-console.html\nDisallow: /wallboard.html\nDisallow: /report.html\nSitemap: ${ORIGIN}/sitemap.xml\n`);
 console.log(`built ${kb.length} articles, ${releases.length} releases, sitemap with ${pages.length} URLs into ${out}`);
