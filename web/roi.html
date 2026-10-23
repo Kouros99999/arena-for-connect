@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arena ROI calculator: what agent engagement is worth in your contact centre</title>
+<meta name="description" content="Put in your agent count, attrition and handle time, and see what a 15 percent cut in attrition and a 3 percent gain in handle time are worth against Arena's $0.75 per agent-day. Every assumption is editable.">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css?v=8">
+<style>
+.roi{display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start;margin-top:1.2rem}
+@media (max-width:800px){.roi{grid-template-columns:1fr}}
+.inputs{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.2rem}
+.inputs h2{font-size:1.1rem;margin:0 0 .6rem}
+.inputs h2 + p{color:var(--muted);font-size:.9rem;margin:0 0 .8rem}
+.field{display:grid;grid-template-columns:1fr 8rem;gap:.6rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--line)}
+.field:last-child{border-bottom:0}
+.field label{font-size:.95rem}
+.field small{display:block;color:var(--muted);font-size:.8rem}
+.field input{width:100%;padding:.45rem .6rem;border:1px solid var(--line);border-radius:8px;font:inherit;text-align:right}
+.results{position:sticky;top:80px}
+.total{background:var(--brand);color:#fff;border-radius:14px;padding:1.4rem 1.6rem;margin-bottom:1rem}
+.total .big{font-size:2.6rem;font-weight:750;letter-spacing:-.02em;line-height:1.1}
+.total .lab{opacity:.85;font-size:.95rem}
+.lines{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.2rem}
+.line{display:flex;justify-content:space-between;gap:1rem;padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.97rem}
+.line:last-child{border-bottom:0}
+.line b{font-variant-numeric:tabular-nums}
+.line.sum{font-weight:700}
+.line.neg b{color:#A83A3A}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin:1rem 0}
+.kpi{background:var(--brand-soft);border-radius:10px;padding:.7rem .8rem}
+.kpi .v{font-size:1.4rem;font-weight:750;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:.8rem;color:var(--ink-2)}
+.assume{margin-top:2rem;color:var(--ink-2);font-size:.95rem}
+.assume li{margin:.35rem 0}
+.actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
+@media print{header.site,footer.site,.actions,.inputs input{border:0}.roi{grid-template-columns:1fr 1fr}}
+</style>
+<header class="site"><div class="wrap">
+  <a class="mark" href="./"><img src="logo.svg" alt="">Arena for Amazon Connect</a>
+  <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
+  <nav class="main"><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="roi.html">ROI</a><a href="kb.html">Help</a><a href="partners.html">Partners</a><a href="support.html">Support</a><a class="cta" href="agent-panel.html">Try the demo</a></nav>
+</div></header>
+<main class="page" style="max-width:64rem">
+  <h1>What is agent engagement worth in your centre?</h1>
+  <p class="lede">Put in your own numbers. The two levers Arena pulls are attrition and handle time; the defaults below are deliberately conservative, and every one of them is yours to change. The result is first-year, after Arena's subscription and the stack's own AWS cost.</p>
+
+  <div class="roi">
+    <div class="inputs">
+      <h2>Your centre</h2>
+      <p>What it costs you today.</p>
+      <div class="field"><label>Agents on Amazon Connect<small>Active agents, not licences</small></label><input id="agents" type="number" min="1" value="100"></div>
+      <div class="field"><label>Fully loaded cost per agent per year<small>Salary, benefits, overhead, USD</small></label><input id="cost" type="number" min="0" step="1000" value="45000"></div>
+      <div class="field"><label>Annual attrition<small>Percent of agents who leave each year</small></label><input id="attrition" type="number" min="0" max="100" step="1" value="35"></div>
+      <div class="field"><label>Cost to replace one agent<small>Recruiting, training, ramp-up, USD</small></label><input id="replace" type="number" min="0" step="500" value="12000"></div>
+
+      <h2 style="margin-top:1.2rem">What Arena changes</h2>
+      <p>Conservative defaults. Industry studies of recognition and gamification programmes report larger effects; put in what you would believe.</p>
+      <div class="field"><label>Attrition reduction<small>Relative: 15% takes 35% attrition to 29.75%</small></label><input id="attrImp" type="number" min="0" max="100" step="1" value="15"></div>
+      <div class="field"><label>Productivity gain<small>Handle time and availability, as freed capacity</small></label><input id="prodImp" type="number" min="0" max="100" step="0.5" value="3"></div>
+      <div class="field"><label>Working days per agent per month<small>Billable agent-days</small></label><input id="days" type="number" min="1" max="31" value="22"></div>
+    </div>
+
+    <div class="results">
+      <div class="total"><div class="lab">First-year net return</div><div class="big" id="net">$0</div><div class="lab" id="roiLine"></div></div>
+      <div class="kpis">
+        <div class="kpi"><div class="v" id="payback">0</div><div class="l">weeks to pay back</div></div>
+        <div class="kpi"><div class="v" id="perAgent">$0</div><div class="l">net return per agent per year</div></div>
+        <div class="kpi"><div class="v" id="agentsSaved">0</div><div class="l">fewer agents to replace per year</div></div>
+      </div>
+      <div class="lines">
+        <div class="line"><span>Attrition savings</span><b id="attrSave">$0</b></div>
+        <div class="line"><span>Productivity, as capacity freed</span><b id="prodSave">$0</b></div>
+        <div class="line sum"><span>Gross benefit</span><b id="gross">$0</b></div>
+        <div class="line neg"><span>Arena subscription, after the 30-day trial</span><b id="sub">$0</b></div>
+        <div class="line neg"><span>Stack's own AWS resources</span><b id="infra">$0</b></div>
+        <div class="line sum"><span>Net, first year</span><b id="net2">$0</b></div>
+      </div>
+      <div class="actions"><a class="btn" href="https://aws.amazon.com/marketplace/pp/prodview-ui66aef7c2jym">Subscribe on AWS Marketplace</a><button class="btn ghost" type="button" onclick="window.print()">Print or save as PDF</button><button class="btn ghost" type="button" id="copyLink">Copy a link with these numbers</button></div>
+    </div>
+  </div>
+
+  <div class="assume">
+    <h2>How the arithmetic works</h2>
+    <ul>
+      <li><b>Attrition savings</b> = agents × attrition rate × attrition reduction × cost to replace one agent. With the defaults: 100 × 35% × 15% × $12,000.</li>
+      <li><b>Productivity</b> = agents × fully loaded cost × productivity gain. A 3% gain across 100 agents is three agents' worth of capacity you do not have to hire. If you would not redeploy it, set it to zero.</li>
+      <li><b>Arena subscription</b> = agents × working days × 11 months × $0.75, since the first 30 days are free for up to 25 agents a day. Agents with no contacts on a day are not billed, so this is the ceiling.</li>
+      <li><b>Stack cost</b> is the AWS resources Arena runs on in your account, about $15 a month for a 500-agent centre. $180 a year is used here.</li>
+      <li>Not counted: supervisor time saved by flags and suggested challenges, the effect of coaching with before-and-after results on evaluation scores, customer sentiment, or anything you cannot put a number on. The calculator is meant to be beaten, not believed.</li>
+    </ul>
+    <p>Where the defaults come from: replacing a contact centre agent is widely estimated at $10,000 to $20,000 once recruiting, training and the months to full productivity are counted, and annual attrition of 30 to 45 percent is typical. The 15 percent attrition reduction and 3 percent productivity gain are at the low end of what published recognition and gamification programmes report. Your own numbers are better than anyone's averages.</p>
+  </div>
+</main>
+<footer class="site"><div class="wrap">
+  <div><a class="mark" href="./"><img src="logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by <a href="https://ekpk.com/products/arena/">EKPK LLC</a>.</p></div>
+  <div><h4>Product</h4><a href="index.html#features">Features</a><a href="index.html#pricing">Pricing</a><a href="roi.html">ROI calculator</a><a href="agent-panel.html">Demo</a><a href="releases.html">Release notes</a><a href="partners.html">Partners</a></div>
+  <div><h4>Support</h4><a href="kb.html">Help center</a><a href="support.html">Contact support</a><a href="kb.html?a=security-and-data">Security</a><a href="privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation on GitHub</a></div>
+  <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC. The calculator is an illustration from numbers you enter, not a forecast or a guarantee.</div>
+</div></footer>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const ids = ['agents', 'cost', 'attrition', 'replace', 'attrImp', 'prodImp', 'days'];
+  const money = (n) => (n < 0 ? '-' : '') + '$' + Math.round(Math.abs(n)).toLocaleString();
+  const PRICE = 0.75, INFRA = 180;
+  const q = new URLSearchParams(location.search);
+  ids.forEach((id) => { if (q.has(id) && !isNaN(+q.get(id))) $(id).value = q.get(id); });
+  function calc() {
+    const v = {}; ids.forEach((id) => { v[id] = Math.max(0, +$(id).value || 0); });
+    const attrSave = v.agents * (v.attrition / 100) * (v.attrImp / 100) * v.replace;
+    const prodSave = v.agents * v.cost * (v.prodImp / 100);
+    const gross = attrSave + prodSave;
+    const sub = v.agents * v.days * 11 * PRICE;
+    const net = gross - sub - INFRA;
+    const monthlyBenefit = gross / 12, monthlyCost = (sub + INFRA) / 12;
+    const payback = monthlyBenefit > monthlyCost && gross > 0 ? Math.max(1, Math.round((sub + INFRA) / gross * 52)) : null;
+    $('attrSave').textContent = money(attrSave); $('prodSave').textContent = money(prodSave); $('gross').textContent = money(gross);
+    $('sub').textContent = money(-sub); $('infra').textContent = money(-INFRA); $('net').textContent = money(net); $('net2').textContent = money(net);
+    $('roiLine').textContent = sub + INFRA > 0 ? (net >= 0 ? `${Math.round((net / (sub + INFRA)) * 100).toLocaleString()}% return on ${money(sub + INFRA)} spent` : `Below break-even by ${money(-net)}`) : '';
+    $('payback').textContent = payback ? payback : '—';
+    $('perAgent').textContent = money(v.agents ? net / v.agents : 0);
+    $('agentsSaved').textContent = (v.agents * (v.attrition / 100) * (v.attrImp / 100)).toFixed(1);
+    history.replaceState(null, '', '?' + ids.map((id) => id + '=' + $(id).value).join('&'));
+  }
+  ids.forEach((id) => $(id).addEventListener('input', calc));
+  $('copyLink').addEventListener('click', () => { navigator.clipboard.writeText(location.href).then(() => { $('copyLink').textContent = 'Link copied'; setTimeout(() => { $('copyLink').textContent = 'Copy a link with these numbers'; }, 1800); }).catch(() => {}); });
+  calc();
+})();
+</script>
+</html>

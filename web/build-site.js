@@ -27,11 +27,11 @@ const latest = releases[0];
 const header = (up) => `<header class="site"><div class="wrap">
   <a class="mark" href="${up}./"><img src="${up}logo.svg" alt="">Arena for Amazon Connect</a>
   <button class="menu-btn" aria-label="Menu" onclick="document.querySelector('nav.main').classList.toggle('open')">Menu</button>
-  <nav class="main"><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}kb.html">Help</a><a href="${up}partners.html">Partners</a><a href="${up}support.html">Support</a><a class="cta" href="${up}agent-panel.html">Try the demo</a></nav>
+  <nav class="main"><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}roi.html">ROI</a><a href="${up}kb.html">Help</a><a href="${up}partners.html">Partners</a><a href="${up}support.html">Support</a><a class="cta" href="${up}agent-panel.html">Try the demo</a></nav>
 </div></header>`;
 const footer = (up) => `<footer class="site"><div class="wrap">
   <div><a class="mark" href="${up}./"><img src="${up}logo.svg" alt="">Arena</a><p style="margin-top:.6rem">Agent engagement for Amazon Connect, by <a href="https://ekpk.com/products/arena/">EKPK LLC</a>.</p></div>
-  <div><h4>Product</h4><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}agent-panel.html">Demo</a><a href="${up}releases.html">Release notes</a><a href="${up}partners.html">Partners</a></div>
+  <div><h4>Product</h4><a href="${up}index.html#features">Features</a><a href="${up}index.html#pricing">Pricing</a><a href="${up}roi.html">ROI calculator</a><a href="${up}agent-panel.html">Demo</a><a href="${up}releases.html">Release notes</a><a href="${up}partners.html">Partners</a></div>
   <div><h4>Support</h4><a href="${up}kb.html">Help center</a><a href="${up}support.html">Contact support</a><a href="${up}kb/security-and-data.html">Security</a><a href="${up}privacy.html">Privacy policy</a><a href="https://github.com/Kouros99999/arena-for-connect">Documentation on GitHub</a></div>
   <div class="legal">Amazon Connect is a trademark of Amazon.com, Inc. or its affiliates. Arena is not affiliated with or endorsed by Amazon. © EKPK LLC.</div>
 </div></footer>`;
@@ -142,7 +142,7 @@ ${footer('../')}
   html = html.replace('</title>', '</title>\n' + ld.map((o) => `<script type="application/ld+json">${JSON.stringify(o)}</script>`).join('\n'));
   write('index.html', social(html, '/'));
 }
-for (const f of ['support.html', 'privacy.html', 'partners.html']) write(f, social(read(f), '/' + f));
+for (const f of ['support.html', 'privacy.html', 'partners.html', 'roi.html']) write(f, social(read(f), '/' + f));
 
 // ---------- release feed (RSS 2.0): partners and customers subscribe once and hear about every version ----------
 {
@@ -171,7 +171,7 @@ ${items}
 
 // ---------- sitemap and robots ----------
 const today = new Date().toISOString().slice(0, 10);
-const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/partners.html', priority: '0.6', changefreq: 'monthly' }, { loc: '/releases.xml', priority: '0.4', changefreq: 'weekly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
+const pages = [{ loc: '/', priority: '1.0', changefreq: 'weekly' }, { loc: '/kb.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/releases.html', priority: '0.8', changefreq: 'weekly' }, { loc: '/support.html', priority: '0.5', changefreq: 'monthly' }, { loc: '/partners.html', priority: '0.6', changefreq: 'monthly' }, { loc: '/roi.html', priority: '0.7', changefreq: 'monthly' }, { loc: '/releases.xml', priority: '0.4', changefreq: 'weekly' }, { loc: '/privacy.html', priority: '0.3', changefreq: 'yearly' }].concat(urls);
 write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `  <url><loc>${ORIGIN}${p.loc}</loc><lastmod>${today}</lastmod><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`).join('\n')}\n</urlset>\n`);
 write('robots.txt', `User-agent: *\nAllow: /\nDisallow: /agent-panel.html\nDisallow: /supervisor-console.html\nDisallow: /wallboard.html\nDisallow: /report.html\nSitemap: ${ORIGIN}/sitemap.xml\n`);
 console.log(`built ${kb.length} articles, ${releases.length} releases, sitemap with ${pages.length} URLs into ${out}`);
