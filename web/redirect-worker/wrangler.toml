@@ -1,0 +1,8 @@
+name = "arena-redirects"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+routes = [
+  { pattern = "gamificationforconnect.com", custom_domain = true },
+  { pattern = "www.gamificationforconnect.com", custom_domain = true },
+]
